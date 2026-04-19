@@ -233,11 +233,11 @@ async function loadAnalytics() {
           <div class="progress-bar" style="margin-top:6px;"><div class="progress-bar-fill" style="width:${a.alignment_score}%;background:${alignColor};"></div></div>
         </div>
         <div class="metrics-row">
-          <div class="metric"><strong>${a.total_interactions}</strong>interactions</div>
-          <div class="metric"><strong style="color:${corrColor}">${a.correction_rate_pct.toFixed(1)}%</strong>correction rate</div>
-          <div class="metric"><strong>${a.avg_correction_latency_s != null ? a.avg_correction_latency_s.toFixed(1)+'s' : '—'}</strong>avg latency</div>
-          <div class="metric"><strong>${a.avg_friction_score.toFixed(3)}</strong>friction</div>
-          <div class="metric"><strong>${a.sessions}</strong>sessions</div>
+          <div class="metric"><strong>${a.total_interactions}</strong> interactions</div>
+          <div class="metric"><strong style="color:${corrColor}">${a.correction_rate_pct.toFixed(1)}%</strong> correction rate</div>
+          <div class="metric"><strong>${a.avg_correction_latency_s != null ? a.avg_correction_latency_s.toFixed(1)+'s' : '—'}</strong> avg latency</div>
+          <div class="metric"><strong>${a.avg_friction_score.toFixed(3)}</strong> friction</div>
+          <div class="metric"><strong>${a.sessions}</strong> sessions</div>
         </div>
       </div>`;
     }).join('');

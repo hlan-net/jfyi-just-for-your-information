@@ -42,19 +42,18 @@ def serve(
 
         web_app = create_app(db, analytics)
 
-        # Mount MCP SSE endpoint
+        # Mount MCP SSE endpoint using raw ASGI to avoid private attribute access
         from mcp.server.sse import SseServerTransport
+        from starlette.routing import Route
+        from starlette.types import Receive, Scope, Send
+
         from .server import build_mcp_server
 
         mcp_server = build_mcp_server(db, analytics)
         sse_transport = SseServerTransport("/mcp/messages/")
 
-        from starlette.routing import Mount, Route
-
-        async def handle_sse(request):
-            async with sse_transport.connect_sse(
-                request.scope, request.receive, request._send
-            ) as (read_stream, write_stream):
+        async def handle_sse(scope: Scope, receive: Receive, send: Send) -> None:
+            async with sse_transport.connect_sse(scope, receive, send) as (read_stream, write_stream):
                 from mcp.server.models import InitializationOptions
                 await mcp_server.run(
                     read_stream,
