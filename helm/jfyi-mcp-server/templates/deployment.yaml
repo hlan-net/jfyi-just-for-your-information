@@ -26,9 +26,6 @@ spec:
             - name: mcp
               containerPort: {{ .Values.service.mcpPort }}
               protocol: TCP
-            - name: dashboard
-              containerPort: {{ .Values.service.dashboardPort }}
-              protocol: TCP
           env:
             {{- range $key, $val := .Values.env }}
             - name: {{ $key }}

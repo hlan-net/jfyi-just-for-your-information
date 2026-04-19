@@ -14,7 +14,6 @@ fullnameOverride: ""
 service:
   type: ClusterIP
   mcpPort: 8080
-  dashboardPort: 3000
 
 persistence:
   enabled: true
@@ -26,9 +25,7 @@ persistence:
 env:
   JFYI_DATA_DIR: /data
   JFYI_DB_PATH: /data/jfyi.db
-  JFYI_VECTOR_DB_PATH: /data/chromadb
   JFYI_MCP_PORT: "8080"
-  JFYI_DASHBOARD_PORT: "3000"
 
 resources:
   requests:

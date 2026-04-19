@@ -11,9 +11,5 @@ spec:
       targetPort: mcp
       protocol: TCP
       name: mcp
-    - port: {{ .Values.service.dashboardPort }}
-      targetPort: dashboard
-      protocol: TCP
-      name: dashboard
   selector:
     {{- include "jfyi-mcp-server.selectorLabels" . | nindent 4 }}
