@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JFYI Dashboard — Just For Your Information</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --orange: #d29922; --red: #f85149;
+    --purple: #bc8cff; --font: 'Segoe UI', system-ui, sans-serif;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+  header h1 { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+  header span { color: var(--muted); font-size: 0.85rem; }
+  .badge { background: #1f6feb22; border: 1px solid #1f6feb55; color: var(--accent); border-radius: 12px; padding: 2px 10px; font-size: 0.75rem; }
+  nav { display: flex; gap: 0; padding: 0 2rem; background: var(--surface); border-bottom: 1px solid var(--border); }
+  nav button { background: none; border: none; color: var(--muted); padding: 0.8rem 1.2rem; cursor: pointer; font-size: 0.9rem; border-bottom: 2px solid transparent; transition: all 0.2s; }
+  nav button:hover { color: var(--text); }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  main { max-width: 1100px; margin: 2rem auto; padding: 0 2rem; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
+  .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: var(--text); }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; }
+  .stat .value { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  .stat .label { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th { text-align: left; padding: 0.5rem 0.75rem; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #21262d; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #1f2937; }
+  .pill { display: inline-block; border-radius: 12px; padding: 2px 10px; font-size: 0.75rem; font-weight: 500; }
+  .pill-green { background: #23312a; color: var(--green); }
+  .pill-orange { background: #2d2208; color: var(--orange); }
+  .pill-red { background: #2d1214; color: var(--red); }
+  .pill-blue { background: #132030; color: var(--accent); }
+  .pill-purple { background: #231a30; color: var(--purple); }
+  .progress-bar { background: #21262d; border-radius: 4px; height: 6px; overflow: hidden; margin-top: 4px; }
+  .progress-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+  .rule-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; border-bottom: 1px solid #21262d; }
+  .rule-row:last-child { border-bottom: none; }
+  .rule-text { flex: 1; font-size: 0.9rem; }
+  .rule-meta { display: flex; gap: 0.5rem; align-items: center; }
+  .btn { background: var(--accent); color: #0d1117; border: none; border-radius: 6px; padding: 0.4rem 0.9rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: opacity 0.2s; }
+  .btn:hover { opacity: 0.85; }
+  .btn-outline { background: none; border: 1px solid var(--border); color: var(--text); }
+  .btn-danger { background: none; border: 1px solid var(--red); color: var(--red); }
+  .btn-danger:hover { background: #2d121422; }
+  .form-row { display: flex; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap; }
+  input[type=text], input[type=number], select {
+    background: #21262d; border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 0.4rem 0.75rem; font-size: 0.9rem; flex: 1; min-width: 120px;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); }
+  .empty { text-align: center; padding: 3rem; color: var(--muted); }
+  .empty .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+  .agent-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+  .agent-name { font-weight: 700; font-size: 1rem; }
+  .agent-model { color: var(--muted); font-size: 0.8rem; margin-left: 0.5rem; }
+  .metrics-row { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 0.75rem; font-size: 0.85rem; color: var(--muted); }
+  .metric { display: flex; flex-direction: column; gap: 2px; }
+  .metric strong { color: var(--text); font-size: 1rem; }
+  .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
+  .loading { color: var(--muted); font-size: 0.9rem; padding: 1rem; }
+  #toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: #238636; color: #fff; padding: 0.7rem 1.2rem; border-radius: 6px; font-size: 0.9rem; display: none; z-index: 999; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ JFYI Dashboard</h1>
+  <span>Just For Your Information — MCP Server &amp; Analytics Hub</span>
+  <span class="badge">v2.0</span>
+</header>
+<nav>
+  <button class="active" onclick="showTab('profile', this)">👤 Developer Profile</button>
+  <button onclick="showTab('analytics', this)">📊 Agent Friction Stats</button>
+  <button onclick="showTab('memory', this)">🧠 Memory Explorer</button>
+</nav>
+<main>
+  <!-- Profile Tab -->
+  <div id="tab-profile" class="tab active">
+    <div class="card">
+      <h2>Your Coding DNA</h2>
+      <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem;">
+        Rules JFYI has learned about your development style. These are automatically injected into your AI assistant's system prompt.
+      </p>
+      <div id="rules-list"><div class="loading">Loading rules…</div></div>
+      <hr style="border-color:var(--border);margin:1rem 0;" />
+      <h2 style="margin-bottom:0.5rem;">Add Rule Manually</h2>
+      <div class="form-row">
+        <input type="text" id="new-rule" placeholder="e.g. Prefers early returns over nested conditions" style="flex:3;" />
+        <select id="new-category">
+          <option value="general">general</option>
+          <option value="style">style</option>
+          <option value="architecture">architecture</option>
+          <option value="testing">testing</option>
+          <option value="docs">docs</option>
+        </select>
+        <input type="number" id="new-confidence" value="1.0" min="0" max="1" step="0.1" style="width:80px;flex:none;" />
+        <button class="btn" onclick="addRule()">Add Rule</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analytics Tab -->
+  <div id="tab-analytics" class="tab">
+    <div id="stats-summary" class="stat-grid"></div>
+    <div id="agent-grid" class="agent-grid"></div>
+  </div>
+
+  <!-- Memory Tab -->
+  <div id="tab-memory" class="tab">
+    <div class="card">
+      <h2>Friction Events Log</h2>
+      <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem;">
+        Raw friction events stored in the Persistent Volume. These represent moments where AI output required correction.
+      </p>
+      <div id="friction-log"><div class="loading">Loading events…</div></div>
+    </div>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+const API = '';
+
+function showTab(name, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'profile') loadRules();
+  if (name === 'analytics') loadAnalytics();
+  if (name === 'memory') loadMemory();
+}
+
+function toast(msg, ok=true) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.background = ok ? '#238636' : '#da3633';
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 2500);
+}
+
+// ── Profile Rules ──────────────────────────────────────────────────────────
+
+async function loadRules() {
+  const container = document.getElementById('rules-list');
+  try {
+    const rules = await fetch(API + '/api/profile/rules').then(r => r.json());
+    if (!rules.length) {
+      container.innerHTML = '<div class="empty"><div class="icon">🧬</div>No profile rules yet. JFYI is learning from your interactions.</div>';
+      return;
+    }
+    container.innerHTML = rules.map(r => `
+      <div class="rule-row" id="rule-${r.id}">
+        <div class="rule-text">
+          <span class="pill pill-${categoryColor(r.category)}">${escHtml(r.category)}</span>
+          <span style="margin-left:0.5rem;">${escHtml(r.rule)}</span>
+        </div>
+        <div class="rule-meta">
+          <span class="pill pill-blue" title="Confidence">${(r.confidence*100).toFixed(0)}%</span>
+          <span class="pill ${r.source==='manual'?'pill-purple':'pill-green'}">${escHtml(r.source)}</span>
+          <button class="btn btn-danger" onclick="deleteRule(${r.id})">×</button>
+        </div>
+      </div>`).join('');
+  } catch(e) { container.innerHTML = '<div class="empty">Failed to load rules.</div>'; }
+}
+
+function categoryColor(c) {
+  const map = {style:'orange', architecture:'purple', testing:'green', docs:'blue'};
+  return map[c] || 'blue';
+}
+
+async function addRule() {
+  const rule = document.getElementById('new-rule').value.trim();
+  if (!rule) return;
+  const category = document.getElementById('new-category').value;
+  const confidence = parseFloat(document.getElementById('new-confidence').value);
+  const res = await fetch(API + '/api/profile/rules', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({rule, category, confidence})
+  });
+  if (res.ok) { document.getElementById('new-rule').value=''; loadRules(); toast('Rule added!'); }
+  else toast('Failed to add rule', false);
+}
+
+async function deleteRule(id) {
+  if (!confirm('Delete this rule?')) return;
+  const res = await fetch(API + `/api/profile/rules/${id}`, {method:'DELETE'});
+  if (res.ok) { loadRules(); toast('Rule deleted'); }
+  else toast('Failed to delete rule', false);
+}
+
+// ── Analytics ──────────────────────────────────────────────────────────────
+
+async function loadAnalytics() {
+  const gridEl = document.getElementById('agent-grid');
+  const summaryEl = document.getElementById('stats-summary');
+  try {
+    const agents = await fetch(API + '/api/analytics/agents').then(r => r.json());
+    if (!agents.length) {
+      gridEl.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="icon">📊</div>No agent data yet. Record some interactions to see analytics.</div>';
+      summaryEl.innerHTML = '';
+      return;
+    }
+    const totalInteractions = agents.reduce((s,a) => s + a.total_interactions, 0);
+    const avgAlignment = agents.length ? (agents.reduce((s,a) => s + a.alignment_score, 0) / agents.length).toFixed(1) : 0;
+    const bestAgent = agents[0];
+    summaryEl.innerHTML = `
+      <div class="stat"><div class="value">${agents.length}</div><div class="label">Agents Tracked</div></div>
+      <div class="stat"><div class="value">${totalInteractions}</div><div class="label">Total Interactions</div></div>
+      <div class="stat"><div class="value">${avgAlignment}</div><div class="label">Avg Alignment Score</div></div>
+      <div class="stat"><div class="value">${bestAgent ? escHtml(bestAgent.name.substring(0,12)) : '—'}</div><div class="label">Best Aligned Agent</div></div>
+    `;
+    gridEl.innerHTML = agents.map(a => {
+      const alignColor = a.alignment_score >= 80 ? '#3fb950' : a.alignment_score >= 60 ? '#d29922' : '#f85149';
+      const corrColor = a.correction_rate_pct <= 20 ? '#3fb950' : a.correction_rate_pct <= 50 ? '#d29922' : '#f85149';
+      return `
+      <div class="agent-card">
+        <div><span class="agent-name">${escHtml(a.name)}</span>${a.model ? `<span class="agent-model">(${escHtml(a.model)})</span>` : ''}</div>
+        <div style="margin-top:0.75rem;">
+          <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:var(--muted);">
+            <span>Alignment Score</span><span style="color:${alignColor};font-weight:700;">${a.alignment_score.toFixed(1)}/100</span>
+          </div>
+          <div class="progress-bar" style="margin-top:6px;"><div class="progress-bar-fill" style="width:${a.alignment_score}%;background:${alignColor};"></div></div>
+        </div>
+        <div class="metrics-row">
+          <div class="metric"><strong>${a.total_interactions}</strong> interactions</div>
+          <div class="metric"><strong style="color:${corrColor}">${a.correction_rate_pct.toFixed(1)}%</strong> correction rate</div>
+          <div class="metric"><strong>${a.avg_correction_latency_s != null ? a.avg_correction_latency_s.toFixed(1)+'s' : '—'}</strong> avg latency</div>
+          <div class="metric"><strong>${a.avg_friction_score.toFixed(3)}</strong> friction</div>
+          <div class="metric"><strong>${a.sessions}</strong> sessions</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { gridEl.innerHTML = '<div class="empty">Failed to load analytics.</div>'; }
+}
+
+// ── Memory Explorer ────────────────────────────────────────────────────────
+
+async function loadMemory() {
+  const container = document.getElementById('friction-log');
+  try {
+    const events = await fetch(API + '/api/analytics/friction-events').then(r => r.json());
+    if (!events.length) {
+      container.innerHTML = '<div class="empty"><div class="icon">🧠</div>No friction events recorded yet.</div>';
+      return;
+    }
+    container.innerHTML = `<table>
+      <thead><tr><th>Time</th><th>Agent</th><th>Event</th><th>Description</th></tr></thead>
+      <tbody>${events.map(e => `
+        <tr>
+          <td style="color:var(--muted);white-space:nowrap;font-size:0.8rem;">${new Date(e.created_at).toLocaleString()}</td>
+          <td><span class="pill pill-blue">${escHtml(e.agent_name||'?')}</span></td>
+          <td><span class="pill pill-orange">${escHtml(e.event_type)}</span></td>
+          <td style="color:var(--muted);font-size:0.85rem;">${escHtml(e.description||'')}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  } catch(e) { container.innerHTML = '<div class="empty">Failed to load events.</div>'; }
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Initial load
+loadRules();
+</script>
+</body>
+</html>

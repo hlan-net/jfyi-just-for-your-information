@@ -1,0 +1,17 @@
+apiVersion: v2
+name: jfyi-mcp-server
+description: JFYI — Just For Your Information MCP Server & Analytics Hub
+type: application
+version: 1.0.0
+appVersion: "2.0.0"
+keywords:
+  - mcp
+  - ai
+  - analytics
+  - profiling
+home: https://github.com/hlan-net/jfyi-just-for-your-information
+sources:
+  - https://github.com/hlan-net/jfyi-just-for-your-information
+maintainers:
+  - name: hlan-net
+    url: https://github.com/hlan-net

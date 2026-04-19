@@ -1,0 +1,1 @@
+"""JFYI Web Dashboard package."""
