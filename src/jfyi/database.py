@@ -3,7 +3,7 @@
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -89,10 +89,11 @@ class Database:
         confidence: float = 1.0,
         source: str = "auto",
     ) -> int:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             cur = conn.execute(
-                "INSERT INTO profile_rules (rule, category, confidence, source, created_at, updated_at)"
+                "INSERT INTO profile_rules"
+                " (rule, category, confidence, source, created_at, updated_at)"
                 " VALUES (?, ?, ?, ?, ?, ?)",
                 (rule, category, confidence, source, now, now),
             )
@@ -112,10 +113,11 @@ class Database:
             return [dict(r) for r in rows]
 
     def update_rule(self, rule_id: int, rule: str, category: str, confidence: float) -> bool:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             cur = conn.execute(
-                "UPDATE profile_rules SET rule=?, category=?, confidence=?, updated_at=? WHERE id=?",
+                "UPDATE profile_rules"
+                " SET rule=?, category=?, confidence=?, updated_at=? WHERE id=?",
                 (rule, category, confidence, now, rule_id),
             )
             return cur.rowcount > 0
@@ -128,7 +130,7 @@ class Database:
     # ── Agents ─────────────────────────────────────────────────────────────
 
     def get_or_create_agent(self, name: str, model: str | None = None) -> int:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             row = conn.execute("SELECT id FROM agents WHERE name=?", (name,)).fetchone()
             if row:
@@ -156,7 +158,7 @@ class Database:
         friction_score: float = 0.0,
         metadata: dict | None = None,
     ) -> int:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             cur = conn.execute(
                 "INSERT INTO interactions"
@@ -185,7 +187,7 @@ class Database:
         context: dict | None = None,
         interaction_id: int | None = None,
     ) -> int:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             cur = conn.execute(
                 "INSERT INTO friction_events"

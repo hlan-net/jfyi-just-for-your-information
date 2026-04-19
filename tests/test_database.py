@@ -69,8 +69,12 @@ def test_record_interaction(db):
 
 def test_get_agent_stats(db):
     agent_id = db.get_or_create_agent("agent-a")
-    db.record_interaction(agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.6)
-    db.record_interaction(agent_id=agent_id, session_id="s2", was_corrected=False, friction_score=0.1)
+    db.record_interaction(
+        agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.6
+    )
+    db.record_interaction(
+        agent_id=agent_id, session_id="s2", was_corrected=False, friction_score=0.1
+    )
     stats = db.get_agent_stats()
     assert len(stats) == 1
     assert stats[0]["name"] == "agent-a"

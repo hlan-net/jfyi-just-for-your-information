@@ -105,7 +105,9 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
         ]
 
     @app.get("/api/analytics/friction-events")
-    async def get_friction_events(agent_id: int | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    async def get_friction_events(
+        agent_id: int | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         return db.get_friction_events(agent_id=agent_id, limit=limit)
 
     # ── Interaction recording API (mirrors MCP tool) ─────────────────────────

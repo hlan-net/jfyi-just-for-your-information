@@ -38,13 +38,13 @@ def serve(
     else:
         console.print(f"[cyan]Starting JFYI MCP server (SSE) on {host}:{port}…[/cyan]")
         import uvicorn
+
         from .web.app import create_app
 
         web_app = create_app(db, analytics)
 
         # Mount MCP SSE endpoint using raw ASGI to avoid private attribute access
         from mcp.server.sse import SseServerTransport
-        from starlette.routing import Route
         from starlette.types import Receive, Scope, Send
 
         from .server import build_mcp_server
@@ -53,7 +53,9 @@ def serve(
         sse_transport = SseServerTransport("/mcp/messages/")
 
         async def handle_sse(scope: Scope, receive: Receive, send: Send) -> None:
-            async with sse_transport.connect_sse(scope, receive, send) as (read_stream, write_stream):
+            async with sse_transport.connect_sse(  # noqa: E501
+                scope, receive, send
+            ) as (read_stream, write_stream):
                 from mcp.server.models import InitializationOptions
                 await mcp_server.run(
                     read_stream,

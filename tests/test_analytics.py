@@ -31,8 +31,12 @@ def test_friction_score_fast_correction_is_high(engine):
 
 
 def test_friction_score_edit_volume(engine):
-    score_no_edits, _ = engine.compute_friction_score(was_corrected=False, correction_latency_s=None, num_edits=0)
-    score_many_edits, _ = engine.compute_friction_score(was_corrected=False, correction_latency_s=None, num_edits=10)
+    score_no_edits, _ = engine.compute_friction_score(
+        was_corrected=False, correction_latency_s=None, num_edits=0
+    )
+    score_many_edits, _ = engine.compute_friction_score(
+        was_corrected=False, correction_latency_s=None, num_edits=10
+    )
     assert score_many_edits > score_no_edits
 
 

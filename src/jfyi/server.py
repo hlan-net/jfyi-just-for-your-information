@@ -14,7 +14,6 @@ from mcp.types import (
 )
 
 from .analytics import AnalyticsEngine
-from .config import settings
 from .database import Database
 
 
@@ -39,7 +38,10 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
                     "properties": {
                         "category": {
                             "type": "string",
-                            "description": "Filter rules by category (e.g. 'style', 'architecture'). Omit for all.",
+                            "description": (
+                                "Filter rules by category (e.g. 'style', 'architecture')."
+                                " Omit for all."
+                            ),
                         }
                     },
                 },
@@ -56,9 +58,15 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
                     "properties": {
                         "agent_name": {
                             "type": "string",
-                            "description": "Name/ID of the AI agent (e.g. 'claude-3-7-sonnet', 'gpt-4o').",
+                            "description": (
+                                "Name/ID of the AI agent"
+                                " (e.g. 'claude-3-7-sonnet', 'gpt-4o')."
+                            ),
                         },
-                        "prompt": {"type": "string", "description": "The prompt sent to the agent."},
+                        "prompt": {
+                            "type": "string",
+                            "description": "The prompt sent to the agent.",
+                        },
                         "response": {"type": "string", "description": "The agent's response."},
                         "session_id": {
                             "type": "string",
@@ -101,7 +109,10 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
                         "rule": {"type": "string", "description": "The rule text."},
                         "category": {
                             "type": "string",
-                            "description": "Rule category (e.g. 'style', 'architecture', 'testing').",
+                            "description": (
+                                "Rule category"
+                                " (e.g. 'style', 'architecture', 'testing')."
+                            ),
                         },
                         "confidence": {
                             "type": "number",
@@ -118,11 +129,15 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
             category = arguments.get("category")
             rules = db.get_rules(category=category)
             if not rules:
-                return [TextContent(type="text", text="No profile rules found yet. JFYI is still learning.")]
+                return [TextContent(
+                    type="text",
+                    text="No profile rules found yet. JFYI is still learning.",
+                )]
             lines = [f"## Developer Profile Rules ({len(rules)} total)\n"]
             for r in rules:
                 lines.append(
-                    f"- [{r['category']}] {r['rule']} (confidence: {r['confidence']:.0%}, source: {r['source']})"
+                    f"- [{r['category']}] {r['rule']}"
+                    f" (confidence: {r['confidence']:.0%}, source: {r['source']})"
                 )
             return [TextContent(type="text", text="\n".join(lines))]
 
@@ -154,15 +169,22 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
         elif name == "get_agent_analytics":
             profiles = analytics.get_agent_profiles()
             if not profiles:
-                return [TextContent(type="text", text="No agent analytics yet. Record some interactions first.")]
+                return [TextContent(
+                    type="text",
+                    text="No agent analytics yet. Record some interactions first.",
+                )]
             lines = ["## Agent Performance Analytics\n"]
             for p in sorted(profiles, key=lambda x: x.alignment_score, reverse=True):
                 lines.append(f"### {p.name}" + (f" ({p.model})" if p.model else ""))
                 lines.append(f"- Interactions: {p.total_interactions} across {p.sessions} sessions")
                 lines.append(f"- Correction Rate: {p.correction_rate_pct:.1f}%")
                 lines.append(
-                    f"- Avg Correction Latency: "
-                    + (f"{p.avg_correction_latency_s:.1f}s" if p.avg_correction_latency_s else "N/A")
+                    "- Avg Correction Latency: "
+                    + (
+                        f"{p.avg_correction_latency_s:.1f}s"
+                        if p.avg_correction_latency_s
+                        else "N/A"
+                    )
                 )
                 lines.append(f"- Avg Friction Score: {p.avg_friction_score:.3f}")
                 lines.append(f"- **Architecture Alignment Score: {p.alignment_score:.1f}/100**\n")

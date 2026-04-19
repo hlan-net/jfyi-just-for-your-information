@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ class FrictionScore:
     session_id: str
     score: float  # 0.0 (no friction) to 1.0 (max friction)
     factors: dict[str, float] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
@@ -127,9 +127,11 @@ class AnalyticsEngine:
             self._db.add_friction_event(
                 agent_id=agent_id,
                 event_type="correction",
-                description=f"Output corrected after {correction_latency_s:.1f}s"
-                if correction_latency_s
-                else "Output corrected",
+                description=(
+                    f"Output corrected after {correction_latency_s:.1f}s"
+                    if correction_latency_s is not None
+                    else "Output corrected"
+                ),
                 context={"factors": factors, "friction_score": friction_score},
                 interaction_id=interaction_id,
             )

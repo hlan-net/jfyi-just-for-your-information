@@ -90,7 +90,13 @@ def test_get_agent_analytics_after_interaction(client):
 def test_get_friction_events(client):
     client.post(
         "/api/interactions",
-        json={"agent_name": "agent-b", "prompt": "p", "response": "r", "was_corrected": True, "correction_latency_s": 15.0},
+        json={
+            "agent_name": "agent-b",
+            "prompt": "p",
+            "response": "r",
+            "was_corrected": True,
+            "correction_latency_s": 15.0,
+        },
     )
     resp = client.get("/api/analytics/friction-events")
     assert resp.status_code == 200
