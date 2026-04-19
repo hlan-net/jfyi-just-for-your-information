@@ -1,0 +1,57 @@
+# Default values for jfyi-mcp-server
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/hlan-net/jfyi-just-for-your-information
+  pullPolicy: IfNotPresent
+  tag: "2.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  mcpPort: 8080
+  dashboardPort: 3000
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 2Gi
+  mountPath: /data
+
+env:
+  JFYI_DATA_DIR: /data
+  JFYI_DB_PATH: /data/jfyi.db
+  JFYI_VECTOR_DB_PATH: /data/chromadb
+  JFYI_MCP_PORT: "8080"
+  JFYI_DASHBOARD_PORT: "3000"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+livenessProbe:
+  httpGet:
+    path: /api/profile/rules
+    port: 8080
+  initialDelaySeconds: 15
+  periodSeconds: 30
+
+readinessProbe:
+  httpGet:
+    path: /api/profile/rules
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
