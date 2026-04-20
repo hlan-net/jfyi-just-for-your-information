@@ -5,13 +5,17 @@ metadata:
   name: {{ include "jfyi-mcp-server.fullname" . }}-data
   labels:
     {{- include "jfyi-mcp-server.labels" . | nindent 4 }}
+  {{- with .Values.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   accessModes:
     - {{ .Values.persistence.accessMode }}
   resources:
     requests:
       storage: {{ .Values.persistence.size }}
-  {{- if .Values.persistence.storageClass }}
-  storageClassName: {{ .Values.persistence.storageClass }}
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . }}
   {{- end }}
 {{- end }}
