@@ -4,6 +4,10 @@ metadata:
   name: {{ include "jfyi-mcp-server.fullname" . }}-service
   labels:
     {{- include "jfyi-mcp-server.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -11,9 +15,5 @@ spec:
       targetPort: mcp
       protocol: TCP
       name: mcp
-    - port: {{ .Values.service.dashboardPort }}
-      targetPort: dashboard
-      protocol: TCP
-      name: dashboard
   selector:
     {{- include "jfyi-mcp-server.selectorLabels" . | nindent 4 }}

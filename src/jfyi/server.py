@@ -17,6 +17,90 @@ from .analytics import AnalyticsEngine
 from .database import Database
 
 
+async def dispatch_tool(
+    name: str,
+    arguments: dict[str, Any],
+    db: Database,
+    analytics: AnalyticsEngine,
+) -> list[TextContent]:
+    """Execute a JFYI tool by name. Shared by the MCP server handler and tests."""
+    if name == "get_developer_profile":
+        category = arguments.get("category")
+        rules = db.get_rules(category=category)
+        if not rules:
+            return [TextContent(
+                type="text",
+                text="No profile rules found yet. JFYI is still learning.",
+            )]
+        lines = [f"## Developer Profile Rules ({len(rules)} total)\n"]
+        for r in rules:
+            lines.append(
+                f"- [{r['category']}] {r['rule']}"
+                f" (confidence: {r['confidence']:.0%}, source: {r['source']})"
+            )
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    elif name == "record_interaction":
+        session_id = arguments.get("session_id") or str(uuid.uuid4())
+        friction = analytics.record_interaction(
+            agent_name=arguments["agent_name"],
+            session_id=session_id,
+            prompt=arguments["prompt"],
+            response=arguments["response"],
+            was_corrected=arguments.get("was_corrected", False),
+            correction_latency_s=arguments.get("correction_latency_s"),
+            num_edits=arguments.get("num_edits", 0),
+            model=arguments.get("model"),
+        )
+        return [
+            TextContent(
+                type="text",
+                text=(
+                    f"Interaction recorded.\n"
+                    f"Agent: {friction.agent_name}\n"
+                    f"Session: {friction.session_id}\n"
+                    f"Friction Score: {friction.score:.3f}\n"
+                    f"Factors: {json.dumps(friction.factors, indent=2)}"
+                ),
+            )
+        ]
+
+    elif name == "get_agent_analytics":
+        profiles = analytics.get_agent_profiles()
+        if not profiles:
+            return [TextContent(
+                type="text",
+                text="No agent analytics yet. Record some interactions first.",
+            )]
+        lines = ["## Agent Performance Analytics\n"]
+        for p in sorted(profiles, key=lambda x: x.alignment_score, reverse=True):
+            lines.append(f"### {p.name}" + (f" ({p.model})" if p.model else ""))
+            lines.append(f"- Interactions: {p.total_interactions} across {p.sessions} sessions")
+            lines.append(f"- Correction Rate: {p.correction_rate_pct:.1f}%")
+            lines.append(
+                "- Avg Correction Latency: "
+                + (
+                    f"{p.avg_correction_latency_s:.1f}s"
+                    if p.avg_correction_latency_s
+                    else "N/A"
+                )
+            )
+            lines.append(f"- Avg Friction Score: {p.avg_friction_score:.3f}")
+            lines.append(f"- **Architecture Alignment Score: {p.alignment_score:.1f}/100**\n")
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    elif name == "add_profile_rule":
+        rule_id = db.add_rule(
+            rule=arguments["rule"],
+            category=arguments.get("category", "general"),
+            confidence=arguments.get("confidence", 1.0),
+            source="manual",
+        )
+        return [TextContent(type="text", text=f"Rule added (id={rule_id}).")]
+
+    return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+
 def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
     """Build and configure the MCP server with all JFYI tools."""
 
@@ -125,82 +209,7 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        if name == "get_developer_profile":
-            category = arguments.get("category")
-            rules = db.get_rules(category=category)
-            if not rules:
-                return [TextContent(
-                    type="text",
-                    text="No profile rules found yet. JFYI is still learning.",
-                )]
-            lines = [f"## Developer Profile Rules ({len(rules)} total)\n"]
-            for r in rules:
-                lines.append(
-                    f"- [{r['category']}] {r['rule']}"
-                    f" (confidence: {r['confidence']:.0%}, source: {r['source']})"
-                )
-            return [TextContent(type="text", text="\n".join(lines))]
-
-        elif name == "record_interaction":
-            session_id = arguments.get("session_id") or str(uuid.uuid4())
-            friction = analytics.record_interaction(
-                agent_name=arguments["agent_name"],
-                session_id=session_id,
-                prompt=arguments["prompt"],
-                response=arguments["response"],
-                was_corrected=arguments.get("was_corrected", False),
-                correction_latency_s=arguments.get("correction_latency_s"),
-                num_edits=arguments.get("num_edits", 0),
-                model=arguments.get("model"),
-            )
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        f"Interaction recorded.\n"
-                        f"Agent: {friction.agent_name}\n"
-                        f"Session: {friction.session_id}\n"
-                        f"Friction Score: {friction.score:.3f}\n"
-                        f"Factors: {json.dumps(friction.factors, indent=2)}"
-                    ),
-                )
-            ]
-
-        elif name == "get_agent_analytics":
-            profiles = analytics.get_agent_profiles()
-            if not profiles:
-                return [TextContent(
-                    type="text",
-                    text="No agent analytics yet. Record some interactions first.",
-                )]
-            lines = ["## Agent Performance Analytics\n"]
-            for p in sorted(profiles, key=lambda x: x.alignment_score, reverse=True):
-                lines.append(f"### {p.name}" + (f" ({p.model})" if p.model else ""))
-                lines.append(f"- Interactions: {p.total_interactions} across {p.sessions} sessions")
-                lines.append(f"- Correction Rate: {p.correction_rate_pct:.1f}%")
-                lines.append(
-                    "- Avg Correction Latency: "
-                    + (
-                        f"{p.avg_correction_latency_s:.1f}s"
-                        if p.avg_correction_latency_s
-                        else "N/A"
-                    )
-                )
-                lines.append(f"- Avg Friction Score: {p.avg_friction_score:.3f}")
-                lines.append(f"- **Architecture Alignment Score: {p.alignment_score:.1f}/100**\n")
-            return [TextContent(type="text", text="\n".join(lines))]
-
-        elif name == "add_profile_rule":
-            rule_id = db.add_rule(
-                rule=arguments["rule"],
-                category=arguments.get("category", "general"),
-                confidence=arguments.get("confidence", 1.0),
-                source="manual",
-            )
-            return [TextContent(type="text", text=f"Rule added (id={rule_id}).")]
-
-        else:
-            return [TextContent(type="text", text=f"Unknown tool: {name}")]
+        return await dispatch_tool(name, arguments, db, analytics)
 
     return server
 

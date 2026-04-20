@@ -2,7 +2,7 @@
 
 ![Docker Image Version](https://img.shields.io/github/v/release/hlan-net/jfyi-just-for-your-information?label=GHCR%20Image)
 ![Helm Chart](https://img.shields.io/badge/Helm-Chart_v1.0.0-blue.svg)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
+![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 
 JFYI is an advanced, passive Model Context Protocol (MCP) server and analytics platform. It introduces Profile-Guided Optimization (PGO) to AI-assisted software development.
 
@@ -23,25 +23,24 @@ Instead of manually teaching your AI assistant, JFYI runs as a continuous backgr
 JFYI is deployed as a Kubernetes-native service consisting of:
 1. **MCP Server API:** The standard `stdio` or `SSE/HTTP` interface for your IDEs.
 2. **Analytics Engine:** Processes interaction telemetry and calculates agent friction scores.
-3. **Web Dashboard:** A React-based UI served directly from the container.
-4. **Persistent State:** SQLite and Vector DB stored on a Persistent Volume Claim (PVC) to guarantee data survival across pod restarts.
+3. **Web Dashboard:** A vanilla HTML/CSS/JS single-page app served by FastAPI from the same container — no build step required.
+4. **Persistent State:** SQLite stored on a Persistent Volume Claim (PVC) to guarantee data survival across pod restarts. Vector search (ChromaDB + sentence-transformers) is an optional extra (`pip install jfyi-mcp-server[vector]`).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    JFYI Container (Port 8080/3000)               │
-│                                                                   │
+│                    JFYI Container (Port 8080)                   │
+│                                                                 │
 │  ┌─────────────────┐    ┌──────────────────┐    ┌─────────────┐ │
-│  │   MCP Server    │    │ Analytics Engine  │    │ Web Dashboard│ │
-│  │  (stdio/SSE)    │───▶│  (Friction Calc) │    │  (Port 3000) │ │
-│  │   Port 8080     │    │                  │    │             │ │
+│  │   MCP Server    │    │ Analytics Engine │    │ Web Dashboard│ │
+│  │  (stdio/SSE)    │───▶│  (Friction Calc) │    │   (FastAPI)  │ │
 │  └─────────────────┘    └──────────────────┘    └─────────────┘ │
-│           │                      │                      │        │
-│           └──────────────────────┴──────────────────────┘        │
-│                                  │                                │
-│                    ┌─────────────────────────┐                   │
-│                    │   Persistent Storage     │                   │
-│                    │  SQLite + ChromaDB (PVC) │                   │
-│                    └─────────────────────────┘                   │
+│           │                      │                      │       │
+│           └──────────────────────┴──────────────────────┘       │
+│                                  │                              │
+│                    ┌─────────────────────────┐                  │
+│                    │   Persistent Storage    │                  │
+│                    │   SQLite (PVC, /data)   │                  │
+│                    └─────────────────────────┘                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -67,10 +66,10 @@ Once deployed, you need to expose the MCP server to your local development envir
 
 ### 1. Port-Forwarding
 
-Forward the MCP and UI ports to your local machine:
+Forward the MCP + dashboard port to your local machine:
 
 ```bash
-kubectl port-forward svc/my-jfyi-service 8080:8080 3000:3000 -n jfyi-system
+kubectl port-forward svc/my-jfyi-service 8080:8080 -n jfyi-system
 ```
 
 ### 2. Connect your AI Assistant
@@ -90,7 +89,7 @@ Add the JFYI server to your client's MCP configuration (e.g., `claude_desktop_co
 
 ## 📊 Using the Web Dashboard
 
-JFYI comes with a rich UI for managing the bidirectional profiling. Access the dashboard at `http://localhost:3000`.
+JFYI comes with a rich UI for managing the bidirectional profiling. The MCP server and dashboard share a single port — access the dashboard at `http://localhost:8080/`.
 
 The UI features three main views:
 
@@ -117,8 +116,11 @@ jfyi serve --host 0.0.0.0 --port 8080
 # Run with stdio (for IDE direct integration)
 jfyi serve --transport stdio
 
-# Run dashboard only
+# Run dashboard only (no MCP server)
 jfyi dashboard --port 3000
+
+# Enable optional vector search (ChromaDB + sentence-transformers)
+pip install -e ".[vector]"
 ```
 
 ## 📦 Docker

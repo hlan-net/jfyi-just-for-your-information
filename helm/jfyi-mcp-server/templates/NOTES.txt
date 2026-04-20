@@ -1,0 +1,50 @@
+JFYI MCP Server has been deployed.
+
+Release:     {{ .Release.Name }}
+Namespace:   {{ .Release.Namespace }}
+Chart:       {{ .Chart.Name }}-{{ .Chart.Version }}
+App version: {{ .Chart.AppVersion }}
+
+1. Access the dashboard + MCP server:
+
+{{- if .Values.ingress.enabled }}
+   Ingress is enabled. Browse to:
+  {{- range $host := .Values.ingress.hosts }}
+    {{- range .paths }}
+     http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+    {{- end }}
+  {{- end }}
+
+{{- else if contains "NodePort" .Values.service.type }}
+   export NODE_PORT=$(kubectl get svc -n {{ .Release.Namespace }} {{ include "jfyi-mcp-server.fullname" . }}-service -o jsonpath="{.spec.ports[0].nodePort}")
+   export NODE_IP=$(kubectl get nodes -o jsonpath="{.items[0].status.addresses[0].address}")
+   echo "http://$NODE_IP:$NODE_PORT"
+
+{{- else if contains "LoadBalancer" .Values.service.type }}
+   Wait for the external IP:
+     kubectl get svc -n {{ .Release.Namespace }} {{ include "jfyi-mcp-server.fullname" . }}-service --watch
+
+{{- else }}
+   kubectl port-forward -n {{ .Release.Namespace }} \
+     svc/{{ include "jfyi-mcp-server.fullname" . }}-service \
+     8080:{{ .Values.service.mcpPort }}
+
+   Then open http://localhost:8080/ for the dashboard, or point your MCP
+   client at http://localhost:8080/mcp/sse.
+{{- end }}
+
+2. Verify the deployment is healthy:
+
+   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+3. Tail logs:
+
+   kubectl logs -n {{ .Release.Namespace }} \
+     -l app.kubernetes.io/instance={{ .Release.Name }} -f
+
+{{- if not .Values.persistence.enabled }}
+
+WARNING: persistence.enabled=false — the SQLite store uses an emptyDir and
+will be wiped when the pod restarts. Set persistence.enabled=true for any
+non-throwaway deployment.
+{{- end }}

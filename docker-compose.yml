@@ -7,15 +7,12 @@ services:
     container_name: jfyi-mcp-server
     ports:
       - "8080:8080"
-      - "3000:3000"
     volumes:
       - jfyi-data:/data
     environment:
       JFYI_DATA_DIR: /data
       JFYI_DB_PATH: /data/jfyi.db
-      JFYI_VECTOR_DB_PATH: /data/chromadb
       JFYI_MCP_PORT: "8080"
-      JFYI_DASHBOARD_PORT: "3000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/profile/rules')"]
