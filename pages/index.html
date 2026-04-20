@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>JFYI — Just For Your Information</title>
+<meta name="description" content="Passive MCP server and analytics hub with Profile-Guided Optimization." />
+<link rel="icon" href="data:," />
+<style>
+  :root {
+    --bg: #0e1116;
+    --fg: #e6edf3;
+    --muted: #8b949e;
+    --accent: #7ee787;
+    --card: #161b22;
+    --border: #30363d;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --accent: #1a7f37; --card: #f6f8fa; --border: #d0d7de; }
+  }
+  * { box-sizing: border-box }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  main { max-width: 820px; margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+  h1 { font-size: 2.4rem; margin: 0 0 .25rem; letter-spacing: -0.02em; }
+  h2 { font-size: 1.25rem; margin: 2.5rem 0 .75rem; }
+  p { color: var(--fg); }
+  .tagline { color: var(--muted); font-size: 1.1rem; margin-top: 0; }
+  .pill { display: inline-block; padding: 2px 10px; border: 1px solid var(--border);
+    border-radius: 999px; color: var(--muted); font-size: .85rem; margin-right: .4rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1rem; overflow-x: auto; font-size: .9rem; }
+  code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem; margin: 1rem 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1rem 1.1rem; }
+  .card h3 { margin: 0 0 .25rem; font-size: 1rem; }
+  .card p { color: var(--muted); margin: 0; font-size: .9rem; }
+  footer { margin-top: 4rem; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>JFYI</h1>
+  <p class="tagline"><em>Just For Your Information</em> — a passive MCP server and analytics hub with Profile-Guided Optimization.</p>
+
+  <p>
+    <span class="pill">MCP</span>
+    <span class="pill">FastAPI</span>
+    <span class="pill">SQLite</span>
+    <span class="pill">Apache-2.0</span>
+  </p>
+
+  <h2>What it does</h2>
+  <p>JFYI passively collects interaction traces from your agents and tools, scores friction in real time, and feeds profile-guided hints back through MCP. It ships with a dashboard, a REST API, and a Helm chart for Kubernetes.</p>
+
+  <h2>Quickstart</h2>
+  <pre><code># Docker
+docker run -p 8080:8080 ghcr.io/hlan-net/jfyi-just-for-your-information:latest
+
+# Helm
+helm repo add jfyi https://jfyi.hlan.net/charts
+helm repo update
+helm install my-jfyi jfyi/jfyi-mcp-server \
+  --namespace jfyi-system --create-namespace \
+  --set persistence.size=2Gi</code></pre>
+
+  <h2>Explore</h2>
+  <div class="cards">
+    <a class="card" href="https://github.com/hlan-net/jfyi-just-for-your-information">
+      <h3>Source &rarr;</h3>
+      <p>GitHub repository, issues, discussions.</p>
+    </a>
+    <a class="card" href="https://github.com/hlan-net/jfyi-just-for-your-information/pkgs/container/jfyi-just-for-your-information">
+      <h3>Container image &rarr;</h3>
+      <p>Multi-arch image on GHCR.</p>
+    </a>
+    <a class="card" href="https://github.com/hlan-net/jfyi-just-for-your-information/tree/main/helm/jfyi-mcp-server">
+      <h3>Helm chart &rarr;</h3>
+      <p>Hardened Pod Security Standard restricted profile.</p>
+    </a>
+    <a class="card" href="https://github.com/hlan-net/jfyi-just-for-your-information#api">
+      <h3>API reference &rarr;</h3>
+      <p>REST endpoints mirroring MCP tools.</p>
+    </a>
+  </div>
+
+  <footer>
+    Licensed under Apache-2.0. Not affiliated with any AI vendor.
+  </footer>
+</main>
+</body>
+</html>
