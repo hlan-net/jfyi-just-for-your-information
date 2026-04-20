@@ -61,16 +61,11 @@
   <pre><code># Container (multi-arch: linux/amd64, linux/arm64)
 docker run -p 8080:8080 ghcr.io/hlan-net/jfyi-just-for-your-information:latest
 
-# Helm chart (OCI)
+# Helm chart (OCI, Helm 3.8+)
 helm install my-jfyi \
   oci://ghcr.io/hlan-net/charts/jfyi-mcp-server \
   --namespace jfyi-system --create-namespace \
-  --set persistence.size=2Gi
-
-# or, HTTP mirror
-helm repo add jfyi https://jfyi.hlan.net/charts
-helm repo update
-helm install my-jfyi jfyi/jfyi-mcp-server</code></pre>
+  --set persistence.size=2Gi</code></pre>
 
   <h2>Explore</h2>
   <div class="cards">

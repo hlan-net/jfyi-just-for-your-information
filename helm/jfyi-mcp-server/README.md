@@ -4,7 +4,7 @@ Helm chart for [JFYI](https://github.com/hlan-net/jfyi-just-for-your-information
 
 ## TL;DR
 
-Install straight from the OCI registry (recommended, Helm 3.8+):
+Install from the OCI registry on GHCR (Helm 3.8+):
 
 ```bash
 helm install my-jfyi \
@@ -13,15 +13,9 @@ helm install my-jfyi \
   --set persistence.size=2Gi
 ```
 
-Or via the HTTP mirror:
-
-```bash
-helm repo add jfyi https://jfyi.hlan.net/charts
-helm repo update
-helm install my-jfyi jfyi/jfyi-mcp-server \
-  --namespace jfyi-system --create-namespace \
-  --set persistence.size=2Gi
-```
+Pin a specific chart version with `--version <x.y.z>`. See the package listing
+under [GHCR → charts/jfyi-mcp-server](https://github.com/hlan-net/jfyi-just-for-your-information/pkgs/container/charts%2Fjfyi-mcp-server)
+for available versions.
 
 Then port-forward and open the dashboard:
 

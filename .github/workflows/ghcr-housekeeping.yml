@@ -1,0 +1,114 @@
+name: GHCR Housekeeping
+
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+    inputs:
+      keep_count:
+        description: 'How many recent non-release versions to keep per image'
+        required: false
+        default: '5'
+      dry_run:
+        description: 'Set to true to preview deletions without deleting'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old non-release GHCR versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          KEEP_COUNT_INPUT: ${{ github.event.inputs.keep_count }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          KEEP_COUNT="${KEEP_COUNT_INPUT:-5}"
+          DRY_RUN="${DRY_RUN_INPUT:-false}"
+
+          if ! [[ "$KEEP_COUNT" =~ ^[0-9]+$ ]]; then
+            echo "Invalid keep_count '$KEEP_COUNT' (must be integer)"
+            exit 1
+          fi
+
+          # Container + OCI Helm chart packages in GHCR for this repository.
+          # Nested names (e.g. charts/jfyi-mcp-server) must be URL-encoded.
+          PACKAGES=("jfyi-just-for-your-information" "charts%2Fjfyi-mcp-server")
+
+          get_versions() {
+            local package_name="$1"
+
+            # Try org endpoint first, then user endpoint for personal repos.
+            if gh api --silent "/orgs/$OWNER/packages/container/$package_name/versions?per_page=100" >/dev/null 2>&1; then
+              gh api --paginate "/orgs/$OWNER/packages/container/$package_name/versions?per_page=100" | jq -s 'add'
+            else
+              gh api --paginate "/users/$OWNER/packages/container/$package_name/versions?per_page=100" | jq -s 'add'
+            fi
+          }
+
+          delete_version() {
+            local package_name="$1"
+            local version_id="$2"
+
+            if gh api --silent -X DELETE "/orgs/$OWNER/packages/container/$package_name/versions/$version_id" >/dev/null 2>&1; then
+              return 0
+            fi
+
+            gh api -X DELETE "/users/$OWNER/packages/container/$package_name/versions/$version_id" >/dev/null
+          }
+
+          for package_name in "${PACKAGES[@]}"; do
+            echo "=== Processing package: $package_name ==="
+
+            versions_json="$(get_versions "$package_name")"
+            total_count="$(jq 'length' <<< "$versions_json")"
+            echo "Total versions found: $total_count"
+
+            # Keep release versions forever:
+            # - any tag like x.y.z (stable release)
+            # Keep build cache tags too.
+            # Everything else is treated as CI/non-release and eligible for trimming.
+            deletable_ids="$(
+              jq -r --argjson keep "$KEEP_COUNT" '
+                [ .[]
+                  | . as $v
+                  | ($v.metadata.container.tags // []) as $tags
+                  | {
+                      id: $v.id,
+                      created_at: $v.created_at,
+                      tags: $tags,
+                      is_release: ([$tags[]? | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")] | any),
+                      is_buildcache: ([$tags[]? | test("^buildcache$")] | any)
+                    }
+                  | select((.is_release | not) and (.is_buildcache | not))
+                ]
+                | sort_by(.created_at) | reverse
+                | .[$keep:][]?.id
+              ' <<< "$versions_json"
+            )"
+
+            if [[ -z "$deletable_ids" ]]; then
+              echo "No old non-release versions to delete for $package_name"
+              continue
+            fi
+
+            delete_count="$(wc -w <<< "$deletable_ids" | tr -d ' ')"
+            echo "Non-release versions to delete: $delete_count"
+
+            for version_id in $deletable_ids; do
+              if [[ "$DRY_RUN" == "true" ]]; then
+                echo "[dry-run] Would delete $package_name version id=$version_id"
+              else
+                echo "Deleting $package_name version id=$version_id"
+                delete_version "$package_name" "$version_id"
+              fi
+            done
+          done
