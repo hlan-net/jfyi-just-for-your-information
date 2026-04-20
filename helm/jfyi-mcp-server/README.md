@@ -4,8 +4,19 @@ Helm chart for [JFYI](https://github.com/hlan-net/jfyi-just-for-your-information
 
 ## TL;DR
 
+Install straight from the OCI registry (recommended, Helm 3.8+):
+
 ```bash
-helm repo add jfyi https://hlan-net.github.io/jfyi-just-for-your-information/charts
+helm install my-jfyi \
+  oci://ghcr.io/hlan-net/charts/jfyi-mcp-server \
+  --namespace jfyi-system --create-namespace \
+  --set persistence.size=2Gi
+```
+
+Or via the HTTP mirror:
+
+```bash
+helm repo add jfyi https://jfyi.hlan.net/charts
 helm repo update
 helm install my-jfyi jfyi/jfyi-mcp-server \
   --namespace jfyi-system --create-namespace \

@@ -58,15 +58,19 @@
   <p>JFYI passively collects interaction traces from your agents and tools, scores friction in real time, and feeds profile-guided hints back through MCP. It ships with a dashboard, a REST API, and a Helm chart for Kubernetes.</p>
 
   <h2>Quickstart</h2>
-  <pre><code># Docker
+  <pre><code># Container (multi-arch: linux/amd64, linux/arm64)
 docker run -p 8080:8080 ghcr.io/hlan-net/jfyi-just-for-your-information:latest
 
-# Helm
+# Helm chart (OCI)
+helm install my-jfyi \
+  oci://ghcr.io/hlan-net/charts/jfyi-mcp-server \
+  --namespace jfyi-system --create-namespace \
+  --set persistence.size=2Gi
+
+# or, HTTP mirror
 helm repo add jfyi https://jfyi.hlan.net/charts
 helm repo update
-helm install my-jfyi jfyi/jfyi-mcp-server \
-  --namespace jfyi-system --create-namespace \
-  --set persistence.size=2Gi</code></pre>
+helm install my-jfyi jfyi/jfyi-mcp-server</code></pre>
 
   <h2>Explore</h2>
   <div class="cards">
