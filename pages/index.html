@@ -59,7 +59,7 @@
 
   <h2>Quickstart</h2>
   <pre><code># Container (multi-arch: linux/amd64, linux/arm64)
-docker run -p 8080:8080 ghcr.io/hlan-net/jfyi-just-for-your-information:latest
+docker run -p 8080:8080 -v jfyi-data:/data ghcr.io/hlan-net/jfyi-just-for-your-information:latest
 
 # Helm chart (OCI, Helm 3.8+)
 helm install my-jfyi \
@@ -81,7 +81,7 @@ helm install my-jfyi \
       <h3>Helm chart &rarr;</h3>
       <p>Hardened Pod Security Standard restricted profile.</p>
     </a>
-    <a class="card" href="https://github.com/hlan-net/jfyi-just-for-your-information#api">
+    <a class="card" href="https://github.com/hlan-net/jfyi-just-for-your-information#%EF%B8%8F-architecture">
       <h3>API reference &rarr;</h3>
       <p>REST endpoints mirroring MCP tools.</p>
     </a>

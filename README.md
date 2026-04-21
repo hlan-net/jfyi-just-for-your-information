@@ -48,17 +48,16 @@ JFYI is deployed as a Kubernetes-native service consisting of:
 
 JFYI is published and hosted on the GitHub Container Registry (GHCR). The recommended way to install it locally (e.g., Minikube, Docker Desktop, K3s) or on a remote cluster is via Helm.
 
-```bash
-# 1. Add the JFYI Helm repository
-helm repo add jfyi https://hlan-net.github.io/jfyi-just-for-your-information/charts
-helm repo update
+Install from the OCI registry on GHCR (Helm 3.8+):
 
-# 2. Install the chart with Persistent Volume enabled
-helm install my-jfyi jfyi/jfyi-mcp-server \
-  --set persistence.enabled=true \
-  --set persistence.size=2Gi \
-  --namespace jfyi-system --create-namespace
+```bash
+helm install my-jfyi \
+  oci://ghcr.io/hlan-net/charts/jfyi-mcp-server \
+  --namespace jfyi-system --create-namespace \
+  --set persistence.size=2Gi
 ```
+
+Pin a specific chart version with `--version <x.y.z>`. See the [GHCR package listing](https://github.com/hlan-net/jfyi-just-for-your-information/pkgs/container/charts%2Fjfyi-mcp-server) for available versions.
 
 ## ⚙️ Client Configuration (IDE Setup)
 
