@@ -39,6 +39,17 @@
     padding: 1rem 1.1rem; }
   .card h3 { margin: 0 0 .25rem; font-size: 1rem; }
   .card p { color: var(--muted); margin: 0; font-size: .9rem; }
+  .phase { border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: .75rem; }
+  .phase-label { font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 .35rem; }
+  .phase h3 { margin: 0 0 .5rem; font-size: 1rem; }
+  .phase ul { margin: 0; padding-left: 1.25rem; }
+  .phase ul li { color: var(--muted); font-size: .9rem; margin-bottom: .2rem; }
+  .phase ul li a { color: var(--muted); }
+  .phase ul li a:hover { color: var(--accent); }
+  .status-planned { display: inline-block; padding: 1px 8px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 999px; font-size: .75rem; color: var(--muted);
+    vertical-align: middle; margin-left: .5rem; }
   footer { margin-top: 4rem; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: 1rem; }
 </style>
 </head>
@@ -85,6 +96,66 @@ helm install my-jfyi \
       <h3>API reference &rarr;</h3>
       <p>REST endpoints mirroring MCP tools.</p>
     </a>
+    <a class="card" href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/ROADMAP.md">
+      <h3>Roadmap &rarr;</h3>
+      <p>Planned context-efficiency improvements across three phases.</p>
+    </a>
+    <a class="card" href="https://github.com/hlan-net/jfyi-just-for-your-information/tree/main/docs">
+      <h3>Docs &rarr;</h3>
+      <p>Detailed specifications for each roadmap item.</p>
+    </a>
+  </div>
+
+  <h2>Roadmap</h2>
+  <p>The planned improvements address <strong>Context Rot</strong> — the degradation in reasoning quality as the context window fills. Each phase layers on the previous.</p>
+
+  <div class="phase">
+    <p class="phase-label">Phase 1 &mdash; Foundation &nbsp;&middot;&nbsp; <code>v2.1.0</code></p>
+    <h3>Context footprint reduction</h3>
+    <ul>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/progressive-disclosure.md">Progressive Disclosure</a> — expose a single router tool upfront; expand schemas on demand <span class="status-planned">Planned</span></li>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/payload-minification.md">Payload Minification</a> — compact JSON and TOON serialization at the prompt boundary <span class="status-planned">Planned</span></li>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/read-only-injection.md">Read-only Injection Zone</a> — fence injected profile data against prompt injection attacks <span class="status-planned">Planned</span></li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <p class="phase-label">Phase 2 &mdash; Memory Architecture &nbsp;&middot;&nbsp; <code>v2.2.0</code></p>
+    <h3>Session state management</h3>
+    <ul>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/compiled-view-memory.md">Compiled View Memory</a> — artifact handles instead of raw content; local script execution <span class="status-planned">Planned</span></li>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/context-compaction.md">Context Compaction</a> — rolling summaries and prefix-cache-aware prompt structure <span class="status-planned">Planned</span></li>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/three-tiered-memory.md">Three-Tiered Memory</a> — short-term, long-term, and episodic tiers with distinct retrieval semantics <span class="status-planned">Planned</span></li>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/background-summarization.md">Background Summarization</a> — async session distillation into episodic memory using a lightweight model <span class="status-planned">Planned</span></li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <p class="phase-label">Phase 3 &mdash; Advanced Retrieval &nbsp;&middot;&nbsp; <code>v2.3.0</code></p>
+    <h3>Semantic tool and instruction retrieval</h3>
+    <ul>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/itr.md">Instruction-Tool Retrieval (ITR)</a> — dynamic per-step selection of the minimal relevant instruction and tool subset <span class="status-planned">Planned</span></li>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/vector-embeddings.md">Vector Embeddings Core</a> — promote semantic search to a core dependency; prerequisite for ITR <span class="status-planned">Planned</span></li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <p class="phase-label">Phase 4 &mdash; Security &amp; Hardening &nbsp;&middot;&nbsp; <code>v2.4.0</code></p>
+    <h3>Data protection and access control</h3>
+    <ul>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/dlp-redaction.md">Inline DLP / PII Redaction</a> — scrub secrets and personal data at every storage boundary <span class="status-planned">Planned</span></li>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/sandboxed-execution.md">Sandboxed Execution</a> — roots-based path enforcement and read-only container filesystem <span class="status-planned">Planned</span></li>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/oauth-rbac.md">OAuth 2.1 + RBAC</a> — multi-user authentication with scope-based role access control <span class="status-planned">Planned</span></li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <p class="phase-label">Phase 5 &mdash; Protocol Expansion &nbsp;&middot;&nbsp; <code>v3.0.0</code></p>
+    <h3>Cross-framework agent interoperability</h3>
+    <ul>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/acp.md">ACP Support</a> — expose JFYI profile over Agent Communication Protocol alongside MCP <span class="status-planned">Planned</span></li>
+      <li><a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/a2a.md">A2A Support</a> — agent-to-agent profile negotiation across LangChain, CrewAI, and other frameworks <span class="status-planned">Planned</span></li>
+    </ul>
   </div>
 
   <footer>

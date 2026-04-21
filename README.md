@@ -131,3 +131,24 @@ docker build -t jfyi-mcp-server .
 # Run with docker-compose
 docker-compose up
 ```
+
+## 📁 Repository Layout
+
+```
+/
+├── README.md          — Project overview (this file)
+├── ROADMAP.md         — Planned improvements and phased feature roadmap
+├── LICENSE            — Apache 2.0
+├── docs/              — Detailed specifications for roadmap items
+│   ├── progressive-disclosure.md
+│   ├── payload-minification.md
+│   ├── compiled-view-memory.md
+│   ├── context-compaction.md
+│   └── itr.md
+├── src/jfyi/          — Application source code
+├── tests/             — Test suite
+├── helm/              — Kubernetes Helm chart
+└── pages/             — GitHub Pages site
+```
+
+All engineering design documents live in `docs/`. Each file corresponds to a roadmap item and contains the problem statement, proposed solution, implementation detail, and success criteria.
