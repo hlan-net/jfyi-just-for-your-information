@@ -32,19 +32,6 @@ jobs:
       - name: Run tests
         run: pytest --cov=jfyi --cov-report=term-missing --cov-report=xml
 
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@689fb39b34b9aa95ebc5f8f119343ddd51542402 # v4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.projectKey=hlan-net_jfyi-just-for-your-information
-            -Dsonar.organization=hlan-net
-            -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.sources=src/
-            -Dsonar.tests=tests/
-
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
