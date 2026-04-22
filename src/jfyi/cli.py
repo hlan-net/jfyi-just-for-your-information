@@ -43,8 +43,19 @@ def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings,
                     user_id = int(payload["sub"])
 
         if not user_id:
-            await send({"type": "http.response.start", "status": 401, "headers": []})
-            await send({"type": "http.response.body", "body": b"Unauthorized"})
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [(b"content-type", b"application/json")],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": b'{"error": "invalid_token", "error_description": "Unauthorized"}',
+                }
+            )
             return
 
         mcp_server = build_mcp_server(db, analytics, user_id=user_id)

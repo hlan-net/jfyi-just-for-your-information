@@ -265,6 +265,10 @@ def _register_auth_api(app: FastAPI) -> None:
         response.set_cookie(
             "jfyi_session", cookie_val, httponly=True, secure=True, max_age=86400, samesite="Lax"
         )
+        next_url = request.cookies.get("oauth_next")
+        if next_url:
+            response.headers["Location"] = next_url
+            response.delete_cookie("oauth_next")
         return response
 
     @app.post("/auth/logout")
@@ -371,6 +375,120 @@ def _register_analytics_api(app: FastAPI) -> None:
         }
 
 
+def _register_oauth_server_api(app: FastAPI) -> None:
+    import secrets
+    from urllib.parse import urlencode
+
+    from fastapi.responses import JSONResponse
+
+    class ClientRegistration(BaseModel):
+        client_name: str
+        redirect_uris: list[str]
+        grant_types: list[str] = ["authorization_code", "refresh_token"]
+        response_types: list[str] = ["code"]
+        token_endpoint_auth_method: str = "none"
+
+    @app.get("/.well-known/oauth-authorization-server")
+    async def oauth_discovery(request: Request):
+        base_url = str(request.base_url).rstrip("/")
+        if settings.base_url:
+            base_url = settings.base_url.rstrip("/")
+        return {
+            "issuer": base_url,
+            "authorization_endpoint": f"{base_url}/mcp/oauth/authorize",
+            "token_endpoint": f"{base_url}/mcp/oauth/token",
+            "registration_endpoint": f"{base_url}/mcp/oauth/register",
+            "grant_types_supported": ["authorization_code", "refresh_token"],
+            "response_types_supported": ["code"],
+            "token_endpoint_auth_methods_supported": ["none"],
+        }
+
+    # For MCP dynamic registration
+    @app.post("/mcp/oauth/register")
+    async def oauth_register(client: ClientRegistration):
+        client_id = f"mcp_client_{secrets.token_hex(8)}"
+        return {
+            "client_id": client_id,
+            "client_name": client.client_name,
+            "redirect_uris": client.redirect_uris,
+            "grant_types": client.grant_types,
+            "response_types": client.response_types,
+            "token_endpoint_auth_method": client.token_endpoint_auth_method,
+        }
+
+    # In-memory code store for simple OAuth flow
+    # In a real production app, this should go to the SQLite DB
+    auth_codes: dict[str, dict[str, Any]] = {}
+
+    @app.get("/mcp/oauth/authorize", response_class=HTMLResponse)
+    async def oauth_authorize(
+        request: Request,
+        client_id: str,
+        redirect_uri: str,
+        state: str,
+        response_type: str = "code",
+        code_challenge: str | None = None,
+        code_challenge_method: str | None = None,
+    ):
+        # Ensure user is logged in
+        user_id = None
+        session_cookie = request.cookies.get("jfyi_session")
+        if session_cookie:
+            payload = verify_session_cookie(session_cookie)
+            if payload:
+                user_id = payload.get("user_id")
+
+        if not user_id:
+            auth_url = str(request.url)
+            response = RedirectResponse(url="/")
+            response.set_cookie("oauth_next", auth_url, max_age=300)
+            return response
+
+        # Generate authorization code
+        code = secrets.token_urlsafe(32)
+        auth_codes[code] = {
+            "user_id": user_id,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_challenge": code_challenge,
+            "code_challenge_method": code_challenge_method,
+        }
+
+        # Auto-approve for MCP CLI tools since they are initiating this locally
+        redirect_params = {"code": code, "state": state}
+        redirect_url = f"{redirect_uri}?{urlencode(redirect_params)}"
+        return RedirectResponse(url=redirect_url)
+
+    @app.post("/mcp/oauth/token")
+    async def oauth_token(request: Request):
+        form_data = await request.form()
+        grant_type = form_data.get("grant_type")
+
+        if grant_type == "authorization_code":
+            code = form_data.get("code")
+            client_id = form_data.get("client_id")
+            # redirect_uri = form_data.get("redirect_uri")
+
+            if not code or code not in auth_codes:
+                return JSONResponse(status_code=400, content={"error": "invalid_grant"})
+
+            code_data = auth_codes.pop(code)
+
+            if code_data["client_id"] != client_id:
+                return JSONResponse(status_code=400, content={"error": "invalid_client"})
+
+            # Create a long-lived JWT for the MCP Server
+            access_token = create_mcp_jwt(code_data["user_id"])
+
+            return {
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": 315360000,  # 10 years for MCP tokens
+            }
+        else:
+            return JSONResponse(status_code=400, content={"error": "unsupported_grant_type"})
+
+
 class ProxySchemeMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if "x-forwarded-proto" in request.headers:
@@ -413,6 +531,7 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
     _register_auth_api(app)
     _register_profile_api(app)
     _register_analytics_api(app)
+    _register_oauth_server_api(app)
 
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
