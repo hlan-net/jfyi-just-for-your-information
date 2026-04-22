@@ -110,6 +110,7 @@
     </header>
     
     <nav v-if="!isSetupOrLogin">
+      <router-link to="/connect">🔌 How to Connect</router-link>
       <router-link to="/profile">👤 Developer Profile</router-link>
       <router-link to="/analytics">📊 Agent Analytics</router-link>
       <router-link to="/memory">🧠 Memory Explorer</router-link>
@@ -291,6 +292,53 @@
   </div>
 </script>
 
+<script type="text/x-template" id="connect-template">
+  <div>
+    <div class="card">
+      <h2>🔌 Connect your AI Agent</h2>
+      <p class="desc">Follow these instructions to connect your AI agent to your remote JFYI profile over the network.</p>
+      
+      <div class="guidance-box" style="margin-top: 1.5rem;">
+        <h3>1. Server URL</h3>
+        <p style="margin-bottom: 0.5rem; color: var(--muted); font-size: 0.85rem;">This is the SSE endpoint your agent needs to connect to.</p>
+        <code style="font-size: 1rem; padding: 0.5rem 1rem; display: block; border: 1px solid var(--border);">{{ origin }}/mcp/sse</code>
+      </div>
+      
+      <div class="guidance-box">
+        <h3>2. Authentication Token</h3>
+        <p style="margin-bottom: 1rem; color: var(--muted); font-size: 0.85rem;">Generate a long-lived Bearer token for your agent. Treat this like a password!</p>
+        
+        <div v-if="!token">
+          <button @click="generateToken" class="btn" :disabled="loading">{{ loading ? 'Generating...' : 'Generate New Token' }}</button>
+        </div>
+        <div v-else>
+          <code style="font-size: 0.9rem; padding: 0.5rem 1rem; display: block; word-break: break-all; border: 1px solid var(--accent); margin-bottom: 0.5rem; background: #0d1117;">{{ token }}</code>
+          <button @click="copyToken" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;">
+            {{ copied ? 'Copied to Clipboard!' : 'Copy Token' }}
+          </button>
+        </div>
+      </div>
+      
+      <div class="guidance-box" style="background: transparent; border-left: none; padding: 0;">
+        <h3>3. Configuration Example</h3>
+        <p style="margin-bottom: 0.5rem; color: var(--muted); font-size: 0.85rem;">Example configuration using the standard SSE MCP transport:</p>
+        <pre style="background: #0d1117; padding: 1rem; border-radius: 6px; border: 1px solid var(--border); overflow-x: auto; color: var(--text); font-family: monospace; font-size: 0.85rem; line-height: 1.4;"><code>{
+  "mcpServers": {
+    "jfyi-remote": {
+      "transport": "sse",
+      "url": "{{ origin }}/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer &lt;YOUR_TOKEN_HERE&gt;"
+      }
+    }
+  }
+}</code></pre>
+        <p style="font-size: 0.8rem; color: var(--muted); margin-top: 0.75rem;"><em>Note: If your agent (like Claude Desktop) only supports <code>stdio</code> transport natively, you may need a proxy script (like a simple node or python script) that translates stdio back to SSE. Most modern clients and libraries (like LangChain or LlamaIndex) support SSE natively.</em></p>
+      </div>
+    </div>
+  </div>
+</script>
+
 <script type="text/x-template" id="analytics-template">
   <div>
     <div class="card">
@@ -427,6 +475,38 @@ const Login = {
   }
 };
 
+const Connect = {
+  template: '#connect-template',
+  setup() {
+    const origin = globalThis.location.origin;
+    const token = ref('');
+    const loading = ref(false);
+    const copied = ref(false);
+    
+    const generateToken = async () => {
+      loading.value = true;
+      try {
+        const res = await fetch(API + '/api/keys', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          token.value = data.mcp_api_key;
+          copied.value = false;
+        }
+      } finally {
+        loading.value = false;
+      }
+    };
+    
+    const copyToken = () => {
+      navigator.clipboard.writeText(token.value);
+      copied.value = true;
+      setTimeout(() => copied.value = false, 2000);
+    };
+    
+    return { origin, token, loading, copied, generateToken, copyToken };
+  }
+};
+
 const Profile = {
   template: '#profile-template',
   setup() {
@@ -516,9 +596,10 @@ const Analytics = { template: '#analytics-template' };
 const Memory = { template: '#memory-template' };
 
 const routes = [
-  { path: '/', redirect: '/profile' },
+  { path: '/', redirect: '/connect' },
   { path: '/setup', component: SetupWizard },
   { path: '/login', component: Login },
+  { path: '/connect', component: Connect },
   { path: '/profile', component: Profile },
   { path: '/analytics', component: Analytics },
   { path: '/memory', component: Memory },
