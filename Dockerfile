@@ -12,7 +12,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="JFYI MCP Server" \
       org.opencontainers.image.description="Just For Your Information — MCP Server & Analytics Hub" \
-      org.opencontainers.image.version="2.0.0" \
+      org.opencontainers.image.version="2.0.1" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 WORKDIR /app

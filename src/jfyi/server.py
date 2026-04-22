@@ -225,7 +225,7 @@ async def run_stdio(db: Database, analytics: AnalyticsEngine) -> None:
             write_stream,
             InitializationOptions(
                 server_name="jfyi",
-                server_version="2.0.0",
+                server_version="2.0.1",
                 capabilities=server.get_capabilities(
                     notification_options=None, experimental_capabilities={}
                 ),

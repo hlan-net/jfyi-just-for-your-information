@@ -62,7 +62,7 @@ def serve(
                     write_stream,
                     InitializationOptions(
                         server_name="jfyi",
-                        server_version="2.0.0",
+                        server_version="2.0.1",
                         capabilities=mcp_server.get_capabilities(
                             notification_options=None, experimental_capabilities={}
                         ),
