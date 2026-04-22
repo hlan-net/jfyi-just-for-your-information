@@ -41,7 +41,16 @@ class Database:
                 DROP TABLE IF EXISTS profile_rules;
                 DROP TABLE IF EXISTS agents;
                 DROP TABLE IF EXISTS user_identities;
+                DROP TABLE IF EXISTS identity_providers;
                 DROP TABLE IF EXISTS users;
+
+                
+                CREATE TABLE identity_providers (
+                    provider TEXT PRIMARY KEY,
+                    client_id TEXT NOT NULL,
+                    client_secret TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
 
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,7 +114,8 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_user_identities_sub ON user_identities(provider, sub);
+                CREATE INDEX IF NOT EXISTS idx_user_identities_sub 
+                    ON user_identities(provider, sub);
                 CREATE INDEX IF NOT EXISTS idx_interactions_agent ON interactions(agent_id);
                 CREATE INDEX IF NOT EXISTS idx_interactions_session ON interactions(session_id);
                 CREATE INDEX IF NOT EXISTS idx_friction_agent ON friction_events(agent_id);
@@ -113,9 +123,44 @@ class Database:
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
+    def add_identity_provider(self, provider: str, client_id: str, client_secret: str) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO identity_providers "
+                "(provider, client_id, client_secret, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (provider, client_id, client_secret, now),
+            )
+
+    def get_identity_providers(self) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM identity_providers ORDER BY provider").fetchall()
+            return [dict(r) for r in rows]
+
+    def delete_identity_provider(self, provider: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute("DELETE FROM identity_providers WHERE provider=?", (provider,))
+            return cur.rowcount > 0
+
+    def is_initialized(self) -> dict[str, bool]:
+        with self._conn() as conn:
+            idp_count = conn.execute("SELECT COUNT(*) FROM identity_providers").fetchone()[0]
+            admin_count = conn.execute("SELECT COUNT(*) FROM users WHERE is_admin=1").fetchone()[0]
+            return {
+                "has_idp": idp_count > 0,
+                "has_admin": admin_count > 0,
+                "is_ready": idp_count > 0 and admin_count > 0,
+            }
+
     def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
         with self._conn() as conn:
             row = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_user_by_email(self, email: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
             return dict(row) if row else None
 
     def get_user_by_identity(self, provider: str, sub: str) -> dict[str, Any] | None:
@@ -134,7 +179,7 @@ class Database:
             count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
             if count == 0:
                 is_admin = True
-                
+
             cur = conn.execute(
                 "INSERT INTO users (name, email, is_admin, created_at) VALUES (?, ?, ?, ?)",
                 (name, email, int(is_admin), now),
@@ -145,7 +190,8 @@ class Database:
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             cur = conn.execute(
-                "INSERT INTO user_identities (user_id, provider, sub, created_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO user_identities (user_id, provider, sub, created_at) "
+                "VALUES (?, ?, ?, ?)",
                 (user_id, provider, sub, now),
             )
             return cur.lastrowid
@@ -160,14 +206,23 @@ class Database:
             cur = conn.execute("DELETE FROM users WHERE id=?", (user_id,))
             return cur.rowcount > 0
 
+    def update_user_admin(self, user_id: int, is_admin: bool) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute("UPDATE users SET is_admin=? WHERE id=?", (int(is_admin), user_id))
+            return cur.rowcount > 0
+
     def list_user_identities(self, user_id: int) -> list[dict[str, Any]]:
         with self._conn() as conn:
-            rows = conn.execute("SELECT * FROM user_identities WHERE user_id=?", (user_id,)).fetchall()
+            rows = conn.execute(
+                "SELECT * FROM user_identities WHERE user_id=?", (user_id,)
+            ).fetchall()
             return [dict(r) for r in rows]
 
     def unlink_identity(self, user_id: int, provider: str) -> bool:
         with self._conn() as conn:
-            cur = conn.execute("DELETE FROM user_identities WHERE user_id=? AND provider=?", (user_id, provider))
+            cur = conn.execute(
+                "DELETE FROM user_identities WHERE user_id=? AND provider=?", (user_id, provider)
+            )
             return cur.rowcount > 0
 
     # ── Profile Rules ──────────────────────────────────────────────────────
@@ -194,7 +249,8 @@ class Database:
         with self._conn() as conn:
             if category:
                 rows = conn.execute(
-                    "SELECT * FROM profile_rules WHERE user_id = ? AND category = ? ORDER BY confidence DESC",
+                    "SELECT * FROM profile_rules WHERE user_id = ? AND category = ? "
+                    "ORDER BY confidence DESC",
                     (user_id, category),
                 ).fetchall()
             else:
@@ -204,7 +260,9 @@ class Database:
                 ).fetchall()
             return [dict(r) for r in rows]
 
-    def update_rule(self, user_id: int, rule_id: int, rule: str, category: str, confidence: float) -> bool:
+    def update_rule(
+        self, user_id: int, rule_id: int, rule: str, category: str, confidence: float
+    ) -> bool:
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             cur = conn.execute(
@@ -216,7 +274,9 @@ class Database:
 
     def delete_rule(self, user_id: int, rule_id: int) -> bool:
         with self._conn() as conn:
-            cur = conn.execute("DELETE FROM profile_rules WHERE id=? AND user_id=?", (rule_id, user_id))
+            cur = conn.execute(
+                "DELETE FROM profile_rules WHERE id=? AND user_id=?", (rule_id, user_id)
+            )
             return cur.rowcount > 0
 
     # ── Agents ─────────────────────────────────────────────────────────────
@@ -224,7 +284,9 @@ class Database:
     def get_or_create_agent(self, user_id: int, name: str, model: str | None = None) -> int:
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
-            row = conn.execute("SELECT id FROM agents WHERE user_id=? AND name=?", (user_id, name)).fetchone()
+            row = conn.execute(
+                "SELECT id FROM agents WHERE user_id=? AND name=?", (user_id, name)
+            ).fetchone()
             if row:
                 return row["id"]
             cur = conn.execute(
@@ -235,7 +297,10 @@ class Database:
 
     def list_agents(self, user_id: int) -> list[dict[str, Any]]:
         with self._conn() as conn:
-            return [dict(r) for r in conn.execute("SELECT * FROM agents WHERE user_id=?", (user_id,)).fetchall()]
+            return [
+                dict(r)
+                for r in conn.execute("SELECT * FROM agents WHERE user_id=?", (user_id,)).fetchall()
+            ]
 
     # ── Interactions ───────────────────────────────────────────────────────
 
@@ -324,7 +389,8 @@ class Database:
 
     def get_agent_stats(self, user_id: int) -> list[dict[str, Any]]:
         with self._conn() as conn:
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT
                     a.id,
                     a.name,
@@ -343,5 +409,7 @@ class Database:
                 WHERE a.user_id = ?
                 GROUP BY a.id
                 ORDER BY correction_rate_pct ASC
-            """, (user_id,)).fetchall()
+            """,
+                (user_id,),
+            ).fetchall()
             return [dict(r) for r in rows]

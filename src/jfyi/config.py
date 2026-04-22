@@ -1,12 +1,18 @@
 """Configuration management for JFYI."""
 
+import secrets
 from pathlib import Path
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(env_prefix="JFYI_", env_file=".env", extra="ignore")
+
+    jwt_secret: SecretStr = SecretStr(secrets.token_hex(32))
 
     model_config = SettingsConfigDict(env_prefix="JFYI_", env_file=".env", extra="ignore")
 
@@ -28,6 +34,7 @@ class Settings(BaseSettings):
 
     # Feature flags
     enable_vector_db: bool = False  # Optional; falls back to SQLite FTS
+    single_user_mode: bool = False  # Optional; bypass OAuth and use a predefined local admin
 
 
 settings = Settings()

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jfyi-mcp-server"
-version = "2.0.1"
+version = "2.1.0"
 description = "JFYI - Just For Your Information: A passive MCP server and analytics hub with Profile-Guided Optimization"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -19,6 +19,9 @@ dependencies = [
     "pydantic>=2.0.1",
     "pydantic-settings>=2.0.1",
     "typer>=0.12.0",
+    "authlib>=1.3.0",
+    "itsdangerous>=2.1.0",
+    "pyjwt>=2.8.0",
     "rich>=13.0.0",
 ]
 

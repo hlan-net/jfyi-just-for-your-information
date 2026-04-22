@@ -87,11 +87,7 @@ class AnalyticsEngine:
         edit_factor = min(1.0, num_edits / 10.0)
         factors["edit_volume"] = edit_factor
 
-        score = (
-            0.5 * correction_factor
-            + 0.3 * latency_factor
-            + 0.2 * edit_factor
-        )
+        score = 0.5 * correction_factor + 0.3 * latency_factor + 0.2 * edit_factor
         return round(score, 4), factors
 
     # ── Profiling ─────────────────────────────────────────────────────────────
@@ -114,7 +110,8 @@ class AnalyticsEngine:
             was_corrected, correction_latency_s, num_edits
         )
 
-        interaction_id = self._db.record_interaction(user_id=user_id, 
+        interaction_id = self._db.record_interaction(
+            user_id=user_id,
             agent_id=agent_id,
             session_id=session_id,
             prompt_hash=self.hash_text(prompt),
@@ -126,7 +123,8 @@ class AnalyticsEngine:
         )
 
         if was_corrected:
-            self._db.add_friction_event(user_id=user_id, 
+            self._db.add_friction_event(
+                user_id=user_id,
                 agent_id=agent_id,
                 event_type="correction",
                 description=(

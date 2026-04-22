@@ -18,20 +18,19 @@ from .database import Database
 
 
 async def dispatch_tool(
-    name: str,
-    arguments: dict[str, Any],
-    db: Database,
-    analytics: AnalyticsEngine, user_id: int = 1
+    name: str, arguments: dict[str, Any], db: Database, analytics: AnalyticsEngine, user_id: int = 1
 ) -> list[TextContent]:
     """Execute a JFYI tool by name. Shared by the MCP server handler and tests."""
     if name == "get_developer_profile":
         category = arguments.get("category")
         rules = db.get_rules(user_id=user_id, category=category)
         if not rules:
-            return [TextContent(
-                type="text",
-                text="No profile rules found yet. JFYI is still learning.",
-            )]
+            return [
+                TextContent(
+                    type="text",
+                    text="No profile rules found yet. JFYI is still learning.",
+                )
+            ]
         lines = [f"## Developer Profile Rules ({len(rules)} total)\n"]
         for r in rules:
             lines.append(
@@ -42,7 +41,8 @@ async def dispatch_tool(
 
     elif name == "record_interaction":
         session_id = arguments.get("session_id") or str(uuid.uuid4())
-        friction = analytics.record_interaction(user_id=user_id, 
+        friction = analytics.record_interaction(
+            user_id=user_id,
             agent_name=arguments["agent_name"],
             session_id=session_id,
             prompt=arguments["prompt"],
@@ -68,10 +68,12 @@ async def dispatch_tool(
     elif name == "get_agent_analytics":
         profiles = analytics.get_agent_profiles(user_id=user_id)
         if not profiles:
-            return [TextContent(
-                type="text",
-                text="No agent analytics yet. Record some interactions first.",
-            )]
+            return [
+                TextContent(
+                    type="text",
+                    text="No agent analytics yet. Record some interactions first.",
+                )
+            ]
         lines = ["## Agent Performance Analytics\n"]
         for p in sorted(profiles, key=lambda x: x.alignment_score, reverse=True):
             lines.append(f"### {p.name}" + (f" ({p.model})" if p.model else ""))
@@ -79,18 +81,15 @@ async def dispatch_tool(
             lines.append(f"- Correction Rate: {p.correction_rate_pct:.1f}%")
             lines.append(
                 "- Avg Correction Latency: "
-                + (
-                    f"{p.avg_correction_latency_s:.1f}s"
-                    if p.avg_correction_latency_s
-                    else "N/A"
-                )
+                + (f"{p.avg_correction_latency_s:.1f}s" if p.avg_correction_latency_s else "N/A")
             )
             lines.append(f"- Avg Friction Score: {p.avg_friction_score:.3f}")
             lines.append(f"- **Architecture Alignment Score: {p.alignment_score:.1f}/100**\n")
         return [TextContent(type="text", text="\n".join(lines))]
 
     elif name == "add_profile_rule":
-        rule_id = db.add_rule(user_id=user_id, 
+        rule_id = db.add_rule(
+            user_id=user_id,
             rule=arguments["rule"],
             category=arguments.get("category", "general"),
             confidence=arguments.get("confidence", 1.0),
@@ -101,7 +100,7 @@ async def dispatch_tool(
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
 
-def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
+def build_mcp_server(db: Database, analytics: AnalyticsEngine, user_id: int = 1) -> Server:
     """Build and configure the MCP server with all JFYI tools."""
 
     server = Server("jfyi")
@@ -143,8 +142,7 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
                         "agent_name": {
                             "type": "string",
                             "description": (
-                                "Name/ID of the AI agent"
-                                " (e.g. 'claude-3-7-sonnet', 'gpt-4o')."
+                                "Name/ID of the AI agent (e.g. 'claude-3-7-sonnet', 'gpt-4o')."
                             ),
                         },
                         "prompt": {
@@ -194,8 +192,7 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
                         "category": {
                             "type": "string",
                             "description": (
-                                "Rule category"
-                                " (e.g. 'style', 'architecture', 'testing')."
+                                "Rule category (e.g. 'style', 'architecture', 'testing')."
                             ),
                         },
                         "confidence": {
@@ -209,7 +206,7 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        return await dispatch_tool(name, arguments, db, analytics, user_id=1)
+        return await dispatch_tool(name, arguments, db, analytics, user_id=user_id)
 
     return server
 
@@ -225,7 +222,7 @@ async def run_stdio(db: Database, analytics: AnalyticsEngine) -> None:
             write_stream,
             InitializationOptions(
                 server_name="jfyi",
-                server_version="2.0.1",
+                server_version="2.1.0",
                 capabilities=server.get_capabilities(
                     notification_options=None, experimental_capabilities={}
                 ),

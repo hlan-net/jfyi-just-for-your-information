@@ -17,7 +17,7 @@ Independent, high-impact improvements that can be shipped without dependencies b
 | [Progressive Disclosure](docs/progressive-disclosure.md) | `v2.1.0` | Planned | [docs/progressive-disclosure.md](docs/progressive-disclosure.md) |
 | [Payload Minification](docs/payload-minification.md) | `v2.1.0` | Planned | [docs/payload-minification.md](docs/payload-minification.md) |
 | [Read-only Injection Zone](docs/read-only-injection.md) | `v2.1.0` | Planned | [docs/read-only-injection.md](docs/read-only-injection.md) |
-| [OAuth 2.1 + RBAC](docs/oauth-rbac.md) | `v2.1.0` | Planned | [docs/oauth-rbac.md](docs/oauth-rbac.md) |
+| [OAuth 2.1 + RBAC](docs/oauth-rbac.md) | `v2.1.0` | Done | [docs/oauth-rbac.md](docs/oauth-rbac.md) |
 
 **Progressive Disclosure** replaces the current model of exposing all tools and schemas upfront with a lightweight router tool that expands on demand. MCP servers inherently consume 40–50% of the available context before an agent begins any task; this feature reclaims that budget.
 
