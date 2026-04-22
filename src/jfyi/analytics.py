@@ -56,7 +56,6 @@ class AnalyticsEngine:
 
     def compute_friction_score(
         self,
-        user_id: int,
         was_corrected: bool,
         correction_latency_s: float | None,
         num_edits: int = 0,

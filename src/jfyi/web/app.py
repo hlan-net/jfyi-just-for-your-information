@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +26,8 @@ from ..config import settings
 from ..database import Database
 
 STATIC_DIR = Path(__file__).parent / "static"
+LOCAL_USER_EMAIL = "local@jfyi.internal"
+ERR_USER_NOT_FOUND = "User not found"
 
 
 class RuleCreate(BaseModel):
@@ -57,118 +59,122 @@ class IdpCreate(BaseModel):
     client_secret: str
 
 
-def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
-    """Create and configure the FastAPI web dashboard."""
+class UserUpdate(BaseModel):
+    is_admin: bool
 
-    app = FastAPI(
-        title="JFYI Dashboard",
-        description="JFYI MCP Server & Analytics Hub - Web Dashboard",
-        version="2.1.0",
-    )
 
-    app.add_middleware(
-        SessionMiddleware, secret_key=settings.jwt_secret.get_secret_value(), max_age=86400
-    )
+# ── Dependencies ────────────────────────────────────────────────────────────
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
 
+def get_db(request: Request) -> Database:
+    return request.app.state.db
+
+
+def get_analytics(request: Request) -> AnalyticsEngine:
+    return request.app.state.analytics
+
+
+def get_current_user(request: Request, db: Database = Depends(get_db)) -> dict[str, Any]:
     if settings.single_user_mode:
-        local_user = db.get_user_by_email("local@jfyi.internal")
-        if not local_user:
-            db.create_user(email="local@jfyi.internal", name="Local Admin", is_admin=True)
+        user = db.get_user_by_email(LOCAL_USER_EMAIL)
+        if user:
+            return user
 
-    # ── Dependencies ────────────────────────────────────────────────────────
+    user_id = None
+    session_cookie = request.cookies.get("jfyi_session")
+    if session_cookie:
+        payload = verify_session_cookie(session_cookie)
+        if payload:
+            user_id = payload.get("user_id")
 
-    def get_current_user(request: Request) -> dict[str, Any]:
-        if settings.single_user_mode:
-            user = db.get_user_by_email("local@jfyi.internal")
-            if user:
-                return user
-
-        user_id = None
-        # 1. Try session cookie (Dashboard)
-        session_cookie = request.cookies.get("jfyi_session")
-        if session_cookie:
-            payload = verify_session_cookie(session_cookie)
+    if not user_id:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1]
+            payload = verify_mcp_jwt(token)
             if payload:
-                user_id = payload.get("user_id")
+                user_id = int(payload["sub"])
 
-        # 2. Try Authorization header (MCP Client)
-        if not user_id:
-            auth_header = request.headers.get("Authorization")
-            if auth_header and auth_header.startswith("Bearer "):
-                token = auth_header.split(" ", 1)[1]
-                payload = verify_mcp_jwt(token)
-                if payload:
-                    user_id = int(payload["sub"])
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Unauthorized")
+    user = db.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail=ERR_USER_NOT_FOUND)
+    return user
 
-        user = db.get_user_by_id(user_id)
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        return user
 
-    def get_admin_user(
-        current_user: dict[str, Any] = Depends(get_current_user),
-    ) -> dict[str, Any]:
-        if not current_user.get("is_admin"):
-            raise HTTPException(status_code=403, detail="Forbidden")
-        return current_user
+def get_admin_user(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return current_user
 
-    # ── Admin API ───────────────────────────────────────────────────────────
 
-    class UserUpdate(BaseModel):
-        is_admin: bool
+CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
+AdminUser = Annotated[dict[str, Any], Depends(get_admin_user)]
+DBDep = Annotated[Database, Depends(get_db)]
+AnalyticsDep = Annotated[AnalyticsEngine, Depends(get_analytics)]
 
+
+# ── API Registration ────────────────────────────────────────────────────────
+
+
+def _register_admin_api(app: FastAPI) -> None:
     @app.get("/api/admin/users")
-    async def get_all_users(admin: dict[str, Any] = Depends(get_admin_user)) -> dict[str, Any]:
+    async def get_all_users(admin: AdminUser, db: DBDep) -> dict[str, Any]:
         users = db.list_users()
         for u in users:
             u["identities"] = db.list_user_identities(u["id"])
         return {"users": users}
 
-    @app.put("/api/admin/users/{user_id}")
+    @app.put(
+        "/api/admin/users/{user_id}",
+        responses={
+            400: {"description": "Cannot revoke your own admin status"},
+            404: {"description": ERR_USER_NOT_FOUND},
+        },
+    )
     async def update_user(
-        user_id: int, body: UserUpdate, admin: dict[str, Any] = Depends(get_admin_user)
+        user_id: int, body: UserUpdate, admin: AdminUser, db: DBDep
     ) -> dict[str, Any]:
         if user_id == admin["id"] and not body.is_admin:
             raise HTTPException(status_code=400, detail="Cannot revoke your own admin status")
         success = db.update_user_admin(user_id, body.is_admin)
         if not success:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail=ERR_USER_NOT_FOUND)
         return {"status": "success"}
 
-    @app.delete("/api/admin/users/{user_id}")
-    async def delete_user(
-        user_id: int, admin: dict[str, Any] = Depends(get_admin_user)
-    ) -> dict[str, Any]:
+    @app.delete(
+        "/api/admin/users/{user_id}",
+        responses={
+            400: {"description": "Cannot delete your own account"},
+            404: {"description": ERR_USER_NOT_FOUND},
+        },
+    )
+    async def delete_user(user_id: int, admin: AdminUser, db: DBDep) -> dict[str, Any]:
         if user_id == admin["id"]:
             raise HTTPException(status_code=400, detail="Cannot delete your own account")
         success = db.delete_user(user_id)
         if not success:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail=ERR_USER_NOT_FOUND)
         return {"status": "success"}
 
-    @app.delete("/api/admin/users/{user_id}/identities/{provider}")
+    @app.delete(
+        "/api/admin/users/{user_id}/identities/{provider}",
+        responses={404: {"description": "Identity not found"}},
+    )
     async def delete_user_identity(
-        user_id: int, provider: str, admin: dict[str, Any] = Depends(get_admin_user)
+        user_id: int, provider: str, admin: AdminUser, db: DBDep
     ) -> dict[str, Any]:
         success = db.unlink_identity(user_id, provider)
         if not success:
             raise HTTPException(status_code=404, detail="Identity not found")
         return {"status": "success"}
 
-    # ── System Bootstrap & Config API ───────────────────────────────────────
 
+def _register_system_api(app: FastAPI) -> None:
     @app.get("/api/system/status")
-    async def get_system_status() -> dict[str, Any]:
+    async def get_system_status(db: DBDep) -> dict[str, Any]:
         init_status = db.is_initialized()
         idp_list = [p["provider"] for p in db.get_identity_providers()]
         return {
@@ -179,37 +185,35 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
             "single_user_mode": settings.single_user_mode,
         }
 
-    @app.post("/api/system/idp")
-    async def configure_idp(body: IdpCreate) -> dict[str, Any]:
+    @app.post(
+        "/api/system/idp",
+        responses={403: {"description": "System already initialized with an admin"}},
+    )
+    async def configure_idp(body: IdpCreate, db: DBDep) -> dict[str, Any]:
         init_status = db.is_initialized()
         if init_status["has_admin"]:
-            # Protect this if we already have an admin.
             raise HTTPException(
                 status_code=403,
                 detail="System already initialized with an admin. Use Admin panel to add IdPs.",
             )
 
         db.add_identity_provider(body.provider, body.client_id, body.client_secret)
-        # Re-register clients in memory
         register_oauth_clients(db)
         return {"status": "success", "provider": body.provider}
 
-    # ── Auth Endpoints ──────────────────────────────────────────────────────
 
-    @app.get("/auth/login/{provider}")
-    async def login(request: Request, provider: str):
-        register_oauth_clients(db)  # Ensure up to date
+def _register_auth_api(app: FastAPI) -> None:
+    @app.get("/auth/login/{provider}", responses={404: {"description": "Provider not found"}})
+    async def login(request: Request, provider: str, db: DBDep):
+        register_oauth_clients(db)
         client = oauth.create_client(provider)
         if not client:
             raise HTTPException(status_code=404, detail="Provider not found")
-
-        redirect_uri = request.url_for("auth_callback", provider=provider)
-        # Ensure it's using the correct scheme (https in production if behind proxy)
-        redirect_uri = str(redirect_uri)
+        redirect_uri = str(request.url_for("auth_callback", provider=provider))
         return await client.authorize_redirect(request, redirect_uri)
 
-    @app.get("/auth/callback/{provider}")
-    async def auth_callback(request: Request, provider: str):
+    @app.get("/auth/callback/{provider}", responses={404: {"description": "Provider not found"}})
+    async def auth_callback(request: Request, provider: str, db: DBDep):
         register_oauth_clients(db)
         client = oauth.create_client(provider)
         if not client:
@@ -223,7 +227,6 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
             email = user_data.get("email") or f"{sub}@github.local"
             name = user_data.get("name") or user_data.get("login")
         else:
-            # Google / Entra uses OIDC
             userinfo = token.get("userinfo")
             if not userinfo:
                 userinfo = await client.userinfo(token=token)
@@ -231,22 +234,18 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
             email = userinfo.get("email") or f"{sub}@{provider}.local"
             name = userinfo.get("name", "")
 
-        # Is the user already logged in? (Linking)
         session_cookie = request.cookies.get("jfyi_session")
         if session_cookie:
             payload = verify_session_cookie(session_cookie)
             if payload:
-                user_id = payload["user_id"]
                 try:
-                    db.link_identity(user_id, provider, sub)
+                    db.link_identity(payload["user_id"], provider, sub)
                 except Exception:
-                    pass  # Already linked or duplicate
+                    pass
                 return RedirectResponse(url="/")
 
-        # Not logged in. Find user by identity.
         user = db.get_user_by_identity(provider, sub)
         if not user:
-            # Create user
             init_status = db.is_initialized()
             is_admin = not init_status["has_admin"]
             user_id = db.create_user(email=email, name=name, is_admin=is_admin)
@@ -254,7 +253,6 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
         else:
             user_id = user["id"]
 
-        # Create session cookie
         response = RedirectResponse(url="/")
         cookie_val = create_session_cookie(user_id)
         response.set_cookie(
@@ -269,26 +267,24 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
         return response
 
     @app.get("/api/me")
-    async def get_me(user=Depends(get_current_user)):
+    async def get_me(user: CurrentUser):
         return user
 
     @app.post("/api/keys")
-    async def generate_mcp_key(user=Depends(get_current_user)):
+    async def generate_mcp_key(user: CurrentUser):
         token = create_mcp_jwt(user["id"])
         return {"mcp_api_key": token}
 
-    # ── Profile Rules API ───────────────────────────────────────────────────
 
+def _register_profile_api(app: FastAPI) -> None:
     @app.get("/api/profile/rules")
     async def get_rules(
-        category: str | None = None, current_user=Depends(get_current_user)
+        current_user: CurrentUser, db: DBDep, category: str | None = None
     ) -> list[dict[str, Any]]:
         return db.get_rules(user_id=current_user["id"], category=category)
 
     @app.post("/api/profile/rules", status_code=201)
-    async def create_rule(
-        body: RuleCreate, current_user=Depends(get_current_user)
-    ) -> dict[str, Any]:
+    async def create_rule(body: RuleCreate, current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
         rule_id = db.add_rule(
             user_id=current_user["id"],
             rule=body.rule,
@@ -298,25 +294,31 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
         )
         return {"id": rule_id, "rule": body.rule, "category": body.category}
 
-    @app.put("/api/profile/rules/{rule_id}")
+    @app.put("/api/profile/rules/{rule_id}", responses={404: {"description": "Rule not found"}})
     async def update_rule(
-        rule_id: int, body: RuleUpdate, current_user=Depends(get_current_user)
+        rule_id: int, body: RuleUpdate, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
         ok = db.update_rule(current_user["id"], rule_id, body.rule, body.category, body.confidence)
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
         return {"id": rule_id, **body.model_dump()}
 
-    @app.delete("/api/profile/rules/{rule_id}", status_code=204)
-    async def delete_rule(rule_id: int, current_user=Depends(get_current_user)) -> None:
+    @app.delete(
+        "/api/profile/rules/{rule_id}",
+        status_code=204,
+        responses={404: {"description": "Rule not found"}},
+    )
+    async def delete_rule(rule_id: int, current_user: CurrentUser, db: DBDep) -> None:
         ok = db.delete_rule(current_user["id"], rule_id)
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
 
-    # ── Analytics API ────────────────────────────────────────────────────────
 
+def _register_analytics_api(app: FastAPI) -> None:
     @app.get("/api/analytics/agents")
-    async def get_agent_analytics(current_user=Depends(get_current_user)) -> list[dict[str, Any]]:
+    async def get_agent_analytics(
+        current_user: CurrentUser, analytics: AnalyticsDep
+    ) -> list[dict[str, Any]]:
         profiles = analytics.get_agent_profiles(user_id=current_user["id"])
         return [
             {
@@ -334,15 +336,13 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
 
     @app.get("/api/analytics/friction-events")
     async def get_friction_events(
-        agent_id: int | None = None, limit: int = 100, current_user=Depends(get_current_user)
+        current_user: CurrentUser, db: DBDep, agent_id: int | None = None, limit: int = 100
     ) -> list[dict[str, Any]]:
         return db.get_friction_events(user_id=current_user["id"], agent_id=agent_id, limit=limit)
 
-    # ── Interaction recording API (mirrors MCP tool) ─────────────────────────
-
     @app.post("/api/interactions", status_code=201)
     async def record_interaction(
-        body: InteractionCreate, current_user=Depends(get_current_user)
+        body: InteractionCreate, current_user: CurrentUser, analytics: AnalyticsDep
     ) -> dict[str, Any]:
         session_id = body.session_id or str(uuid.uuid4())
         friction = analytics.record_interaction(
@@ -363,7 +363,39 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
             "factors": friction.factors,
         }
 
-    # ── Static Dashboard ─────────────────────────────────────────────────────
+
+def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
+    """Create and configure the FastAPI web dashboard."""
+    app = FastAPI(
+        title="JFYI Dashboard",
+        description="JFYI MCP Server & Analytics Hub - Web Dashboard",
+        version="2.1.0",
+    )
+
+    app.state.db = db
+    app.state.analytics = analytics
+
+    app.add_middleware(
+        SessionMiddleware, secret_key=settings.jwt_secret.get_secret_value(), max_age=86400
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    if settings.single_user_mode:
+        local_user = db.get_user_by_email(LOCAL_USER_EMAIL)
+        if not local_user:
+            db.create_user(email=LOCAL_USER_EMAIL, name="Local Admin", is_admin=True)
+
+    _register_admin_api(app)
+    _register_system_api(app)
+    _register_auth_api(app)
+    _register_profile_api(app)
+    _register_analytics_api(app)
 
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

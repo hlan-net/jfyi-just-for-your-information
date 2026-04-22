@@ -383,7 +383,7 @@ const SetupWizard = {
     const form = reactive({ provider: 'github', client_id: '', client_secret: '' });
     const saving = ref(false);
     const router = VueRouter.useRouter();
-    const origin = window.location.origin;
+    const origin = globalThis.location.origin;
     
     const providerDisplay = computed(() => {
       if (form.provider === 'github') return 'GitHub';
@@ -409,6 +409,7 @@ const SetupWizard = {
           alert('Failed to configure IdP');
         }
       } catch (e) {
+        console.error('Error configuring IdP', e);
         alert('Error configuring IdP');
       } finally {
         saving.value = false;
