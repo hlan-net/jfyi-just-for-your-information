@@ -11,13 +11,13 @@ COPY pyproject.toml README.md ./
 RUN mkdir -p src/jfyi && touch src/jfyi/__init__.py && \
     pip install --upgrade pip && \
     pip install --no-cache-dir . && \
-    rm -rf src/
+    rm -rf src/ build/ *.egg-info
 
 # 2. Copy the actual source code
 COPY src/ ./src/
 
-# 3. Install the app itself (dependencies are already installed)
-RUN pip install --no-cache-dir --no-deps .
+# 3. Install the app itself (dependencies are already installed). Force reinstall to overwrite the dummy package.
+RUN pip install --no-cache-dir --no-deps --force-reinstall .
 
 RUN mkdir -p /data
 

@@ -76,12 +76,14 @@ def serve(
     db, analytics = _get_db_and_analytics(data_dir)
 
     if transport == "stdio":
-        console.print("[cyan]Starting JFYI MCP server (stdio transport)…[/cyan]")
+        console.print(f"[cyan]Starting JFYI MCP server v{__version__} (stdio transport)…[/cyan]")
         from .server import run_stdio
 
         asyncio.run(run_stdio(db, analytics))
     else:
-        console.print(f"[cyan]Starting JFYI MCP server (SSE) on {host}:{port}…[/cyan]")
+        console.print(
+            f"[cyan]Starting JFYI MCP server v{__version__} (SSE) on {host}:{port}…[/cyan]"
+        )
         import uvicorn
         from mcp.server.sse import SseServerTransport
 
@@ -116,5 +118,5 @@ def dashboard(
     from .web.app import create_app
 
     web_app = create_app(db, analytics)
-    console.print(f"[cyan]Starting JFYI Dashboard on http://{host}:{port}[/cyan]")
+    console.print(f"[cyan]Starting JFYI Dashboard v{__version__} on http://{host}:{port}[/cyan]")
     uvicorn.run(web_app, host=host, port=port)
