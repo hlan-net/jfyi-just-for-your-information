@@ -1,0 +1,73 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+JFYI (Just For Your Information) is a passive MCP server and analytics platform that profiles developer coding habits and AI agent performance. It runs as a background service, observes workflows, and injects optimization rules into AI agents. v2.0 adds bidirectional profiling — it profiles both the developer and the agents.
+
+## Common Commands
+
+```bash
+# Install for development
+pip install -e ".[dev]"
+
+# Install with optional vector search (ChromaDB + sentence-transformers)
+pip install -e ".[dev,vector]"
+
+# Lint (must pass CI)
+ruff check src/ tests/
+ruff format --check src/ tests/
+
+# Auto-fix lint/format
+ruff format src/ tests/
+ruff check --fix src/ tests/
+
+# Run tests
+pytest
+pytest --cov=jfyi --cov-report=term-missing
+
+# Run a single test
+pytest tests/test_server.py::test_name -v
+
+# Run server locally (SSE mode, serves MCP + web dashboard on port 8080)
+jfyi serve --host 0.0.0.0 --port 8080 --data-dir ./data
+
+# Run server in stdio mode (for direct IDE integration)
+jfyi serve --transport stdio --data-dir ./data
+
+# Run web dashboard only (port 3000)
+jfyi dashboard --port 3000 --data-dir ./data
+
+# Docker
+docker build -t jfyi-mcp-server .
+docker-compose up
+```
+
+## Architecture
+
+The application is a single Python package (`src/jfyi/`) serving three roles from one container on port 8080:
+
+- **MCP Server** (`server.py`): Exposes 4 tools over stdio or SSE — `get_developer_profile`, `record_interaction`, `get_agent_analytics`, `add_profile_rule`. Tool dispatch logic lives in `dispatch_tool()`, shared by both the MCP handler and tests.
+- **Web Dashboard** (`web/app.py`): FastAPI REST API mirroring the MCP tools, plus a vanilla HTML/JS/CSS SPA (`web/static/index.html`) — no Node.js build step.
+- **Analytics Engine** (`analytics.py`): Computes friction scores from interaction signals (correction rate, latency, edit volume) using a weighted formula. `AnalyticsEngine` is the core domain object.
+
+**Data flow:** CLI (`cli.py`, Typer) → constructs `Database` + `AnalyticsEngine` → passes them to both the MCP server and FastAPI app. In SSE mode, the MCP SSE endpoint is mounted onto the FastAPI app via Starlette ASGI.
+
+**Persistence:** SQLite via SQLAlchemy + aiosqlite, stored at `JFYI_DB_PATH` (default `/data/jfyi.db`). Optional ChromaDB vector search is gated behind the `vector` extra and `JFYI_ENABLE_VECTOR_DB=true`.
+
+**Configuration:** All settings via `pydantic-settings` with `JFYI_` env prefix (see `config.py`). Supports `.env` files.
+
+## Testing
+
+- Tests use `pytest-asyncio` (`asyncio_mode = "auto"` in pyproject.toml) — all async tests run automatically without explicit markers.
+- Tests use a `ctx` fixture (in `tests/test_server.py`) that provides an ephemeral SQLite database and `AnalyticsEngine` per test.
+- Test the MCP tools by calling `dispatch_tool()` directly rather than going through the MCP protocol.
+
+## CI
+
+GitHub Actions runs `ruff check` and `pytest --cov` on Python 3.12 for every push to `main` and all PRs. A separate job builds the Docker image.
+
+## Deployment
+
+Kubernetes-native via Helm chart in `helm/jfyi-mcp-server/`. Published as OCI artifact to GHCR. Data persists on a PVC mounted at `/data`.
