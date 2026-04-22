@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from . import __version__
 from pathlib import Path
 
 import typer
 from rich.console import Console
+
+from . import __version__
 
 app = typer.Typer(name="jfyi", help="JFYI — Just For Your Information MCP Server & Analytics Hub")
 console = Console()
@@ -48,9 +49,7 @@ def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings,
 
         mcp_server = build_mcp_server(db, analytics, user_id=user_id)
 
-        async with sse_transport.connect_sse(
-            scope, receive, send
-        ) as (read_stream, write_stream):
+        async with sse_transport.connect_sse(scope, receive, send) as (read_stream, write_stream):
             await mcp_server.run(
                 read_stream,
                 write_stream,

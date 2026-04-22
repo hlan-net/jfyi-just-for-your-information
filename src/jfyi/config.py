@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Feature flags
     enable_vector_db: bool = False  # Optional; falls back to SQLite FTS
     single_user_mode: bool = False  # Optional; bypass OAuth and use a predefined local admin
+    base_url: str | None = (
+        None  # Optional; forces the base URL for OAuth redirects (e.g. https://jfyi.k3s.hlan.net)
+    )
 
 
 settings = Settings()
