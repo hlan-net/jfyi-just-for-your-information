@@ -55,7 +55,7 @@ def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings,
                 write_stream,
                 InitializationOptions(
                     server_name="jfyi",
-                    server_version="2.1.2",
+                    server_version="2.1.3",
                     capabilities=mcp_server.get_capabilities(
                         notification_options=None, experimental_capabilities={}
                     ),
@@ -100,7 +100,7 @@ def serve(
         web_app.add_route("/mcp/sse", handle_sse)
         web_app.mount("/mcp/messages/", app=sse_transport.handle_post_message)
 
-        uvicorn.run(web_app, host=host, port=port)
+        uvicorn.run(web_app, host=host, port=port, proxy_headers=True, forwarded_allow_ips="*")
 
 
 @app.command()
