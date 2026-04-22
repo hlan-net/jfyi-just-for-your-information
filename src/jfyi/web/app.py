@@ -194,7 +194,7 @@ def _register_system_api(app: FastAPI) -> None:
     )
     async def configure_idp(body: IdpCreate, db: DBDep) -> dict[str, Any]:
         init_status = db.is_initialized()
-        if init_status["has_admin"]:
+        if init_status["has_admin"] and init_status["has_idp"]:
             raise HTTPException(
                 status_code=403,
                 detail="System already initialized with an admin. Use Admin panel to add IdPs.",
@@ -375,18 +375,19 @@ def _register_analytics_api(app: FastAPI) -> None:
         }
 
 
+class ClientRegistration(BaseModel):
+    client_name: str
+    client_uri: str | None = None
+    redirect_uris: list[str]
+    grant_types: list[str] = ["authorization_code", "refresh_token"]
+    response_types: list[str] = ["code"]
+    token_endpoint_auth_method: str = "none"
+
 def _register_oauth_server_api(app: FastAPI) -> None:
     import secrets
     from urllib.parse import urlencode
 
     from fastapi.responses import JSONResponse
-
-    class ClientRegistration(BaseModel):
-        client_name: str
-        redirect_uris: list[str]
-        grant_types: list[str] = ["authorization_code", "refresh_token"]
-        response_types: list[str] = ["code"]
-        token_endpoint_auth_method: str = "none"
 
     @app.get("/.well-known/oauth-authorization-server")
     async def oauth_discovery(request: Request):

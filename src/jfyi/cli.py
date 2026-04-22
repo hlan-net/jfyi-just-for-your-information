@@ -25,17 +25,17 @@ def _get_db_and_analytics(data_dir: Path):
 
 def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings, verify_mcp_jwt):
     from mcp.server.models import InitializationOptions
-    from starlette.types import Receive, Scope, Send
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
 
-    async def handle_sse(scope: Scope, receive: Receive, send: Send) -> None:
+    async def handle_sse(request: Request):
         user_id = None
         if settings.single_user_mode:
             user = db.get_user_by_email("local@jfyi.internal")
             if user:
                 user_id = user["id"]
         else:
-            headers = dict(scope.get("headers", []))
-            auth_header = headers.get(b"authorization", b"").decode("utf-8")
+            auth_header = request.headers.get("authorization", "")
             if auth_header.startswith("Bearer "):
                 token = auth_header.split(" ", 1)[1]
                 payload = verify_mcp_jwt(token)
@@ -43,35 +43,31 @@ def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings,
                     user_id = int(payload["sub"])
 
         if not user_id:
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 401,
-                    "headers": [(b"content-type", b"application/json")],
-                }
+            return JSONResponse(
+                {"error": "invalid_token", "error_description": "Unauthorized"},
+                status_code=401,
+                headers={"www-authenticate": 'Bearer realm="jfyi"'}
             )
-            await send(
-                {
-                    "type": "http.response.body",
-                    "body": b'{"error": "invalid_token", "error_description": "Unauthorized"}',
-                }
-            )
-            return
 
+        from mcp.server.lowlevel.server import NotificationOptions
         mcp_server = build_mcp_server(db, analytics, user_id=user_id)
 
-        async with sse_transport.connect_sse(scope, receive, send) as (read_stream, write_stream):
-            await mcp_server.run(
-                read_stream,
-                write_stream,
-                InitializationOptions(
-                    server_name="jfyi",
-                    server_version=__version__,
-                    capabilities=mcp_server.get_capabilities(
-                        notification_options=None, experimental_capabilities={}
-                    ),
-                ),
-            )
+        class SseResponse:
+            async def __call__(self, scope, receive, send):
+                async with sse_transport.connect_sse(scope, receive, send) as (read_stream, write_stream):
+                    await mcp_server.run(
+                        read_stream,
+                        write_stream,
+                        InitializationOptions(
+                            server_name="jfyi",
+                            server_version=__version__,
+                            capabilities=mcp_server.get_capabilities(
+                                notification_options=NotificationOptions(),
+                                experimental_capabilities={}
+                            ),
+                        ),
+                    )
+        return SseResponse()
 
     return handle_sse
 
@@ -110,7 +106,7 @@ def serve(
             db, analytics, sse_transport, build_mcp_server, settings, verify_mcp_jwt
         )
 
-        web_app.add_route("/mcp/sse", handle_sse)
+        web_app.add_route("/mcp/sse", handle_sse, methods=["GET", "POST", "OPTIONS"])
         web_app.mount("/mcp/messages/", app=sse_transport.handle_post_message)
 
         uvicorn.run(web_app, host=host, port=port, proxy_headers=True, forwarded_allow_ips="*")
