@@ -67,14 +67,14 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
     )
 
     app.add_middleware(
+        SessionMiddleware, secret_key=settings.jwt_secret.get_secret_value(), max_age=86400
+    )
+
+    app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_methods=["*"],
         allow_headers=["*"],
-    )
-
-    app.add_middleware(
-        SessionMiddleware, secret_key=settings.jwt_secret.get_secret_value(), max_age=86400
     )
 
     if settings.single_user_mode:
@@ -84,7 +84,7 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
 
     # ── Dependencies ────────────────────────────────────────────────────────
 
-    async def get_current_user(request: Request) -> dict[str, Any]:
+    def get_current_user(request: Request) -> dict[str, Any]:
         if settings.single_user_mode:
             user = db.get_user_by_email("local@jfyi.internal")
             if user:
@@ -115,7 +115,7 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
             raise HTTPException(status_code=401, detail="User not found")
         return user
 
-    async def get_admin_user(
+    def get_admin_user(
         current_user: dict[str, Any] = Depends(get_current_user),
     ) -> dict[str, Any]:
         if not current_user.get("is_admin"):
