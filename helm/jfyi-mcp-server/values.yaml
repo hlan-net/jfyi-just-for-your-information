@@ -86,7 +86,7 @@ resources:
 
 livenessProbe:
   httpGet:
-    path: /api/profile/rules
+    path: /api/system/status
     port: mcp
   initialDelaySeconds: 15
   periodSeconds: 30
@@ -95,7 +95,7 @@ livenessProbe:
 
 readinessProbe:
   httpGet:
-    path: /api/profile/rules
+    path: /api/system/status
     port: mcp
   initialDelaySeconds: 10
   periodSeconds: 10

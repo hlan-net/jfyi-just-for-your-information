@@ -369,7 +369,7 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
     app = FastAPI(
         title="JFYI Dashboard",
         description="JFYI MCP Server & Analytics Hub - Web Dashboard",
-        version="2.1.1",
+        version="2.1.2",
     )
 
     app.state.db = db
