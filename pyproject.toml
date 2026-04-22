@@ -53,4 +53,4 @@ target-version = "py311"
 select = ["E", "F", "I", "UP"]
 
 [tool.setuptools.package-data]
-"*" = ["*.html", "*.css", "*.js", "*.png", "*.ico", "static/*"]
+"jfyi.web" = ["*.html", "*.css", "*.js", "*.png", "*.ico", "static/*"]
