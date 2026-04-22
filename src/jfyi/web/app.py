@@ -146,7 +146,9 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
         return {"status": "success"}
 
     @app.delete("/api/admin/users/{user_id}")
-    async def delete_user(user_id: int, admin: dict[str, Any] = Depends(get_admin_user)) -> dict[str, Any]:
+    async def delete_user(
+        user_id: int, admin: dict[str, Any] = Depends(get_admin_user)
+    ) -> dict[str, Any]:
         if user_id == admin["id"]:
             raise HTTPException(status_code=400, detail="Cannot delete your own account")
         success = db.delete_user(user_id)

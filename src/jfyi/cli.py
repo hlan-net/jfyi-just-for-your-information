@@ -48,9 +48,9 @@ def serve(
         from mcp.server.sse import SseServerTransport
         from starlette.types import Receive, Scope, Send
 
-        from .server import build_mcp_server
-        from .config import settings
         from .auth import verify_mcp_jwt
+        from .config import settings
+        from .server import build_mcp_server
 
         sse_transport = SseServerTransport("/mcp/messages/")
 

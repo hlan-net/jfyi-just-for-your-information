@@ -14,20 +14,28 @@ def engine(tmp_path):
 
 
 def test_friction_score_no_correction(engine):
-    score, factors = engine.compute_friction_score(user_id=1, was_corrected=False, correction_latency_s=None)
+    score, factors = engine.compute_friction_score(
+        user_id=1, was_corrected=False, correction_latency_s=None
+    )
     assert score == 0.0
     assert factors["correction_made"] == 0.0
 
 
 def test_friction_score_with_correction(engine):
-    score, factors = engine.compute_friction_score(user_id=1, was_corrected=True, correction_latency_s=10.0)
+    score, factors = engine.compute_friction_score(
+        user_id=1, was_corrected=True, correction_latency_s=10.0
+    )
     assert score > 0.0
     assert factors["correction_made"] == 1.0
 
 
 def test_friction_score_fast_correction_is_high(engine):
-    fast_score, _ = engine.compute_friction_score(user_id=1, was_corrected=True, correction_latency_s=5.0)
-    slow_score, _ = engine.compute_friction_score(user_id=1, was_corrected=True, correction_latency_s=250.0)
+    fast_score, _ = engine.compute_friction_score(
+        user_id=1, was_corrected=True, correction_latency_s=5.0
+    )
+    slow_score, _ = engine.compute_friction_score(
+        user_id=1, was_corrected=True, correction_latency_s=250.0
+    )
     assert fast_score > slow_score
 
 
