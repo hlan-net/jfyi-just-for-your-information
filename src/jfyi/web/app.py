@@ -1,4 +1,5 @@
 from .. import __version__
+
 """JFYI Web Dashboard - FastAPI backend serving REST API and static UI."""
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from ..analytics import AnalyticsEngine
@@ -211,7 +213,11 @@ def _register_auth_api(app: FastAPI) -> None:
         client = oauth.create_client(provider)
         if not client:
             raise HTTPException(status_code=404, detail="Provider not found")
+        
         redirect_uri = str(request.url_for("auth_callback", provider=provider))
+        if settings.base_url:
+            redirect_uri = settings.base_url.rstrip("/") + f"/auth/callback/{provider}"
+        
         return await client.authorize_redirect(request, redirect_uri)
 
     @app.get("/auth/callback/{provider}", responses={404: {"description": "Provider not found"}})
@@ -366,6 +372,14 @@ def _register_analytics_api(app: FastAPI) -> None:
         }
 
 
+class ProxySchemeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if "x-forwarded-proto" in request.headers:
+            proto = request.headers["x-forwarded-proto"].split(",")[0].strip()
+            request.scope["scheme"] = proto
+        return await call_next(request)
+
+
 def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
     """Create and configure the FastAPI web dashboard."""
     app = FastAPI(
@@ -373,6 +387,8 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
         description="JFYI MCP Server & Analytics Hub - Web Dashboard",
         version=__version__,
     )
+
+    app.add_middleware(ProxySchemeMiddleware)
 
     app.state.db = db
     app.state.analytics = analytics
