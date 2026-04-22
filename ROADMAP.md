@@ -17,10 +17,14 @@ Independent, high-impact improvements that can be shipped without dependencies b
 | [Progressive Disclosure](docs/progressive-disclosure.md) | `v2.1.0` | Planned | [docs/progressive-disclosure.md](docs/progressive-disclosure.md) |
 | [Payload Minification](docs/payload-minification.md) | `v2.1.0` | Planned | [docs/payload-minification.md](docs/payload-minification.md) |
 | [Read-only Injection Zone](docs/read-only-injection.md) | `v2.1.0` | Planned | [docs/read-only-injection.md](docs/read-only-injection.md) |
+| [OAuth 2.1 + RBAC](docs/oauth-rbac.md) | `v2.1.0` | Done | [docs/oauth-rbac.md](docs/oauth-rbac.md) |
 
 **Progressive Disclosure** replaces the current model of exposing all tools and schemas upfront with a lightweight router tool that expands on demand. MCP servers inherently consume 40–50% of the available context before an agent begins any task; this feature reclaims that budget.
 
 **Payload Minification** replaces verbose JSON serialization with compact formats — stripped JSON and TOON (Token-Optimized Object Notation) — at the LLM boundary. TOON acts as a presentation layer over the existing JSON data model: internal storage (SQLite) is unchanged; only the serialization call at prompt-assembly time is replaced. Estimated token reduction: 40–60% on data payloads.
+
+
+**OAuth 2.1 + RBAC** introduces multi-user authentication via OAuth 2.1 with PKCE and JWT validation, paired with scope-based role access control. Upgraded to a Vue 3 + Vite SPA to support identity providers natively.
 
 **Read-only Injection Zone** wraps injected profile data in a structurally fenced, read-only block and strips any injection attempts from rule text at write time, preventing profile data from being hijacked via indirect prompt injection.
 
@@ -66,13 +70,10 @@ Structural improvements to how JFYI manages session state and large data artifac
 |------|--------|--------|------|
 | [Inline DLP / PII Redaction](docs/dlp-redaction.md) | `v2.4.0` | Planned | [docs/dlp-redaction.md](docs/dlp-redaction.md) |
 | [Sandboxed Execution](docs/sandboxed-execution.md) | `v2.4.0` | Planned | [docs/sandboxed-execution.md](docs/sandboxed-execution.md) |
-| [OAuth 2.1 + RBAC](docs/oauth-rbac.md) | `v2.4.0` | Planned | [docs/oauth-rbac.md](docs/oauth-rbac.md) |
 
 **Inline DLP / PII Redaction** automatically scrubs API keys, tokens, and personal data from all text before it is stored or injected into any agent context, with a regex pack covering common secret patterns.
 
 **Sandboxed Execution** restricts JFYI's filesystem access to explicitly declared roots, runs the container as a non-root user with a read-only root filesystem, and exposes a `sandbox.enforce()` path validation layer used by any tool that accesses local files.
-
-**OAuth 2.1 + RBAC** introduces multi-user authentication via OAuth 2.1 with PKCE and JWT validation, paired with scope-based role access control (`jfyi.profile.read`, `jfyi.profile.write`, `jfyi.admin`). Gated on confirmed multi-user deployment demand.
 
 ---
 

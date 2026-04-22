@@ -10,6 +10,7 @@ from jfyi.server import build_mcp_server, dispatch_tool
 @pytest.fixture
 def ctx(tmp_path):
     db = Database(tmp_path / "test.db")
+    db.create_user("test@example.com")
     return db, AnalyticsEngine(db)
 
 
@@ -22,7 +23,7 @@ async def test_get_developer_profile_empty(ctx):
 
 async def test_get_developer_profile_lists_rules(ctx):
     db, analytics = ctx
-    db.add_rule("Prefers early returns", category="style", confidence=0.9)
+    db.add_rule(1, "Prefers early returns", category="style", confidence=0.9)
     result = await dispatch_tool("get_developer_profile", {}, db, analytics)
     assert "Prefers early returns" in result[0].text
     assert "[style]" in result[0].text
@@ -37,7 +38,7 @@ async def test_add_profile_rule(ctx):
         analytics,
     )
     assert "Rule added" in result[0].text
-    assert len(db.get_rules()) == 1
+    assert len(db.get_rules(1)) == 1
 
 
 async def test_record_interaction(ctx):
@@ -68,6 +69,7 @@ async def test_get_agent_analytics_empty(ctx):
 async def test_get_agent_analytics_reports_alignment(ctx):
     db, analytics = ctx
     analytics.record_interaction(
+        user_id=1,
         agent_name="gpt-4o",
         session_id="s1",
         prompt="p",

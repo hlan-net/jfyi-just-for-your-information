@@ -30,7 +30,7 @@ jobs:
         run: ruff check src/ tests/
 
       - name: Run tests
-        run: pytest --cov=jfyi --cov-report=term-missing
+        run: pytest --cov=jfyi --cov-report=term-missing --cov-report=xml
 
   docker-build:
     name: Docker Build

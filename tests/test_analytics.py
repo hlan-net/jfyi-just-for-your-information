@@ -9,6 +9,7 @@ from jfyi.database import Database
 @pytest.fixture
 def engine(tmp_path):
     db = Database(tmp_path / "test.db")
+    db.create_user("test@example.com")
     return AnalyticsEngine(db)
 
 
@@ -42,6 +43,7 @@ def test_friction_score_edit_volume(engine):
 
 def test_record_interaction_returns_friction_score(engine):
     friction = engine.record_interaction(
+        user_id=1,
         agent_name="claude-3-7",
         session_id="s1",
         prompt="Write a function",
@@ -55,13 +57,14 @@ def test_record_interaction_returns_friction_score(engine):
 
 def test_get_agent_profiles(engine):
     engine.record_interaction(
+        user_id=1,
         agent_name="gpt-4o",
         session_id="s1",
         prompt="p",
         response="r",
         was_corrected=False,
     )
-    profiles = engine.get_agent_profiles()
+    profiles = engine.get_agent_profiles(user_id=1)
     assert len(profiles) == 1
     assert profiles[0].name == "gpt-4o"
     assert profiles[0].alignment_score == pytest.approx(100.0)
@@ -70,13 +73,14 @@ def test_get_agent_profiles(engine):
 def test_alignment_score_inverse_of_correction_rate(engine):
     for i in range(4):
         engine.record_interaction(
+            user_id=1,
             agent_name="agent-x",
             session_id=f"s{i}",
             prompt="p",
             response="r",
             was_corrected=(i < 2),  # 2 out of 4 corrected = 50% correction rate
         )
-    profiles = engine.get_agent_profiles()
+    profiles = engine.get_agent_profiles(user_id=1)
     p = profiles[0]
     assert p.correction_rate_pct == pytest.approx(50.0)
     assert p.alignment_score == pytest.approx(50.0)

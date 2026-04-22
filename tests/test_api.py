@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from jfyi.analytics import AnalyticsEngine
+from jfyi.auth import create_session_cookie
 from jfyi.database import Database
 from jfyi.web.app import create_app
 
@@ -11,9 +12,16 @@ from jfyi.web.app import create_app
 @pytest.fixture
 def client(tmp_path):
     db = Database(tmp_path / "test.db")
+    db.create_user("test@example.com")
     analytics = AnalyticsEngine(db)
     app = create_app(db, analytics)
-    return TestClient(app)
+    client = TestClient(app)
+
+    # Inject session cookie for user_id = 1
+    session_cookie = create_session_cookie(1)
+    client.cookies.set("jfyi_session", session_cookie)
+
+    return client
 
 
 def test_get_rules_empty(client):
