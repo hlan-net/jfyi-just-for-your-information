@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jfyi-mcp-server"
-version = "2.1.0"
+version = "2.1.1"
 description = "JFYI - Just For Your Information: A passive MCP server and analytics hub with Profile-Guided Optimization"
 readme = "README.md"
 license = { text = "Apache-2.0" }
