@@ -36,23 +36,14 @@ class Database:
         with self._conn() as conn:
             # We are dropping the old legacy schema because we need multi-tenant scoping.
             conn.executescript("""
-                DROP TABLE IF EXISTS friction_events;
-                DROP TABLE IF EXISTS interactions;
-                DROP TABLE IF EXISTS profile_rules;
-                DROP TABLE IF EXISTS agents;
-                DROP TABLE IF EXISTS user_identities;
-                DROP TABLE IF EXISTS identity_providers;
-                DROP TABLE IF EXISTS users;
-
-                
-                CREATE TABLE identity_providers (
+                CREATE TABLE IF NOT EXISTS identity_providers (
                     provider TEXT PRIMARY KEY,
                     client_id TEXT NOT NULL,
                     client_secret TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
 
-                CREATE TABLE users (
+                CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT,
                     email TEXT UNIQUE NOT NULL,
@@ -60,7 +51,7 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
-                CREATE TABLE user_identities (
+                CREATE TABLE IF NOT EXISTS user_identities (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     provider TEXT NOT NULL,
@@ -69,7 +60,7 @@ class Database:
                     UNIQUE(provider, sub)
                 );
 
-                CREATE TABLE profile_rules (
+                CREATE TABLE IF NOT EXISTS profile_rules (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     rule TEXT NOT NULL,
@@ -80,7 +71,7 @@ class Database:
                     updated_at TEXT NOT NULL
                 );
 
-                CREATE TABLE agents (
+                CREATE TABLE IF NOT EXISTS agents (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     name TEXT NOT NULL,
@@ -89,7 +80,7 @@ class Database:
                     UNIQUE(user_id, name)
                 );
 
-                CREATE TABLE interactions (
+                CREATE TABLE IF NOT EXISTS interactions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -103,7 +94,7 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
-                CREATE TABLE friction_events (
+                CREATE TABLE IF NOT EXISTS friction_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
