@@ -1,3 +1,4 @@
+from .. import __version__
 """JFYI Web Dashboard - FastAPI backend serving REST API and static UI."""
 
 from __future__ import annotations
@@ -183,6 +184,7 @@ def _register_system_api(app: FastAPI) -> None:
             "is_ready": init_status["is_ready"] or settings.single_user_mode,
             "providers": idp_list,
             "single_user_mode": settings.single_user_mode,
+            "version": __version__,
         }
 
     @app.post(
@@ -369,7 +371,7 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
     app = FastAPI(
         title="JFYI Dashboard",
         description="JFYI MCP Server & Analytics Hub - Web Dashboard",
-        version="2.1.3",
+        version=__version__,
     )
 
     app.state.db = db

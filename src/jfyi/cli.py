@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from . import __version__
 from pathlib import Path
 
 import typer
@@ -55,7 +56,7 @@ def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings,
                 write_stream,
                 InitializationOptions(
                     server_name="jfyi",
-                    server_version="2.1.3",
+                    server_version=__version__,
                     capabilities=mcp_server.get_capabilities(
                         notification_options=None, experimental_capabilities={}
                     ),

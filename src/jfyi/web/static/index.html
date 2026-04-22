@@ -99,7 +99,7 @@
       <div class="header-left">
         <h1 @click="$router.push('/')">⚡ JFYI Dashboard</h1>
         <span class="subtitle">Just For Your Information — MCP Server &amp; Analytics Hub</span>
-        <span class="badge">v2.1.1</span>
+        <span class="badge" v-if="system.version">v{{ system.version }}</span>
       </div>
       <div>
         <span v-if="user" style="margin-right: 1rem; font-size: 0.9rem;">

@@ -6,11 +6,8 @@ concurrency:
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'helm/**'
-      - '.github/workflows/helm-package.yml'
+    tags:
+      - "v*.*.*"
 
 jobs:
   build:
@@ -25,6 +22,11 @@ jobs:
 
       - name: Set up Helm
         uses: azure/setup-helm@v5
+
+      - name: Inject Version
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          sed -i "s/0.0.0-dev/$VERSION/g" helm/jfyi-mcp-server/Chart.yaml
 
       - name: Helm lint
         run: helm lint helm/jfyi-mcp-server
