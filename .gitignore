@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Local Kubernetes / Helm overrides
+*-values.yaml
+values-local.yaml
+*.local.yaml
+*values.local.yaml
+helm/*-values.yaml
