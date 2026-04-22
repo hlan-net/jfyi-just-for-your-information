@@ -21,12 +21,12 @@ async def dispatch_tool(
     name: str,
     arguments: dict[str, Any],
     db: Database,
-    analytics: AnalyticsEngine,
+    analytics: AnalyticsEngine, user_id: int = 1
 ) -> list[TextContent]:
     """Execute a JFYI tool by name. Shared by the MCP server handler and tests."""
     if name == "get_developer_profile":
         category = arguments.get("category")
-        rules = db.get_rules(category=category)
+        rules = db.get_rules(user_id=user_id, category=category)
         if not rules:
             return [TextContent(
                 type="text",
@@ -42,7 +42,7 @@ async def dispatch_tool(
 
     elif name == "record_interaction":
         session_id = arguments.get("session_id") or str(uuid.uuid4())
-        friction = analytics.record_interaction(
+        friction = analytics.record_interaction(user_id=user_id, 
             agent_name=arguments["agent_name"],
             session_id=session_id,
             prompt=arguments["prompt"],
@@ -66,7 +66,7 @@ async def dispatch_tool(
         ]
 
     elif name == "get_agent_analytics":
-        profiles = analytics.get_agent_profiles()
+        profiles = analytics.get_agent_profiles(user_id=user_id)
         if not profiles:
             return [TextContent(
                 type="text",
@@ -90,7 +90,7 @@ async def dispatch_tool(
         return [TextContent(type="text", text="\n".join(lines))]
 
     elif name == "add_profile_rule":
-        rule_id = db.add_rule(
+        rule_id = db.add_rule(user_id=user_id, 
             rule=arguments["rule"],
             category=arguments.get("category", "general"),
             confidence=arguments.get("confidence", 1.0),
@@ -209,7 +209,7 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine) -> Server:
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        return await dispatch_tool(name, arguments, db, analytics)
+        return await dispatch_tool(name, arguments, db, analytics, user_id=1)
 
     return server
 

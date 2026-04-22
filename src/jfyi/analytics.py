@@ -56,6 +56,7 @@ class AnalyticsEngine:
 
     def compute_friction_score(
         self,
+        user_id: int,
         was_corrected: bool,
         correction_latency_s: float | None,
         num_edits: int = 0,
@@ -97,6 +98,7 @@ class AnalyticsEngine:
 
     def record_interaction(
         self,
+        user_id: int,
         agent_name: str,
         session_id: str,
         prompt: str,
@@ -107,12 +109,12 @@ class AnalyticsEngine:
         model: str | None = None,
     ) -> FrictionScore:
         """Record an agent interaction and return its friction score."""
-        agent_id = self._db.get_or_create_agent(agent_name, model)
+        agent_id = self._db.get_or_create_agent(user_id, agent_name, model)
         friction_score, factors = self.compute_friction_score(
             was_corrected, correction_latency_s, num_edits
         )
 
-        interaction_id = self._db.record_interaction(
+        interaction_id = self._db.record_interaction(user_id=user_id, 
             agent_id=agent_id,
             session_id=session_id,
             prompt_hash=self.hash_text(prompt),
@@ -124,7 +126,7 @@ class AnalyticsEngine:
         )
 
         if was_corrected:
-            self._db.add_friction_event(
+            self._db.add_friction_event(user_id=user_id, 
                 agent_id=agent_id,
                 event_type="correction",
                 description=(
@@ -143,9 +145,9 @@ class AnalyticsEngine:
             factors=factors,
         )
 
-    def get_agent_profiles(self) -> list[AgentProfile]:
+    def get_agent_profiles(self, user_id: int) -> list[AgentProfile]:
         """Retrieve summarised profiles for all tracked agents."""
-        rows = self._db.get_agent_stats()
+        rows = self._db.get_agent_stats(user_id)
         return [
             AgentProfile(
                 name=r["name"],
@@ -159,9 +161,9 @@ class AnalyticsEngine:
             for r in rows
         ]
 
-    def infer_profile_rules(self) -> list[str]:
+    def infer_profile_rules(self, user_id: int) -> list[str]:
         """Infer profile rules from recent friction events and interactions."""
-        events = self._db.get_friction_events(limit=200)
+        events = self._db.get_friction_events(user_id=user_id, limit=200)
         if not events:
             return []
 

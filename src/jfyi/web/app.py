@@ -60,11 +60,11 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
 
     @app.get("/api/profile/rules")
     async def get_rules(category: str | None = None) -> list[dict[str, Any]]:
-        return db.get_rules(category=category)
+        return db.get_rules(user_id=1, category=category)
 
     @app.post("/api/profile/rules", status_code=201)
     async def create_rule(body: RuleCreate) -> dict[str, Any]:
-        rule_id = db.add_rule(
+        rule_id = db.add_rule(user_id=1, 
             rule=body.rule,
             category=body.category,
             confidence=body.confidence,
@@ -74,14 +74,14 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
 
     @app.put("/api/profile/rules/{rule_id}")
     async def update_rule(rule_id: int, body: RuleUpdate) -> dict[str, Any]:
-        ok = db.update_rule(rule_id, body.rule, body.category, body.confidence)
+        ok = db.update_rule(1, rule_id, body.rule, body.category, body.confidence)
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
         return {"id": rule_id, **body.model_dump()}
 
     @app.delete("/api/profile/rules/{rule_id}", status_code=204)
     async def delete_rule(rule_id: int) -> None:
-        ok = db.delete_rule(rule_id)
+        ok = db.delete_rule(1, rule_id)
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
 
@@ -89,7 +89,7 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
 
     @app.get("/api/analytics/agents")
     async def get_agent_analytics() -> list[dict[str, Any]]:
-        profiles = analytics.get_agent_profiles()
+        profiles = analytics.get_agent_profiles(user_id=1)
         return [
             {
                 "name": p.name,
@@ -108,14 +108,14 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
     async def get_friction_events(
         agent_id: int | None = None, limit: int = 100
     ) -> list[dict[str, Any]]:
-        return db.get_friction_events(agent_id=agent_id, limit=limit)
+        return db.get_friction_events(user_id=1, agent_id=agent_id, limit=limit)
 
     # ── Interaction recording API (mirrors MCP tool) ─────────────────────────
 
     @app.post("/api/interactions", status_code=201)
     async def record_interaction(body: InteractionCreate) -> dict[str, Any]:
         session_id = body.session_id or str(uuid.uuid4())
-        friction = analytics.record_interaction(
+        friction = analytics.record_interaction(user_id=1, 
             agent_name=body.agent_name,
             session_id=session_id,
             prompt=body.prompt,
