@@ -4,18 +4,18 @@
 ![Helm Chart](https://img.shields.io/badge/Helm-Chart_v1.0.0-blue.svg)
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 
-JFYI is an advanced, passive Model Context Protocol (MCP) server and analytics platform. It introduces Profile-Guided Optimization (PGO) to AI-assisted software development.
+JFYI is a Model Context Protocol (MCP) server and analytics platform. It introduces Profile-Guided Optimization (PGO) to AI-assisted software development.
 
-Instead of manually teaching your AI assistant, JFYI runs as a continuous background service. It observes your coding habits and dynamically feeds optimization rules into your AI agents (Claude, Cursor, Windsurf).
+JFYI stores your coding preferences as profile rules and surfaces them to your AI agents (Claude, Cursor, Windsurf) on demand via the `get_developer_profile` MCP tool. Agents can also record interaction telemetry, letting JFYI measure correction rates and friction across sessions.
 
-**New in v2.0 - Bidirectional Profiling:** JFYI doesn't just profile you; it profiles your *agents*. With the built-in Web UI, you can monitor which AI models and frameworks adapt best to your unique coding style and where the most "friction" occurs.
+**v2.0 — Bidirectional Profiling:** JFYI tracks both sides of the collaboration. It stores rules about your coding style *and* measures which AI agents generate the least friction, so you can see which model suits your architecture best.
 
 ## 🌟 Core Features
 
-* **Zero-Cost User Profiling:** Passively monitors your workflow (Git diffs, compile errors, terminal outputs) to build your "Coding DNA" without interrupting your flow.
-* **Agent Performance Analytics:** Tracks correction rates, friction points, and success metrics across different AI agents (e.g., Claude 3.7 vs. GPT-4o). Discover which agent suits your architecture best.
-* **Interactive Web UI:** A built-in dashboard where you can inspect, tweak, and manually correct your generated developer profile, as well as view agent compatibility statistics.
-* **Dynamic System Prompts (Context Engineering):** Automatically injects high-value, pre-computed context and rules into the agent's system prompt to prevent recurring mistakes.
+* **Profile Rule Storage:** Build your "Coding DNA" by adding rules through the web dashboard or by letting your AI agent call `add_profile_rule` during a session. Rules are returned to agents via `get_developer_profile` at the start of each conversation.
+* **Agent Performance Analytics:** Tracks correction rates, friction scores, and latency across different AI agents (e.g., Claude vs. GPT-4o) using the `record_interaction` and `get_agent_analytics` MCP tools. Discover which agent suits your architecture best.
+* **Interactive Web UI:** A built-in dashboard where you can inspect, add, edit, and delete profile rules, view agent friction statistics, and browse the raw friction events log.
+* **Context Engineering via MCP:** Your AI agent retrieves high-value profile rules at the start of each session using the `get_developer_profile` MCP tool, enabling it to avoid recurring mistakes without manual prompting.
 * **Enterprise-Ready Deployment:** Packaged as a Helm chart, hosted on GitHub Container Registry (GHCR), and backed by Kubernetes Persistent Volumes (PV) for durable memory storage.
 
 ## 🏗️ Architecture
@@ -92,12 +92,9 @@ JFYI comes with a rich UI for managing the bidirectional profiling. The MCP serv
 
 The UI features three main views:
 
-1. **Your Developer Profile:** Review the rules JFYI has learned about you (e.g., "Prefers early returns," "Always documents API endpoints"). You can edit, delete, or manually add new rules.
-2. **Agent Friction Statistics:** View comparative analytics. See how often you have to correct Agent A vs. Agent B. Metrics include:
-   - Time-to-resolution per agent.
-   - Correction Rate (how many times you modified the AI's generated code within 5 minutes).
-   - Architecture Alignment Score.
-3. **Memory Explorer:** Inspect the raw context and past "friction events" stored in the Persistent Volume.
+1. **Your Developer Profile:** View, edit, delete, and manually add profile rules by category (general, style, architecture, testing, docs) and confidence score.
+2. **Agent Friction Statistics:** Comparative analytics across agents — correction rate, average friction score, average correction latency, and architecture alignment score.
+3. **Memory Explorer:** Browse the raw friction events log stored in the Persistent Volume, showing which agent triggered each event and its description.
 
 ## 🛡️ Privacy & Data Persistence
 
@@ -140,11 +137,20 @@ docker-compose up
 ├── ROADMAP.md         — Planned improvements and phased feature roadmap
 ├── LICENSE            — Apache 2.0
 ├── docs/              — Detailed specifications for roadmap items
-│   ├── progressive-disclosure.md
-│   ├── payload-minification.md
-│   ├── compiled-view-memory.md
-│   ├── context-compaction.md
-│   └── itr.md
+│   ├── progressive-disclosure.md  — Phase 1: on-demand schema expansion
+│   ├── payload-minification.md    — Phase 1: compact token serialization
+│   ├── read-only-injection.md     — Phase 1: prompt-injection hardening
+│   ├── compiled-view-memory.md    — Phase 2: artifact handle memory
+│   ├── context-compaction.md      — Phase 2: rolling summarization
+│   ├── three-tiered-memory.md     — Phase 2: short/long/episodic tiers
+│   ├── background-summarization.md — Phase 2: async memory distillation
+│   ├── itr.md                     — Phase 3: semantic tool/instruction retrieval
+│   ├── vector-embeddings.md       — Phase 3: ChromaDB core dependency
+│   ├── dlp-redaction.md           — Phase 4: inline PII scrubbing
+│   ├── sandboxed-execution.md     — Phase 4: filesystem root enforcement
+│   ├── oauth-rbac.md              — Phase 4: OAuth 2.1 + JWT RBAC
+│   ├── acp.md                     — Phase 5: Agent Communication Protocol
+│   └── a2a.md                     — Phase 5: Agent2Agent negotiation
 ├── src/jfyi/          — Application source code
 ├── tests/             — Test suite
 ├── helm/              — Kubernetes Helm chart
