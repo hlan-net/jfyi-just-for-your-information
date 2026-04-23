@@ -2,8 +2,9 @@
 
 import json
 import sqlite3
+import uuid
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ class Database:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
+        self._run_migrations()
 
     @contextmanager
     def _conn(self):
@@ -118,6 +120,46 @@ class Database:
                     value TEXT NOT NULL
                 );
             """)
+
+    def _run_migrations(self) -> None:
+        """Apply forward-only, idempotent schema migrations tracked by PRAGMA user_version."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version < 1:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS short_term_memory (
+                        id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        key TEXT NOT NULL,
+                        value TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        UNIQUE(session_id, user_id, key)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS episodic_memory (
+                        id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        event_type TEXT NOT NULL,
+                        summary TEXT NOT NULL,
+                        context_json TEXT,
+                        created_at TEXT NOT NULL
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_stm_session
+                        ON short_term_memory(session_id, user_id);
+                    CREATE INDEX IF NOT EXISTS idx_stm_expires
+                        ON short_term_memory(expires_at);
+                    CREATE INDEX IF NOT EXISTS idx_episodic_session
+                        ON episodic_memory(session_id, user_id);
+
+                    PRAGMA user_version = 1;
+                """)
+        finally:
+            conn.close()
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -423,3 +465,98 @@ class Database:
                 (user_id,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    # ── Short-term memory ──────────────────────────────────────────────────
+
+    def stm_set(
+        self, session_id: str, user_id: int, key: str, value: str, ttl_seconds: int = 3600
+    ) -> str:
+        now = datetime.now(UTC)
+        expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat()
+        entry_id = str(uuid.uuid4())
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO short_term_memory"
+                " (id, session_id, user_id, key, value, expires_at, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (entry_id, session_id, user_id, key, value, expires_at, now.isoformat()),
+            )
+        return entry_id
+
+    def stm_get(self, session_id: str, user_id: int, key: str) -> str | None:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT value, expires_at FROM short_term_memory"
+                " WHERE session_id=? AND user_id=? AND key=?",
+                (session_id, user_id, key),
+            ).fetchone()
+            if not row:
+                return None
+            if row["expires_at"] <= now:
+                conn.execute(
+                    "DELETE FROM short_term_memory WHERE session_id=? AND user_id=? AND key=?",
+                    (session_id, user_id, key),
+                )
+                return None
+            return row["value"]
+
+    def stm_delete(self, session_id: str, user_id: int, key: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM short_term_memory WHERE session_id=? AND user_id=? AND key=?",
+                (session_id, user_id, key),
+            )
+            return cur.rowcount > 0
+
+    def stm_purge_expired(self) -> int:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            cur = conn.execute("DELETE FROM short_term_memory WHERE expires_at <= ?", (now,))
+            return cur.rowcount
+
+    # ── Episodic memory ────────────────────────────────────────────────────
+
+    def episodic_add(
+        self,
+        session_id: str,
+        user_id: int,
+        event_type: str,
+        summary: str,
+        context: dict | None = None,
+    ) -> str:
+        now = datetime.now(UTC).isoformat()
+        entry_id = str(uuid.uuid4())
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO episodic_memory"
+                " (id, session_id, user_id, event_type, summary, context_json, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    entry_id,
+                    session_id,
+                    user_id,
+                    event_type,
+                    summary,
+                    json.dumps(context) if context else None,
+                    now,
+                ),
+            )
+        return entry_id
+
+    def episodic_get(self, session_id: str, user_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM episodic_memory"
+                " WHERE session_id=? AND user_id=? ORDER BY created_at DESC LIMIT ?",
+                (session_id, user_id, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def episodic_delete_session(self, session_id: str, user_id: int) -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM episodic_memory WHERE session_id=? AND user_id=?",
+                (session_id, user_id),
+            )
+            return cur.rowcount
