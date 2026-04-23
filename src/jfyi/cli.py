@@ -36,13 +36,19 @@ def _authenticate(request, db, settings, verify_mcp_jwt) -> int | None:
     return None
 
 
-def _unauthorized():
+def _unauthorized(request=None):
     from starlette.responses import JSONResponse
 
+    from .config import settings
+
+    base_url = settings.base_url or (str(request.base_url).rstrip("/") if request else "")
+    metadata_url = f"{base_url}/.well-known/oauth-authorization-server"
     return JSONResponse(
         {"error": "invalid_token", "error_description": "Unauthorized"},
         status_code=401,
-        headers={"www-authenticate": 'Bearer realm="jfyi"'},
+        headers={
+            "www-authenticate": f'Bearer realm="jfyi", resource_metadata="{metadata_url}"'
+        },
     )
 
 
@@ -67,7 +73,7 @@ def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings,
     async def handle_sse(request: Request):
         user_id = _authenticate(request, db, settings, verify_mcp_jwt)
         if not user_id:
-            return _unauthorized()
+            return _unauthorized(request)
 
         mcp_server = build_mcp_server(db, analytics, user_id=user_id)
 
@@ -95,7 +101,7 @@ def _build_streamable_handler(db, analytics, build_mcp_server, settings, verify_
     async def handle_streamable(request: Request):
         user_id = _authenticate(request, db, settings, verify_mcp_jwt)
         if not user_id:
-            return _unauthorized()
+            return _unauthorized(request)
 
         mcp_server = build_mcp_server(db, analytics, user_id=user_id)
         transport = StreamableHTTPServerTransport(
@@ -164,7 +170,9 @@ def serve(
 
         # GET opens a legacy SSE long-poll stream.
         web_app.add_route("/mcp/sse", handle_sse, methods=["GET", "HEAD", "OPTIONS"])
-        # POST is MCP Streamable HTTP (Gemini, Claude, Cursor, …); stateless per request.
+        # POST is MCP Streamable HTTP (Gemini, Claude, Cursor, opencode, …); stateless per request.
+        # Exposed at both /mcp and /mcp/sse so clients can use the canonical /mcp path.
+        web_app.add_route("/mcp", handle_streamable, methods=["POST", "DELETE"])
         web_app.add_route("/mcp/sse", handle_streamable, methods=["POST", "DELETE"])
         # Legacy SSE clients POST JSON-RPC messages here after opening the GET stream.
         web_app.mount("/mcp/messages/", app=sse_transport.handle_post_message)
