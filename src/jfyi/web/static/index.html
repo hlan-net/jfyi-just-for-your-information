@@ -328,11 +328,16 @@
       "transport": "sse",
       "url": "{{ origin }}/mcp/sse",
       "headers": {
-        "Authorization": "Bearer &lt;YOUR_TOKEN_HERE&gt;"
+        "Authorization": "Bearer {{ token || '&lt;YOUR_TOKEN_HERE&gt;' }}"
       }
     }
   }
 }</code></pre>
+        <div style="margin-top: 0.5rem;">
+          <button @click="copyConfig" class="btn btn-outline" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;">
+            {{ copiedConfig ? 'Copied!' : 'Copy Config' }}
+          </button>
+        </div>
         <p style="font-size: 0.8rem; color: var(--muted); margin-top: 0.75rem;"><em>Note: If your agent (like Claude Desktop) only supports <code>stdio</code> transport natively, you may need a proxy script (like a simple node or python script) that translates stdio back to SSE. Most modern clients and libraries (like LangChain or LlamaIndex) support SSE natively.</em></p>
       </div>
     </div>
@@ -498,12 +503,33 @@ const Connect = {
     };
     
     const copyToken = () => {
-      navigator.clipboard.writeText(token.value);
-      copied.value = true;
-      setTimeout(() => copied.value = false, 2000);
+      navigator.clipboard.writeText(token.value).then(() => {
+        copied.value = true;
+        setTimeout(() => copied.value = false, 2000);
+      }).catch(() => alert('Failed to copy to clipboard.'));
+    };
+
+    const copiedConfig = ref(false);
+
+    const copyConfig = () => {
+      const configText = JSON.stringify({
+        mcpServers: {
+          'jfyi-remote': {
+            transport: 'sse',
+            url: `${origin}/mcp/sse`,
+            headers: {
+              Authorization: `Bearer ${token.value || '<YOUR_TOKEN_HERE>'}`,
+            },
+          },
+        },
+      }, null, 2);
+      navigator.clipboard.writeText(configText).then(() => {
+        copiedConfig.value = true;
+        setTimeout(() => copiedConfig.value = false, 2000);
+      }).catch(() => alert('Failed to copy to clipboard.'));
     };
     
-    return { origin, token, loading, copied, generateToken, copyToken };
+    return { origin, token, loading, copied, copiedConfig, generateToken, copyToken, copyConfig };
   }
 };
 
