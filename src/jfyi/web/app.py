@@ -30,6 +30,7 @@ from ..database import Database
 STATIC_DIR = Path(__file__).parent / "static"
 LOCAL_USER_EMAIL = "local@jfyi.internal"
 ERR_USER_NOT_FOUND = "User not found"
+ERR_PROVIDER_NOT_FOUND = "Provider not found"
 
 
 class RuleCreate(BaseModel):
@@ -121,14 +122,7 @@ AnalyticsDep = Annotated[AnalyticsEngine, Depends(get_analytics)]
 # ── API Registration ────────────────────────────────────────────────────────
 
 
-def _register_admin_api(app: FastAPI) -> None:
-    @app.get("/api/admin/users")
-    async def get_all_users(admin: AdminUser, db: DBDep) -> dict[str, Any]:
-        users = db.list_users()
-        for u in users:
-            u["identities"] = db.list_user_identities(u["id"])
-        return {"users": users}
-
+def _register_admin_idps_api(app: FastAPI) -> None:
     @app.get("/api/admin/idps")
     async def list_idps(admin: AdminUser, db: DBDep) -> dict[str, Any]:
         providers = db.get_identity_providers()
@@ -165,7 +159,7 @@ def _register_admin_api(app: FastAPI) -> None:
         "/api/admin/idps/{provider}",
         responses={
             400: {"description": "Cannot remove the last identity provider"},
-            404: {"description": "Provider not found"},
+            404: {"description": ERR_PROVIDER_NOT_FOUND},
         },
     )
     async def delete_idp(provider: str, admin: AdminUser, db: DBDep) -> dict[str, Any]:
@@ -177,10 +171,19 @@ def _register_admin_api(app: FastAPI) -> None:
             )
         success = db.delete_identity_provider(provider)
         if not success:
-            raise HTTPException(status_code=404, detail="Provider not found")
+            raise HTTPException(status_code=404, detail=ERR_PROVIDER_NOT_FOUND)
         if provider in oauth._clients:
             oauth._clients.pop(provider)
         return {"status": "success"}
+
+
+def _register_admin_api(app: FastAPI) -> None:
+    @app.get("/api/admin/users")
+    async def get_all_users(admin: AdminUser, db: DBDep) -> dict[str, Any]:
+        users = db.list_users()
+        for u in users:
+            u["identities"] = db.list_user_identities(u["id"])
+        return {"users": users}
 
     @app.put(
         "/api/admin/users/{user_id}",
@@ -581,6 +584,7 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
             db.create_user(email=LOCAL_USER_EMAIL, name="Local Admin", is_admin=True)
 
     _register_admin_api(app)
+    _register_admin_idps_api(app)
     _register_system_api(app)
     _register_auth_api(app)
     _register_profile_api(app)
