@@ -23,55 +23,105 @@ def _get_db_and_analytics(data_dir: Path):
     return db, analytics
 
 
-def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings, verify_mcp_jwt):
-    from mcp.server.models import InitializationOptions
-    from starlette.requests import Request
+def _authenticate(request, db, settings, verify_mcp_jwt) -> int | None:
+    if settings.single_user_mode:
+        user = db.get_user_by_email("local@jfyi.internal")
+        return user["id"] if user else None
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1]
+        payload = verify_mcp_jwt(token)
+        if payload:
+            return int(payload["sub"])
+    return None
+
+
+def _unauthorized():
     from starlette.responses import JSONResponse
 
+    return JSONResponse(
+        {"error": "invalid_token", "error_description": "Unauthorized"},
+        status_code=401,
+        headers={"www-authenticate": 'Bearer realm="jfyi"'},
+    )
+
+
+def _init_options(mcp_server):
+    from mcp.server.lowlevel.server import NotificationOptions
+    from mcp.server.models import InitializationOptions
+
+    return InitializationOptions(
+        server_name="jfyi",
+        server_version=__version__,
+        capabilities=mcp_server.get_capabilities(
+            notification_options=NotificationOptions(),
+            experimental_capabilities={},
+        ),
+    )
+
+
+def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings, verify_mcp_jwt):
+    """Legacy MCP SSE transport (GET to open long-poll; POST /mcp/messages/ for JSON-RPC)."""
+    from starlette.requests import Request
+
     async def handle_sse(request: Request):
-        user_id = None
-        if settings.single_user_mode:
-            user = db.get_user_by_email("local@jfyi.internal")
-            if user:
-                user_id = user["id"]
-        else:
-            auth_header = request.headers.get("authorization", "")
-            if auth_header.startswith("Bearer "):
-                token = auth_header.split(" ", 1)[1]
-                payload = verify_mcp_jwt(token)
-                if payload:
-                    user_id = int(payload["sub"])
-
+        user_id = _authenticate(request, db, settings, verify_mcp_jwt)
         if not user_id:
-            return JSONResponse(
-                {"error": "invalid_token", "error_description": "Unauthorized"},
-                status_code=401,
-                headers={"www-authenticate": 'Bearer realm="jfyi"'}
-            )
+            return _unauthorized()
 
-        from mcp.server.lowlevel.server import NotificationOptions
         mcp_server = build_mcp_server(db, analytics, user_id=user_id)
 
         class SseResponse:
             async def __call__(self, scope, receive, send):
-                async with sse_transport.connect_sse(  # noqa: E501
-                    scope, receive, send
-                ) as (read_stream, write_stream):
+                async with sse_transport.connect_sse(scope, receive, send) as (
+                    read_stream,
+                    write_stream,
+                ):
                     await mcp_server.run(
-                        read_stream,
-                        write_stream,
-                        InitializationOptions(
-                            server_name="jfyi",
-                            server_version=__version__,
-                            capabilities=mcp_server.get_capabilities(
-                                notification_options=NotificationOptions(),
-                                experimental_capabilities={}
-                            ),
-                        ),
+                        read_stream, write_stream, _init_options(mcp_server)
                     )
+
         return SseResponse()
 
     return handle_sse
+
+
+def _build_streamable_handler(db, analytics, build_mcp_server, settings, verify_mcp_jwt):
+    """MCP Streamable HTTP transport (single POST endpoint, stateless per request)."""
+    import anyio
+    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    from starlette.requests import Request
+
+    async def handle_streamable(request: Request):
+        user_id = _authenticate(request, db, settings, verify_mcp_jwt)
+        if not user_id:
+            return _unauthorized()
+
+        mcp_server = build_mcp_server(db, analytics, user_id=user_id)
+        transport = StreamableHTTPServerTransport(
+            mcp_session_id=None,
+            is_json_response_enabled=False,
+        )
+
+        class StreamableResponse:
+            async def __call__(self, scope, receive, send):
+                async with anyio.create_task_group() as tg:
+
+                    async def run_server():
+                        async with transport.connect() as (read_stream, write_stream):
+                            await mcp_server.run(
+                                read_stream,
+                                write_stream,
+                                _init_options(mcp_server),
+                                stateless=True,
+                            )
+
+                    tg.start_soon(run_server)
+                    await transport.handle_request(scope, receive, send)
+
+        return StreamableResponse()
+
+    return handle_streamable
 
 
 @app.command()
@@ -107,8 +157,15 @@ def serve(
         handle_sse = _build_sse_handler(
             db, analytics, sse_transport, build_mcp_server, settings, verify_mcp_jwt
         )
+        handle_streamable = _build_streamable_handler(
+            db, analytics, build_mcp_server, settings, verify_mcp_jwt
+        )
 
-        web_app.add_route("/mcp/sse", handle_sse, methods=["GET", "POST", "OPTIONS"])
+        # GET opens a legacy SSE long-poll stream.
+        web_app.add_route("/mcp/sse", handle_sse, methods=["GET", "HEAD", "OPTIONS"])
+        # POST is MCP Streamable HTTP (Gemini, Claude, Cursor, …); stateless per request.
+        web_app.add_route("/mcp/sse", handle_streamable, methods=["POST", "DELETE"])
+        # Legacy SSE clients POST JSON-RPC messages here after opening the GET stream.
         web_app.mount("/mcp/messages/", app=sse_transport.handle_post_message)
 
         uvicorn.run(web_app, host=host, port=port, proxy_headers=True, forwarded_allow_ips="*")
