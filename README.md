@@ -98,7 +98,7 @@ Your MCP client spawns a fresh container per session using stdio transport. The 
     "jfyi": {
       "command": "docker",
       "args": [
-        "run", "--rm", "-i",
+        "run", "--rm", "-i", "-q", "--init",
         "-v", "jfyi-data:/data",
         "ghcr.io/hlan-net/jfyi-just-for-your-information:latest",
         "jfyi", "serve", "--transport", "stdio"
