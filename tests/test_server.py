@@ -57,7 +57,7 @@ async def test_record_interaction(ctx):
     )
     text = result[0].text
     assert "claude-3-7" in text
-    assert "Friction Score:" in text
+    assert "friction_score:" in text
 
 
 async def test_get_agent_analytics_empty(ctx):
@@ -79,7 +79,7 @@ async def test_get_agent_analytics_reports_alignment(ctx):
     result = await dispatch_tool("get_agent_analytics", {}, db, analytics)
     text = result[0].text
     assert "gpt-4o" in text
-    assert "Architecture Alignment Score: 100.0/100" in text
+    assert "alignment: 100.0" in text
 
 
 async def test_unknown_tool(ctx):
