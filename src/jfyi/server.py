@@ -15,12 +15,174 @@ from mcp.types import (
 
 from .analytics import AnalyticsEngine
 from .database import Database
+from .prompt import render_read_only_block
+from .serializer import PayloadSerializer
+
+_serializer = PayloadSerializer()
+
+# ── Tool catalogue ─────────────────────────────────────────────────────────────
+# Full schemas and descriptions for every tool. discover_tools() reads this to
+# return on-demand documentation without pre-loading everything into context.
+
+_TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
+    "record_interaction": {
+        "description": (
+            "Record an AI-agent interaction for friction analysis. "
+            "Call this after each generation to track whether the output was corrected."
+        ),
+        "token_cost": 120,
+        "always_on": True,
+        "inputSchema": {
+            "type": "object",
+            "required": ["agent_name", "prompt", "response"],
+            "properties": {
+                "agent_name": {
+                    "type": "string",
+                    "description": "Name/ID of the AI agent (e.g. 'claude-3-7-sonnet', 'gpt-4o').",
+                },
+                "prompt": {"type": "string", "description": "The prompt sent to the agent."},
+                "response": {"type": "string", "description": "The agent's response."},
+                "session_id": {
+                    "type": "string",
+                    "description": "Session identifier. Auto-generated if omitted.",
+                },
+                "was_corrected": {
+                    "type": "boolean",
+                    "description": "Was the output modified within the correction window?",
+                },
+                "correction_latency_s": {
+                    "type": "number",
+                    "description": "Seconds between generation and first correction.",
+                },
+                "num_edits": {
+                    "type": "integer",
+                    "description": "Number of edits made to the output.",
+                },
+                "model": {"type": "string", "description": "Underlying model identifier."},
+            },
+        },
+        "example": (
+            'record_interaction(agent_name="claude-sonnet-4-6",'
+            ' prompt="...", response="...", was_corrected=False)'
+        ),
+    },
+    "get_developer_profile": {
+        "description": (
+            "Returns the current developer profile rules inferred by JFYI. "
+            "Use these rules to customise your system prompt and avoid recurring mistakes."
+        ),
+        "token_cost": 40,
+        "always_on": True,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "Filter by category (e.g. 'style', 'architecture'). Omit for all.",  # noqa: E501
+                }
+            },
+        },
+        "example": "get_developer_profile()  # or get_developer_profile(category='style')",
+    },
+    "get_agent_analytics": {
+        "description": (
+            "Retrieve comparative friction analytics for all tracked AI agents. "
+            "Returns correction rates, latency, and alignment scores."
+        ),
+        "token_cost": 30,
+        "always_on": False,
+        "inputSchema": {"type": "object", "properties": {}},
+        "example": "discover_tools(tool_name='get_agent_analytics', arguments={})",
+    },
+    "add_profile_rule": {
+        "description": "Manually add a rule to the developer profile.",
+        "token_cost": 60,
+        "always_on": False,
+        "inputSchema": {
+            "type": "object",
+            "required": ["rule"],
+            "properties": {
+                "rule": {"type": "string", "description": "The rule text."},
+                "category": {
+                    "type": "string",
+                    "description": "Rule category (e.g. 'style', 'architecture', 'testing').",
+                },
+                "confidence": {
+                    "type": "number",
+                    "description": "Confidence score 0.0-1.0 (default 1.0).",
+                },
+            },
+        },
+        "example": (
+            "discover_tools(tool_name='add_profile_rule',"
+            " arguments={'rule': '...', 'category': 'style'})"
+        ),
+    },
+}
+
+_DISCOVER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "tool_name": {
+            "type": "string",
+            "description": (
+                "Name of a specific tool to get full schema and usage examples for, "
+                "or to invoke. Omit to list all available capabilities."
+            ),
+        },
+        "arguments": {
+            "type": "object",
+            "description": (
+                "If provided alongside tool_name, invoke that tool with these arguments."
+            ),
+        },
+    },
+}
 
 
 async def dispatch_tool(
     name: str, arguments: dict[str, Any], db: Database, analytics: AnalyticsEngine, user_id: int = 1
 ) -> list[TextContent]:
     """Execute a JFYI tool by name. Shared by the MCP server handler and tests."""
+    if name == "discover_tools":
+        tool_name = arguments.get("tool_name")
+        invoke_args = arguments.get("arguments")
+
+        if tool_name and invoke_args is not None:
+            # Proxy-execute the named tool
+            if tool_name not in _TOOL_CATALOGUE:
+                return [TextContent(type="text", text=f"Unknown tool: {tool_name}")]
+            return await dispatch_tool(tool_name, invoke_args, db, analytics, user_id=user_id)
+
+        if tool_name:
+            # Return full schema for a specific tool
+            info = _TOOL_CATALOGUE.get(tool_name)
+            if not info:
+                names = ", ".join(_TOOL_CATALOGUE)
+                return [
+                    TextContent(type="text", text=f"Unknown tool '{tool_name}'. Available: {names}")
+                ]
+            lines = [
+                f"Tool: {tool_name}",
+                f"Description: {info['description']}",
+                f"inputSchema: {json.dumps(info['inputSchema'])}",
+                f"Example: {info['example']}",
+            ]
+            return [TextContent(type="text", text="\n".join(lines))]
+
+        # Return compact catalogue
+        lines = [
+            "JFYI capabilities — call discover_tools(tool_name='X') for full schema, "
+            "or discover_tools(tool_name='X', arguments={{...}}) to invoke:\n"
+        ]
+        for tname, info in _TOOL_CATALOGUE.items():
+            tag = " [always-on]" if info["always_on"] else ""
+            lines.append(f"  {tname}{tag} — {info['description']} (~{info['token_cost']} tokens)")
+        lines.append(
+            "\nNote: only always-on tools are pre-loaded. Call discover_tools() to access others."
+        )
+        return [TextContent(type="text", text="\n".join(lines))]
+
     if name == "get_developer_profile":
         category = arguments.get("category")
         rules = db.get_rules(user_id=user_id, category=category)
@@ -31,15 +193,12 @@ async def dispatch_tool(
                     text="No profile rules found yet. JFYI is still learning.",
                 )
             ]
-        lines = [f"## Developer Profile Rules ({len(rules)} total)\n"]
-        for r in rules:
-            lines.append(
-                f"- [{r['category']}] {r['rule']}"
-                f" (confidence: {r['confidence']:.0%}, source: {r['source']})"
-            )
-        return [TextContent(type="text", text="\n".join(lines))]
+        block = render_read_only_block(rules)
+        return [
+            TextContent(type="text", text=f"Developer profile ({len(rules)} rules):\n\n{block}")
+        ]
 
-    elif name == "record_interaction":
+    if name == "record_interaction":
         session_id = arguments.get("session_id") or str(uuid.uuid4())
         friction = analytics.record_interaction(
             user_id=user_id,
@@ -52,20 +211,17 @@ async def dispatch_tool(
             num_edits=arguments.get("num_edits", 0),
             model=arguments.get("model"),
         )
+        payload = {
+            "agent": friction.agent_name,
+            "session": friction.session_id,
+            "friction_score": round(friction.score, 3),
+            "factors": friction.factors,
+        }
         return [
-            TextContent(
-                type="text",
-                text=(
-                    f"Interaction recorded.\n"
-                    f"Agent: {friction.agent_name}\n"
-                    f"Session: {friction.session_id}\n"
-                    f"Friction Score: {friction.score:.3f}\n"
-                    f"Factors: {json.dumps(friction.factors, indent=2)}"
-                ),
-            )
+            TextContent(type="text", text=f"Interaction recorded.\n{_serializer.dumps(payload)}")
         ]
 
-    elif name == "get_agent_analytics":
+    if name == "get_agent_analytics":
         profiles = analytics.get_agent_profiles(user_id=user_id)
         if not profiles:
             return [
@@ -74,20 +230,21 @@ async def dispatch_tool(
                     text="No agent analytics yet. Record some interactions first.",
                 )
             ]
-        lines = ["## Agent Performance Analytics\n"]
-        for p in sorted(profiles, key=lambda x: x.alignment_score, reverse=True):
-            lines.append(f"### {p.name}" + (f" ({p.model})" if p.model else ""))
-            lines.append(f"- Interactions: {p.total_interactions} across {p.sessions} sessions")
-            lines.append(f"- Correction Rate: {p.correction_rate_pct:.1f}%")
-            lines.append(
-                "- Avg Correction Latency: "
-                + (f"{p.avg_correction_latency_s:.1f}s" if p.avg_correction_latency_s else "N/A")
-            )
-            lines.append(f"- Avg Friction Score: {p.avg_friction_score:.3f}")
-            lines.append(f"- **Architecture Alignment Score: {p.alignment_score:.1f}/100**\n")
-        return [TextContent(type="text", text="\n".join(lines))]
+        payload = [
+            {
+                "id": p.name,
+                "model": p.model,
+                "interactions": p.total_interactions,
+                "sessions": p.sessions,
+                "correction_rate_pct": round(p.correction_rate_pct, 1),
+                "avg_friction": round(p.avg_friction_score, 3),
+                "alignment": round(p.alignment_score, 1),
+            }
+            for p in sorted(profiles, key=lambda x: x.alignment_score, reverse=True)
+        ]
+        return [TextContent(type="text", text=f"Agent analytics:\n{_serializer.dumps(payload)}")]
 
-    elif name == "add_profile_rule":
+    if name == "add_profile_rule":
         rule_id = db.add_rule(
             user_id=user_id,
             rule=arguments["rule"],
@@ -105,103 +262,30 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine, user_id: int = 1)
 
     server = Server("jfyi")
 
-    # ── Tools ──────────────────────────────────────────────────────────────────
-
     @server.list_tools()
     async def list_tools() -> list[Tool]:
+        # Progressive disclosure: expose only the router + always-on tools.
+        # Agents call discover_tools() to access the rest without pre-loading
+        # full schemas into context.
+        always_on = [
+            Tool(
+                name=tname,
+                description=info["description"],
+                inputSchema=info["inputSchema"],
+            )
+            for tname, info in _TOOL_CATALOGUE.items()
+            if info["always_on"]
+        ]
         return [
             Tool(
-                name="get_developer_profile",
+                name="discover_tools",
                 description=(
-                    "Returns the current developer profile rules inferred by JFYI. "
-                    "Use these rules to customise your system prompt and avoid recurring mistakes."
+                    "List available JFYI capabilities or get full schema for a specific tool. "
+                    "Call this before assuming a tool does not exist."
                 ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "category": {
-                            "type": "string",
-                            "description": (
-                                "Filter rules by category (e.g. 'style', 'architecture')."
-                                " Omit for all."
-                            ),
-                        }
-                    },
-                },
+                inputSchema=_DISCOVER_SCHEMA,
             ),
-            Tool(
-                name="record_interaction",
-                description=(
-                    "Record an AI-agent interaction for friction analysis. "
-                    "Call this after each generation to track whether the output was corrected."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "required": ["agent_name", "prompt", "response"],
-                    "properties": {
-                        "agent_name": {
-                            "type": "string",
-                            "description": (
-                                "Name/ID of the AI agent (e.g. 'claude-3-7-sonnet', 'gpt-4o')."
-                            ),
-                        },
-                        "prompt": {
-                            "type": "string",
-                            "description": "The prompt sent to the agent.",
-                        },
-                        "response": {"type": "string", "description": "The agent's response."},
-                        "session_id": {
-                            "type": "string",
-                            "description": "Session identifier. Auto-generated if omitted.",
-                        },
-                        "was_corrected": {
-                            "type": "boolean",
-                            "description": "Was the output modified within the correction window?",
-                        },
-                        "correction_latency_s": {
-                            "type": "number",
-                            "description": "Seconds between generation and first correction.",
-                        },
-                        "num_edits": {
-                            "type": "integer",
-                            "description": "Number of edits made to the output.",
-                        },
-                        "model": {
-                            "type": "string",
-                            "description": "Underlying model identifier.",
-                        },
-                    },
-                },
-            ),
-            Tool(
-                name="get_agent_analytics",
-                description=(
-                    "Retrieve comparative friction analytics for all tracked AI agents. "
-                    "Returns correction rates, latency, and alignment scores."
-                ),
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="add_profile_rule",
-                description="Manually add a rule to the developer profile.",
-                inputSchema={
-                    "type": "object",
-                    "required": ["rule"],
-                    "properties": {
-                        "rule": {"type": "string", "description": "The rule text."},
-                        "category": {
-                            "type": "string",
-                            "description": (
-                                "Rule category (e.g. 'style', 'architecture', 'testing')."
-                            ),
-                        },
-                        "confidence": {
-                            "type": "number",
-                            "description": "Confidence score 0.0-1.0 (default 1.0).",
-                        },
-                    },
-                },
-            ),
+            *always_on,
         ]
 
     @server.call_tool()

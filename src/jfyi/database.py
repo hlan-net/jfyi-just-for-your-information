@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .prompt import sanitize_rule
+
 
 class Database:
     """SQLite database manager for JFYI persistent state."""
@@ -232,7 +234,7 @@ class Database:
                 "INSERT INTO profile_rules"
                 " (user_id, rule, category, confidence, source, created_at, updated_at)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (user_id, rule, category, confidence, source, now, now),
+                (user_id, sanitize_rule(rule), category, confidence, source, now, now),
             )
             return cur.lastrowid
 
