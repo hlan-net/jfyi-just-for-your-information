@@ -41,7 +41,7 @@ def _unauthorized(request=None):
 
     from .config import settings
 
-    base_url = settings.base_url or (str(request.base_url).rstrip("/") if request else "")
+    base_url = (settings.base_url or (str(request.base_url) if request else "")).rstrip("/")
     metadata_url = f"{base_url}/.well-known/oauth-authorization-server"
     return JSONResponse(
         {"error": "invalid_token", "error_description": "Unauthorized"},
