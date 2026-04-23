@@ -107,8 +107,9 @@ def _build_streamable_handler(db, analytics, build_mcp_server, settings, verify_
             async def __call__(self, scope, receive, send):
                 async with anyio.create_task_group() as tg:
 
-                    async def run_server():
+                    async def run_server(*, task_status=anyio.TASK_STATUS_IGNORED):
                         async with transport.connect() as (read_stream, write_stream):
+                            task_status.started()
                             await mcp_server.run(
                                 read_stream,
                                 write_stream,
@@ -116,7 +117,7 @@ def _build_streamable_handler(db, analytics, build_mcp_server, settings, verify_
                                 stateless=True,
                             )
 
-                    tg.start_soon(run_server)
+                    await tg.start(run_server)
                     await transport.handle_request(scope, receive, send)
 
         return StreamableResponse()
