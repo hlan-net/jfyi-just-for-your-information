@@ -100,7 +100,7 @@ Your MCP client spawns a fresh container per session using stdio transport. The 
       "args": [
         "run", "--rm", "-i",
         "-v", "jfyi-data:/data",
-        "ghcr.io/hlan-net/jfyi-just-for-your-information:2.0.0",
+        "ghcr.io/hlan-net/jfyi-just-for-your-information:latest",
         "jfyi", "serve", "--transport", "stdio"
       ]
     }
