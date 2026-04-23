@@ -46,9 +46,7 @@ def _unauthorized(request=None):
     return JSONResponse(
         {"error": "invalid_token", "error_description": "Unauthorized"},
         status_code=401,
-        headers={
-            "www-authenticate": f'Bearer realm="jfyi", resource_metadata="{metadata_url}"'
-        },
+        headers={"www-authenticate": f'Bearer realm="jfyi", resource_metadata="{metadata_url}"'},
     )
 
 
@@ -83,9 +81,7 @@ def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings,
                     read_stream,
                     write_stream,
                 ):
-                    await mcp_server.run(
-                        read_stream, write_stream, _init_options(mcp_server)
-                    )
+                    await mcp_server.run(read_stream, write_stream, _init_options(mcp_server))
 
         return SseResponse()
 
