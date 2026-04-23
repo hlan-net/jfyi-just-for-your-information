@@ -155,6 +155,8 @@ def _register_admin_api(app: FastAPI) -> None:
                 status_code=400,
                 detail=f"Unknown provider '{body.provider}'. Supported: {', '.join(OAUTH_CONFIGS)}",
             )
+        if body.provider in oauth._clients:
+            oauth._clients.pop(body.provider)
         db.add_identity_provider(body.provider, body.client_id, body.client_secret)
         register_oauth_clients(db)
         return {"status": "success", "provider": body.provider}
@@ -176,6 +178,8 @@ def _register_admin_api(app: FastAPI) -> None:
         success = db.delete_identity_provider(provider)
         if not success:
             raise HTTPException(status_code=404, detail="Provider not found")
+        if provider in oauth._clients:
+            oauth._clients.pop(provider)
         return {"status": "success"}
 
     @app.put(
