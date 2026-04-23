@@ -13,33 +13,37 @@ def _strip_empty(obj: object) -> object:
     return obj
 
 
+def _toon_dict_entry(pad: str, k: str, v: object, depth: int) -> list[str]:
+    if v is None or v == [] or v == {}:
+        return []
+    if isinstance(v, (dict, list)):
+        return [f"{pad}{k}", _to_toon(v, depth + 1)]
+    return [f"{pad}{k}: {v}"]
+
+
+def _toon_list_item(pad: str, item: object, depth: int) -> list[str]:
+    if isinstance(item, list):
+        return [_to_toon(item, depth + 1)]
+    if not isinstance(item, dict):
+        return [f"{pad}- {item}"]
+    key = item.get("id", "")
+    if key:
+        body = {k: v for k, v in item.items() if k != "id"}
+        return [f"{pad}{key}", _to_toon(body, depth + 1)]
+    return [_to_toon(item, depth + 1)]
+
+
 def _to_toon(obj: object, depth: int = 0) -> str:
     pad = "  " * depth
     if isinstance(obj, dict):
-        parts = []
+        parts: list[str] = []
         for k, v in obj.items():
-            if v is None or v == [] or v == {}:
-                continue
-            if isinstance(v, (dict, list)):
-                parts.append(f"{pad}{k}")
-                parts.append(_to_toon(v, depth + 1))
-            else:
-                parts.append(f"{pad}{k}: {v}")
+            parts.extend(_toon_dict_entry(pad, k, v, depth))
         return "\n".join(parts)
     if isinstance(obj, list):
         parts = []
         for item in obj:
-            if isinstance(item, dict):
-                key = item.get("id", "")
-                if key:
-                    parts.append(f"{pad}{key}")
-                    parts.append(_to_toon({k: v for k, v in item.items() if k != "id"}, depth + 1))
-                else:
-                    parts.append(_to_toon(item, depth + 1))
-            elif isinstance(item, list):
-                parts.append(_to_toon(item, depth + 1))
-            else:
-                parts.append(f"{pad}- {item}")
+            parts.extend(_toon_list_item(pad, item, depth))
         return "\n".join(parts)
     return f"{pad}{obj}"
 
