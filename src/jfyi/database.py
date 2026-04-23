@@ -112,6 +112,11 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_interactions_agent ON interactions(agent_id);
                 CREATE INDEX IF NOT EXISTS idx_interactions_session ON interactions(session_id);
                 CREATE INDEX IF NOT EXISTS idx_friction_agent ON friction_events(agent_id);
+
+                CREATE TABLE IF NOT EXISTS system_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
             """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
@@ -145,6 +150,18 @@ class Database:
                 "has_admin": admin_count > 0,
                 "is_ready": idp_count > 0 and admin_count > 0,
             }
+
+    def get_setting(self, key: str, default: str = "") -> str:
+        with self._conn() as conn:
+            row = conn.execute("SELECT value FROM system_settings WHERE key=?", (key,)).fetchone()
+            return row[0] if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)",
+                (key, value),
+            )
 
     def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
         with self._conn() as conn:

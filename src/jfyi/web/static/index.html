@@ -238,9 +238,13 @@
       <p style="color: var(--accent)" v-else>The first user to sign in will automatically become the Admin.</p>
     </div>
     
+    <div v-if="errorMsg" style="background:#2d1214;border:1px solid var(--red);border-radius:8px;padding:1rem;margin-bottom:1rem;color:var(--red);text-align:center;">
+      {{ errorMsg }}
+    </div>
+
     <div class="card" style="text-align: center;">
       <h2 style="margin-bottom: 1.5rem;">Choose a Provider</h2>
-      
+
       <div v-if="system.providers && system.providers.length > 0">
         <a v-for="p in system.providers" :key="p" :href="'/auth/login/' + p" class="btn btn-login btn-outline">
           <span v-if="p === 'github'">🐙</span>
@@ -357,7 +361,21 @@
   <div>
     <div class="card">
       <h2>🛡️ Admin Dashboard</h2>
-      <p class="desc">Manage users and system identity providers.</p>
+      <p class="desc">Manage users, identity providers, and system settings.</p>
+    </div>
+
+    <div class="card">
+      <h2>System Settings</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;">
+        <div>
+          <strong>Open Registration</strong>
+          <p class="desc" style="margin:0.25rem 0 0;">Allow new users to sign in for the first time. Disable to lock the system to existing users only.</p>
+        </div>
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;flex-shrink:0;margin-left:2rem;">
+          <input type="checkbox" :checked="settings.registration_open" @change="toggleRegistration" style="width:1.1rem;height:1.1rem;cursor:pointer;" />
+          <span>{{ settings.registration_open ? 'Enabled' : 'Disabled' }}</span>
+        </label>
+      </div>
     </div>
     
     <div class="card">
@@ -526,7 +544,14 @@ const SetupWizard = {
 const Login = {
   template: '#login-template',
   setup() {
-    return { system: globalState.system };
+    const route = VueRouter.useRoute();
+    const errorMsg = computed(() => {
+      if (route.query.error === 'registration_closed') {
+        return 'Registration is currently closed. Contact an admin to get access.';
+      }
+      return null;
+    });
+    return { system: globalState.system, errorMsg };
   }
 };
 
@@ -619,6 +644,7 @@ const Admin = {
   setup() {
     const users = ref([]);
     const idps = ref([]);
+    const settings = reactive({ registration_open: true });
     const showIdpForm = ref(false);
     const idpSaving = ref(false);
     const idpForm = reactive({ provider: 'github', client_id: '', client_secret: '' });
@@ -629,6 +655,29 @@ const Admin = {
       if (res.ok) {
         const data = await res.json();
         users.value = data.users;
+      }
+    };
+
+    const loadSettings = async () => {
+      const res = await fetch(API + '/api/admin/settings');
+      if (res.ok) {
+        const data = await res.json();
+        settings.registration_open = data.registration_open;
+      }
+    };
+
+    const toggleRegistration = async (e) => {
+      const enabled = e.target.checked;
+      const res = await fetch(API + '/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ registration_open: enabled })
+      });
+      if (res.ok) {
+        settings.registration_open = enabled;
+      } else {
+        e.target.checked = !enabled;
+        alert('Failed to update setting');
       }
     };
 
@@ -697,9 +746,9 @@ const Admin = {
       }
     };
 
-    onMounted(() => { loadUsers(); loadIdps(); });
+    onMounted(() => { loadUsers(); loadIdps(); loadSettings(); });
 
-    return { users, idps, showIdpForm, idpForm, idpSaving, currentUser, toggleAdmin, deleteUser, unlink, saveIdp, removeIdp };
+    return { users, idps, showIdpForm, idpForm, idpSaving, currentUser, settings, toggleAdmin, deleteUser, unlink, saveIdp, removeIdp };
   }
 };
 

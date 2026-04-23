@@ -31,6 +31,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 LOCAL_USER_EMAIL = "local@jfyi.internal"
 ERR_USER_NOT_FOUND = "User not found"
 ERR_PROVIDER_NOT_FOUND = "Provider not found"
+SETTING_REGISTRATION_OPEN = "registration_open"
 
 
 class RuleCreate(BaseModel):
@@ -177,6 +178,21 @@ def _register_admin_idps_api(app: FastAPI) -> None:
         return {"status": "success"}
 
 
+class SettingsUpdate(BaseModel):
+    registration_open: bool
+
+
+def _register_admin_settings_api(app: FastAPI) -> None:
+    @app.get("/api/admin/settings")
+    async def get_settings(admin: AdminUser, db: DBDep) -> dict[str, Any]:
+        return {"registration_open": db.get_setting(SETTING_REGISTRATION_OPEN, "true") == "true"}
+
+    @app.put("/api/admin/settings")
+    async def update_settings(body: SettingsUpdate, admin: AdminUser, db: DBDep) -> dict[str, Any]:
+        db.set_setting(SETTING_REGISTRATION_OPEN, "true" if body.registration_open else "false")
+        return {"registration_open": body.registration_open}
+
+
 def _register_admin_api(app: FastAPI) -> None:
     @app.get("/api/admin/users")
     async def get_all_users(admin: AdminUser, db: DBDep) -> dict[str, Any]:
@@ -310,6 +326,12 @@ def _register_auth_api(app: FastAPI) -> None:
         user = db.get_user_by_identity(provider, sub)
         if not user:
             init_status = db.is_initialized()
+            # Always allow the very first user through so an admin can be created.
+            # After that, respect the registration_open setting.
+            if init_status["has_admin"]:
+                reg_open = db.get_setting(SETTING_REGISTRATION_OPEN, "true") == "true"
+                if not reg_open:
+                    return RedirectResponse(url="/login?error=registration_closed")
             is_admin = not init_status["has_admin"]
             user_id = db.create_user(email=email, name=name, is_admin=is_admin)
             db.link_identity(user_id, provider, sub)
@@ -438,6 +460,7 @@ class ClientRegistration(BaseModel):
     grant_types: list[str] = ["authorization_code", "refresh_token"]
     response_types: list[str] = ["code"]
     token_endpoint_auth_method: str = "none"
+
 
 def _register_oauth_server_api(app: FastAPI) -> None:
     import secrets
@@ -585,6 +608,7 @@ def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
 
     _register_admin_api(app)
     _register_admin_idps_api(app)
+    _register_admin_settings_api(app)
     _register_system_api(app)
     _register_auth_api(app)
     _register_profile_api(app)
