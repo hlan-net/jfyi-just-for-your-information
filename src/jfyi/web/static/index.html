@@ -503,9 +503,10 @@ const Connect = {
     };
     
     const copyToken = () => {
-      navigator.clipboard.writeText(token.value);
-      copied.value = true;
-      setTimeout(() => copied.value = false, 2000);
+      navigator.clipboard.writeText(token.value).then(() => {
+        copied.value = true;
+        setTimeout(() => copied.value = false, 2000);
+      }).catch(() => alert('Failed to copy to clipboard.'));
     };
 
     const copiedConfig = ref(false);
@@ -522,9 +523,10 @@ const Connect = {
           },
         },
       }, null, 2);
-      navigator.clipboard.writeText(configText);
-      copiedConfig.value = true;
-      setTimeout(() => copiedConfig.value = false, 2000);
+      navigator.clipboard.writeText(configText).then(() => {
+        copiedConfig.value = true;
+        setTimeout(() => copiedConfig.value = false, 2000);
+      }).catch(() => alert('Failed to copy to clipboard.'));
     };
     
     return { origin, token, loading, copied, copiedConfig, generateToken, copyToken, copyConfig };
