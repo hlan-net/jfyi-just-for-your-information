@@ -73,7 +73,9 @@ kubectl port-forward svc/my-jfyi-service 8080:8080 -n jfyi-system
 
 ### 2. Connect your AI Assistant
 
-Add the JFYI server to your client's MCP configuration (e.g., `claude_desktop_config.json` or Cursor's `mcp.json`):
+Add JFYI to your client's MCP configuration (e.g., `claude_desktop_config.json` or Cursor's `mcp.json`).
+
+**Option A — SSE (after Helm/Docker Compose deployment, port-forwarded above):**
 
 ```json
 {
@@ -81,6 +83,26 @@ Add the JFYI server to your client's MCP configuration (e.g., `claude_desktop_co
     "jfyi": {
       "command": "curl",
       "args": ["-s", "-N", "http://localhost:8080/mcp/sse"]
+    }
+  }
+}
+```
+
+**Option B — Docker single-user mode (stdio, no cluster required):**
+
+Your MCP client spawns a fresh container per session using stdio transport. The named volume `jfyi-data` persists your profile rules and interaction history across sessions.
+
+```json
+{
+  "mcpServers": {
+    "jfyi": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-v", "jfyi-data:/data",
+        "ghcr.io/hlan-net/jfyi-just-for-your-information:2.0.0",
+        "jfyi", "serve", "--transport", "stdio"
+      ]
     }
   }
 }
