@@ -54,7 +54,9 @@ def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings,
 
         class SseResponse:
             async def __call__(self, scope, receive, send):
-                async with sse_transport.connect_sse(scope, receive, send) as (read_stream, write_stream):
+                async with sse_transport.connect_sse(  # noqa: E501
+                    scope, receive, send
+                ) as (read_stream, write_stream):
                     await mcp_server.run(
                         read_stream,
                         write_stream,
