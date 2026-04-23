@@ -129,6 +129,55 @@ def _register_admin_api(app: FastAPI) -> None:
             u["identities"] = db.list_user_identities(u["id"])
         return {"users": users}
 
+    @app.get("/api/admin/idps")
+    async def list_idps(admin: AdminUser, db: DBDep) -> dict[str, Any]:
+        providers = db.get_identity_providers()
+        masked = [
+            {
+                "provider": p["provider"],
+                "client_id": p["client_id"],
+                "client_secret_hint": p["client_secret"][:4] + "****",
+                "created_at": p["created_at"],
+            }
+            for p in providers
+        ]
+        return {"providers": masked}
+
+    @app.post(
+        "/api/admin/idps",
+        responses={400: {"description": "Invalid provider"}},
+    )
+    async def add_idp(body: IdpCreate, admin: AdminUser, db: DBDep) -> dict[str, Any]:
+        from ..auth import OAUTH_CONFIGS
+
+        if body.provider not in OAUTH_CONFIGS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown provider '{body.provider}'. Supported: {', '.join(OAUTH_CONFIGS)}",
+            )
+        db.add_identity_provider(body.provider, body.client_id, body.client_secret)
+        register_oauth_clients(db)
+        return {"status": "success", "provider": body.provider}
+
+    @app.delete(
+        "/api/admin/idps/{provider}",
+        responses={
+            400: {"description": "Cannot remove the last identity provider"},
+            404: {"description": "Provider not found"},
+        },
+    )
+    async def delete_idp(provider: str, admin: AdminUser, db: DBDep) -> dict[str, Any]:
+        providers = db.get_identity_providers()
+        if len(providers) <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove the last identity provider — no one could log in.",
+            )
+        success = db.delete_identity_provider(provider)
+        if not success:
+            raise HTTPException(status_code=404, detail="Provider not found")
+        return {"status": "success"}
+
     @app.put(
         "/api/admin/users/{user_id}",
         responses={
@@ -197,7 +246,7 @@ def _register_system_api(app: FastAPI) -> None:
         if init_status["has_admin"] and init_status["has_idp"]:
             raise HTTPException(
                 status_code=403,
-                detail="System already initialized with an admin. Use Admin panel to add IdPs.",
+                detail="System already initialized. Use the Admin panel (/admin) to manage identity providers.",  # noqa: E501
             )
 
         db.add_identity_provider(body.provider, body.client_id, body.client_secret)

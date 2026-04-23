@@ -398,6 +398,56 @@
         </tbody>
       </table>
     </div>
+
+    <div class="card">
+      <h2>Identity Providers</h2>
+      <p class="desc">Configured OAuth identity providers. At least one must remain active.</p>
+      <table>
+        <thead>
+          <tr><th>Provider</th><th>Client ID</th><th>Secret</th><th>Configured</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in idps" :key="p.provider">
+            <td><span class="pill pill-orange">{{ p.provider }}</span></td>
+            <td style="font-family:monospace;font-size:0.85rem;">{{ p.client_id }}</td>
+            <td style="font-family:monospace;font-size:0.85rem;color:var(--muted)">{{ p.client_secret_hint }}</td>
+            <td>{{ new Date(p.created_at).toLocaleDateString() }}</td>
+            <td>
+              <button @click="removeIdp(p)" class="btn btn-danger" style="padding:0.2rem 0.5rem;font-size:0.75rem;" :disabled="idps.length <= 1">Remove</button>
+            </td>
+          </tr>
+          <tr v-if="idps.length === 0">
+            <td colspan="5" class="empty" style="padding:1rem;">No identity providers configured.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top:1.25rem;">
+        <button class="btn btn-outline" @click="showIdpForm = !showIdpForm">
+          {{ showIdpForm ? 'Cancel' : '+ Add / Update Provider' }}
+        </button>
+      </div>
+
+      <div v-if="showIdpForm" style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+        <h3 style="margin-bottom:0.75rem;">Configure Provider</h3>
+        <div style="display:flex;gap:0.75rem;margin-bottom:1rem;">
+          <div class="provider-select" :class="{active: idpForm.provider==='github'}" @click="idpForm.provider='github'" style="flex:1;margin-bottom:0;">GitHub</div>
+          <div class="provider-select" :class="{active: idpForm.provider==='google'}" @click="idpForm.provider='google'" style="flex:1;margin-bottom:0;">Google</div>
+          <div class="provider-select" :class="{active: idpForm.provider==='entra'}" @click="idpForm.provider='entra'" style="flex:1;margin-bottom:0;">Microsoft Entra</div>
+        </div>
+        <div class="form-group">
+          <label>Client ID</label>
+          <input v-model="idpForm.client_id" class="input" placeholder="Client ID" />
+        </div>
+        <div class="form-group">
+          <label>Client Secret</label>
+          <input v-model="idpForm.client_secret" class="input" type="password" placeholder="Client Secret" />
+        </div>
+        <button class="btn" @click="saveIdp" :disabled="!idpForm.client_id || !idpForm.client_secret || idpSaving">
+          {{ idpSaving ? 'Saving…' : 'Save Provider' }}
+        </button>
+      </div>
+    </div>
   </div>
 </script>
 
@@ -542,8 +592,12 @@ const Admin = {
   template: '#admin-template',
   setup() {
     const users = ref([]);
+    const idps = ref([]);
+    const showIdpForm = ref(false);
+    const idpSaving = ref(false);
+    const idpForm = reactive({ provider: 'github', client_id: '', client_secret: '' });
     const currentUser = computed(() => globalState.user || {});
-    
+
     const loadUsers = async () => {
       const res = await fetch(API + '/api/admin/users');
       if (res.ok) {
@@ -551,7 +605,15 @@ const Admin = {
         users.value = data.users;
       }
     };
-    
+
+    const loadIdps = async () => {
+      const res = await fetch(API + '/api/admin/idps');
+      if (res.ok) {
+        const data = await res.json();
+        idps.value = data.providers;
+      }
+    };
+
     const toggleAdmin = async (u) => {
       if (!confirm(`Are you sure you want to ${u.is_admin ? 'demote' : 'promote'} ${u.email}?`)) return;
       const res = await fetch(API + `/api/admin/users/${u.id}`, {
@@ -559,36 +621,59 @@ const Admin = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_admin: !u.is_admin })
       });
-      if (res.ok) {
-        await loadUsers();
-      } else {
-        alert('Failed to update user');
-      }
+      if (res.ok) await loadUsers();
+      else alert('Failed to update user');
     };
-    
+
     const deleteUser = async (u) => {
       if (!confirm(`Permanently delete ${u.email} and all their data? This cannot be undone.`)) return;
       const res = await fetch(API + `/api/admin/users/${u.id}`, { method: 'DELETE' });
-      if (res.ok) {
-        await loadUsers();
-      } else {
-        alert('Failed to delete user');
-      }
+      if (res.ok) await loadUsers();
+      else alert('Failed to delete user');
     };
 
     const unlink = async (u, idp) => {
       if (!confirm(`Unlink ${idp.provider} from ${u.email}? They will lose access if this is their only identity.`)) return;
       const res = await fetch(API + `/api/admin/users/${u.id}/identities/${idp.provider}`, { method: 'DELETE' });
-      if (res.ok) {
-        await loadUsers();
-      } else {
-        alert('Failed to unlink identity');
+      if (res.ok) await loadUsers();
+      else alert('Failed to unlink identity');
+    };
+
+    const saveIdp = async () => {
+      idpSaving.value = true;
+      try {
+        const res = await fetch(API + '/api/admin/idps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(idpForm)
+        });
+        if (res.ok) {
+          await loadIdps();
+          showIdpForm.value = false;
+          idpForm.client_id = '';
+          idpForm.client_secret = '';
+        } else {
+          const err = await res.json();
+          alert(err.detail || 'Failed to save provider');
+        }
+      } finally {
+        idpSaving.value = false;
       }
     };
-    
-    onMounted(loadUsers);
-    
-    return { users, currentUser, toggleAdmin, deleteUser, unlink };
+
+    const removeIdp = async (p) => {
+      if (!confirm(`Remove ${p.provider} as an identity provider? Users who only have this identity will lose access.`)) return;
+      const res = await fetch(API + `/api/admin/idps/${p.provider}`, { method: 'DELETE' });
+      if (res.ok) await loadIdps();
+      else {
+        const err = await res.json();
+        alert(err.detail || 'Failed to remove provider');
+      }
+    };
+
+    onMounted(() => { loadUsers(); loadIdps(); });
+
+    return { users, idps, showIdpForm, idpForm, idpSaving, currentUser, toggleAdmin, deleteUser, unlink, saveIdp, removeIdp };
   }
 };
 
