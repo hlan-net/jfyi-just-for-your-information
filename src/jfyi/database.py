@@ -155,6 +155,25 @@ class Database:
 
                     PRAGMA user_version = 1;
                 """)
+            if version < 2:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS artifacts (
+                        id TEXT PRIMARY KEY,
+                        session_id TEXT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        type TEXT NOT NULL,
+                        path TEXT NOT NULL,
+                        size_bytes INTEGER,
+                        compiled_view TEXT,
+                        compiled_view_at TEXT,
+                        created_at TEXT NOT NULL
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_artifacts_user
+                        ON artifacts(user_id, session_id);
+
+                    PRAGMA user_version = 2;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -702,3 +721,93 @@ class Database:
                 entry_ids_to_delete,
             )
         return entry_id
+
+    # ── Artifacts ──────────────────────────────────────────────────────────
+
+    def artifact_store(
+        self,
+        user_id: int,
+        content: str,
+        artifact_type: str,
+        session_id: str | None = None,
+        compiled_view: str | None = None,
+    ) -> dict[str, Any]:
+        """Write artifact content to disk and register it in the DB. Returns artifact row."""
+        artifact_id = str(uuid.uuid4())
+        artifacts_dir = self.db_path.parent / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        path = artifacts_dir / artifact_id
+        path.write_text(content, encoding="utf-8")
+        size_bytes = path.stat().st_size
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO artifacts"
+                " (id, session_id, user_id, type, path, size_bytes,"
+                "  compiled_view, compiled_view_at, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    artifact_id,
+                    session_id,
+                    user_id,
+                    artifact_type,
+                    str(path),
+                    size_bytes,
+                    compiled_view,
+                    now if compiled_view else None,
+                    now,
+                ),
+            )
+        return {
+            "id": artifact_id,
+            "session_id": session_id,
+            "user_id": user_id,
+            "type": artifact_type,
+            "path": str(path),
+            "size_bytes": size_bytes,
+            "compiled_view": compiled_view,
+            "created_at": now,
+        }
+
+    def artifact_get(self, user_id: int, artifact_id: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM artifacts WHERE id=? AND user_id=?", (artifact_id, user_id)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def artifact_list(self, user_id: int, session_id: str | None = None) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            if session_id:
+                rows = conn.execute(
+                    "SELECT * FROM artifacts WHERE user_id=? AND session_id=?"
+                    " ORDER BY created_at DESC",
+                    (user_id, session_id),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM artifacts WHERE user_id=? ORDER BY created_at DESC",
+                    (user_id,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def artifact_set_compiled_view(self, artifact_id: str, view_text: str) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE artifacts SET compiled_view=?, compiled_view_at=? WHERE id=?",
+                (view_text, now, artifact_id),
+            )
+
+    def artifact_delete(self, user_id: int, artifact_id: str) -> bool:
+        artifact = self.artifact_get(user_id, artifact_id)
+        if not artifact:
+            return False
+        path = Path(artifact["path"])
+        if path.exists():
+            path.unlink()
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM artifacts WHERE id=? AND user_id=?", (artifact_id, user_id)
+            )
+            return cur.rowcount > 0
