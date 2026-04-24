@@ -50,22 +50,49 @@ class VectorStore:
             metadatas=[metadata] if metadata else None,
         )
 
-    def query(self, collection: str, text: str, k: int = 5) -> list[str]:
-        """Return up to k IDs ranked by semantic similarity. Returns [] when empty."""
+    def query(
+        self,
+        collection: str,
+        text: str,
+        k: int = 5,
+        where: dict[str, Any] | None = None,
+    ) -> list[str]:
+        """Return up to k IDs ranked by semantic similarity. Returns [] when empty.
+
+        Pass where={"user_id": uid} (or any ChromaDB metadata filter) to restrict
+        the search to a subset of the collection before ranking.
+        """
         col = self._col(collection)
-        count = col.count()
-        if count == 0:
+        # Count only entries that match the where filter so n_results stays in bounds.
+        if where:
+            matched = col.get(where=where, include=[])
+            n_results = min(k, len(matched["ids"]))
+        else:
+            n_results = min(k, col.count())
+        if n_results == 0:
             return []
         embedding = self._model.encode(text).tolist()
-        results = col.query(query_embeddings=[embedding], n_results=min(k, count))
+        results = col.query(
+            query_embeddings=[embedding],
+            n_results=n_results,
+            where=where,
+        )
         return results["ids"][0]
 
-    def delete(self, collection: str, id: str) -> None:
-        """Remove an entry. No-op if the ID does not exist."""
+    def delete(
+        self,
+        collection: str,
+        ids: str | list[str] | None = None,
+        where: dict[str, Any] | None = None,
+    ) -> None:
+        """Remove entries by ID(s) or metadata filter. No-op if nothing matches."""
+        if ids is None and where is None:
+            return
+        id_list = [ids] if isinstance(ids, str) else ids
         try:
-            self._col(collection).delete(ids=[id])
+            self._col(collection).delete(ids=id_list, where=where)
         except Exception:
-            pass
+            logger.exception("Failed to delete from vector collection %r", collection)
 
 
 def create_vector_store(data_dir: Path, model_name: str = "all-MiniLM-L6-v2") -> VectorStore | None:

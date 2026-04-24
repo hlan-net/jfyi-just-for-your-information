@@ -355,14 +355,14 @@ class Database:
             )
             deleted = cur.rowcount > 0
         if deleted and self._vs:
-            self._vs.delete("rules", str(rule_id))
+            self._vs.delete("rules", ids=str(rule_id))
         return deleted
 
     def get_rules_semantic(self, user_id: int, query: str, k: int = 5) -> list[dict[str, Any]]:
         """Return rules ranked by semantic similarity. Falls back to recency order."""
         if not self._vs:
             return self.get_rules(user_id)
-        ids = self._vs.query("rules", query, k=k)
+        ids = self._vs.query("rules", query, k=k, where={"user_id": user_id})
         if not ids:
             return self.get_rules(user_id)
         placeholders = ",".join("?" * len(ids))
@@ -662,7 +662,12 @@ class Database:
         """Return episodic entries ranked by semantic similarity. Falls back to recency order."""
         if not self._vs:
             return self.episodic_get(session_id, user_id, limit=k)
-        ids = self._vs.query("episodic", query, k=k)
+        ids = self._vs.query(
+            "episodic",
+            query,
+            k=k,
+            where={"$and": [{"session_id": session_id}, {"user_id": user_id}]},
+        )
         if not ids:
             return self.episodic_get(session_id, user_id, limit=k)
         placeholders = ",".join("?" * len(ids))
@@ -686,13 +691,9 @@ class Database:
 
     def episodic_delete_session(self, session_id: str, user_id: int) -> int:
         if self._vs:
-            with self._conn() as conn:
-                rows = conn.execute(
-                    "SELECT id FROM episodic_memory WHERE session_id=? AND user_id=?",
-                    (session_id, user_id),
-                ).fetchall()
-            for row in rows:
-                self._vs.delete("episodic", row["id"])
+            self._vs.delete(
+                "episodic", where={"$and": [{"session_id": session_id}, {"user_id": user_id}]}
+            )
         with self._conn() as conn:
             cur = conn.execute(
                 "DELETE FROM episodic_memory WHERE session_id=? AND user_id=?",
@@ -738,8 +739,7 @@ class Database:
         if not entry_ids:
             return 0
         if self._vs:
-            for eid in entry_ids:
-                self._vs.delete("episodic", eid)
+            self._vs.delete("episodic", ids=entry_ids)
         placeholders = ",".join("?" * len(entry_ids))
         with self._conn() as conn:
             cur = conn.execute(
@@ -793,8 +793,7 @@ class Database:
                 summary,
                 {"session_id": session_id, "user_id": user_id},
             )
-            for eid in entry_ids_to_delete:
-                self._vs.delete("episodic", eid)
+            self._vs.delete("episodic", ids=entry_ids_to_delete)
         return entry_id
 
     # ── Artifacts ──────────────────────────────────────────────────────────

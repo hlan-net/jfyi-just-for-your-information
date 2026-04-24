@@ -49,7 +49,41 @@ def test_delete_removes_entry(vs):
 
 
 def test_delete_nonexistent_is_noop(vs):
-    vs.delete("rules", "does-not-exist")  # must not raise
+    vs.delete("rules", ids="does-not-exist")  # must not raise
+
+
+def test_delete_batch(vs):
+    vs.add("rules", "r1", "always write tests")
+    vs.add("rules", "r2", "use type hints")
+    vs.add("rules", "r3", "prefer f-strings")
+    vs.delete("rules", ids=["r1", "r2"])
+    remaining = vs.query("rules", "code style")
+    assert "r1" not in remaining
+    assert "r2" not in remaining
+    assert "r3" in remaining
+
+
+def test_delete_by_where_filter(vs):
+    vs.add("rules", "u1r1", "user1 rule", metadata={"user_id": 1})
+    vs.add("rules", "u2r1", "user2 rule", metadata={"user_id": 2})
+    vs.delete("rules", where={"user_id": 1})
+    remaining = vs.query("rules", "rule")
+    assert "u1r1" not in remaining
+    assert "u2r1" in remaining
+
+
+def test_query_where_filter_isolates_users(vs):
+    vs.add("rules", "u1r1", "write unit tests", metadata={"user_id": 1})
+    vs.add("rules", "u2r1", "write unit tests", metadata={"user_id": 2})
+    ids = vs.query("rules", "testing", where={"user_id": 1})
+    assert "u1r1" in ids
+    assert "u2r1" not in ids
+
+
+def test_query_where_returns_empty_when_no_match(vs):
+    vs.add("rules", "r1", "some rule", metadata={"user_id": 1})
+    ids = vs.query("rules", "some rule", where={"user_id": 99})
+    assert ids == []
 
 
 def test_query_respects_k(vs):
