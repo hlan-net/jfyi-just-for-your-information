@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from typing import Any
@@ -420,7 +421,8 @@ async def dispatch_tool(
         ]
 
     if name == "store_artifact":
-        artifact = db.artifact_store(
+        artifact = await asyncio.to_thread(
+            db.artifact_store,
             user_id=user_id,
             content=arguments["content"],
             artifact_type=arguments["type"],
@@ -428,19 +430,14 @@ async def dispatch_tool(
             compiled_view=arguments.get("compiled_view"),
         )
         size_kb = round(artifact["size_bytes"] / 1024, 1)
-        handle = (
-            f"artifact:{artifact['id']}"
-            f" | type:{artifact['type']}"
-            f" | size:{size_kb}KB"
-            f" | path:{artifact['path']}"
-        )
+        handle = f"artifact:{artifact['id']} | type:{artifact['type']} | size:{size_kb}KB"
         payload = {"handle": handle, "artifact_id": artifact["id"]}
         if artifact.get("compiled_view"):
             payload["compiled_view"] = artifact["compiled_view"]
         return [TextContent(type="text", text=f"Artifact stored.\n{_serializer.dumps(payload)}")]
 
     if name == "run_local_script":
-        import subprocess
+        import os
         import tempfile
 
         artifact = db.artifact_get(user_id, arguments["artifact_id"])
@@ -458,22 +455,28 @@ async def dispatch_tool(
             script_path = f.name
 
         try:
-            result = subprocess.run(
-                ["python3", script_path],
-                capture_output=True,
-                text=True,
-                timeout=10,
+            # Minimal env: only PATH so the subprocess can find python3 but inherits
+            # no secrets (API keys, tokens) from the parent process environment.
+            safe_env = {"PATH": os.environ.get("PATH", "/usr/bin:/usr/local/bin")}
+            proc = await asyncio.create_subprocess_exec(
+                "python3",
+                script_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=safe_env,
             )
-            output = result.stdout or result.stderr or "(no output)"
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            except TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                return [TextContent(type="text", text="Script timed out after 10 seconds.")]
+            output = stdout.decode() or stderr.decode() or "(no output)"
             lines = output.splitlines()
             if len(lines) > 50:
                 lines = lines[:50] + [f"... ({len(lines) - 50} lines truncated)"]
             return [TextContent(type="text", text="\n".join(lines))]
-        except subprocess.TimeoutExpired:
-            return [TextContent(type="text", text="Script timed out after 10 seconds.")]
         finally:
-            import os
-
             os.unlink(script_path)
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]

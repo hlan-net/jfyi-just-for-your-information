@@ -804,8 +804,7 @@ class Database:
         if not artifact:
             return False
         path = Path(artifact["path"])
-        if path.exists():
-            path.unlink()
+        path.unlink(missing_ok=True)
         with self._conn() as conn:
             cur = conn.execute(
                 "DELETE FROM artifacts WHERE id=? AND user_id=?", (artifact_id, user_id)
