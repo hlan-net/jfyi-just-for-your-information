@@ -15,6 +15,7 @@ from mcp.types import (
 
 from .analytics import AnalyticsEngine
 from .database import Database
+from .memory import MemoryFacade
 from .prompt import render_read_only_block
 from .serializer import PayloadSerializer
 
@@ -116,6 +117,62 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
         "example": (
             "discover_tools(tool_name='add_profile_rule',"
             " arguments={'rule': '...', 'category': 'style'})"
+        ),
+    },
+    "remember_short_term": {
+        "description": (
+            "Store a scratchpad value scoped to the current session. "
+            "Expires automatically after the TTL. Useful for passing context "
+            "between tool calls without consuming permanent profile storage."
+        ),
+        "token_cost": 25,
+        "always_on": False,
+        "inputSchema": {
+            "type": "object",
+            "required": ["session_id", "key", "value"],
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session identifier (use the same id as record_interaction).",
+                },
+                "key": {"type": "string", "description": "Key to store the value under."},
+                "value": {"type": "string", "description": "Value to store (string)."},
+                "ttl_seconds": {
+                    "type": "integer",
+                    "description": "Time-to-live in seconds (default 3600).",
+                },
+            },
+        },
+        "example": (
+            "discover_tools(tool_name='remember_short_term',"
+            " arguments={'session_id': '...', 'key': 'task_context', 'value': '...'})"
+        ),
+    },
+    "recall_episodic": {
+        "description": (
+            "Retrieve episodic memory summaries written for a session. "
+            "Returns interaction summaries and friction events recorded by "
+            "the background summarizer."
+        ),
+        "token_cost": 40,
+        "always_on": False,
+        "inputSchema": {
+            "type": "object",
+            "required": ["session_id"],
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session identifier to recall memories for.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of entries to return (default 20).",
+                },
+            },
+        },
+        "example": (
+            "discover_tools(tool_name='recall_episodic',"
+            " arguments={'session_id': '...', 'limit': 10})"
         ),
     },
 }
@@ -253,6 +310,50 @@ async def dispatch_tool(
             source="manual",
         )
         return [TextContent(type="text", text=f"Rule added (id={rule_id}).")]
+
+    if name == "remember_short_term":
+        memory = MemoryFacade(db)
+        memory.remember(
+            "short_term",
+            user_id=user_id,
+            session_id=arguments["session_id"],
+            key=arguments["key"],
+            value=arguments["value"],
+            ttl_seconds=arguments.get("ttl_seconds", 3600),
+        )
+        ttl = arguments.get("ttl_seconds", 3600)
+        return [
+            TextContent(
+                type="text",
+                text=f"Stored '{arguments['key']}' in short-term memory (ttl={ttl}s).",
+            )
+        ]
+
+    if name == "recall_episodic":
+        memory = MemoryFacade(db)
+        entries = memory.recall(
+            "episodic",
+            user_id=user_id,
+            session_id=arguments["session_id"],
+            limit=arguments.get("limit", 20),
+        )
+        if not entries:
+            return [TextContent(type="text", text="No episodic memory found for this session.")]
+        payload = [
+            {
+                "id": e["id"],
+                "type": e["event_type"],
+                "summary": e["summary"],
+                "at": e["created_at"],
+            }
+            for e in entries
+        ]
+        return [
+            TextContent(
+                type="text",
+                text=f"Episodic memory ({len(entries)} entries):\n{_serializer.dumps(payload)}",  # noqa: E501
+            )
+        ]
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
