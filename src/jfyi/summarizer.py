@@ -122,14 +122,21 @@ class Summarizer:
             logger.debug("Daily token cap reached; skipping summarization.")
             return
 
-        sessions = self._db.get_unsummarized_sessions(min_interactions=self._min_interactions)
+        sessions = await asyncio.to_thread(
+            self._db.get_unsummarized_sessions, min_interactions=self._min_interactions
+        )
         for user_id, session_id in sessions:
             if self._tokens_used_today >= self._daily_token_cap:
                 break
-            await self._summarize(user_id, session_id)
+            try:
+                await self._summarize(user_id, session_id)
+            except Exception:
+                logger.exception(
+                    "Failed to summarize session %s for user %d; skipping.", session_id, user_id
+                )
 
     async def _summarize(self, user_id: int, session_id: str) -> None:
-        data = self._db.get_session_data_for_summary(user_id, session_id)
+        data = await asyncio.to_thread(self._db.get_session_data_for_summary, user_id, session_id)
         if not data["interactions"]:
             return
 
@@ -151,7 +158,8 @@ class Summarizer:
         summary_text = response.content[0].text
 
         interaction_ids = [i["id"] for i in data["interactions"]]
-        self._db.episodic_add(
+        await asyncio.to_thread(
+            self._db.episodic_add,
             session_id=session_id,
             user_id=user_id,
             event_type="interaction_summary",
