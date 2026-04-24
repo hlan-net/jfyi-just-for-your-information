@@ -396,20 +396,28 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine, user_id: int = 1)
     return server
 
 
-async def run_stdio(db: Database, analytics: AnalyticsEngine) -> None:
+async def run_stdio(db: Database, analytics: AnalyticsEngine, summarizer=None) -> None:
     """Run the MCP server over stdio transport."""
+    import asyncio
+
     from mcp.server.stdio import stdio_server
 
     server = build_mcp_server(db, analytics)
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="jfyi",
-                server_version="2.1.0",
-                capabilities=server.get_capabilities(
-                    notification_options=None, experimental_capabilities={}
+    summarizer_task = asyncio.create_task(summarizer.run()) if summarizer else None
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream,
+                write_stream,
+                InitializationOptions(
+                    server_name="jfyi",
+                    server_version="2.1.0",
+                    capabilities=server.get_capabilities(
+                        notification_options=None, experimental_capabilities={}
+                    ),
                 ),
-            ),
-        )
+            )
+    finally:
+        if summarizer_task:
+            summarizer_task.cancel()
+            await asyncio.gather(summarizer_task, return_exceptions=True)

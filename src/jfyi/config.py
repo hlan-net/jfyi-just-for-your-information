@@ -39,5 +39,13 @@ class Settings(BaseSettings):
         None  # Optional; forces the base URL for OAuth redirects (e.g. https://jfyi.k3s.hlan.net)
     )
 
+    # Background summarizer
+    summarizer_enabled: bool = False
+    summarizer_interval_s: int = 300
+    summarizer_daily_token_cap: int = 100_000
+    summarizer_model: str = "claude-haiku-4-5-20251001"
+    summarizer_min_interactions: int = 3
+    anthropic_api_key: str | None = None
+
 
 settings = Settings()
