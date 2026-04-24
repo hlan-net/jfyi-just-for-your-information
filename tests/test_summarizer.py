@@ -335,6 +335,27 @@ def test_episodic_sessions_above_threshold_user_filter(db):
     assert (2, "s2") not in only_user1
 
 
+def test_episodic_count(db):
+    assert db.episodic_count("s1", 1) == 0
+    for i in range(4):
+        db.episodic_add("s1", 1, "interaction_summary", f"S{i}")
+    assert db.episodic_count("s1", 1) == 4
+
+
+def test_episodic_compact_is_atomic(db):
+    ids = [db.episodic_add("s1", 1, "interaction_summary", f"S{i}") for i in range(3)]
+    db.episodic_compact("s1", 1, "Merged.", None, ids[:2])
+    entries = db.episodic_get("s1", 1, limit=50)
+    assert len(entries) == 2  # 1 compacted + 1 remaining original
+    types = [e["event_type"] for e in entries]
+    assert "compacted_summary" in types
+    # The two deleted originals must be gone
+    remaining_ids = {e["id"] for e in entries}
+    assert ids[0] not in remaining_ids
+    assert ids[1] not in remaining_ids
+    assert ids[2] in remaining_ids
+
+
 def test_episodic_get_oldest_returns_asc_order(db):
     ids = [db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}") for i in range(4)]
     oldest = db.episodic_get_oldest("s1", 1, limit=2)

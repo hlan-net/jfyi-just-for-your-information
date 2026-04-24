@@ -661,3 +661,44 @@ class Database:
                 f"DELETE FROM episodic_memory WHERE id IN ({placeholders})", entry_ids
             )
             return cur.rowcount
+
+    def episodic_count(self, session_id: str, user_id: int) -> int:
+        """Return the total number of episodic entries for a session."""
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM episodic_memory WHERE session_id=? AND user_id=?",
+                (session_id, user_id),
+            ).fetchone()[0]
+
+    def episodic_compact(
+        self,
+        session_id: str,
+        user_id: int,
+        summary: str,
+        context: dict | None,
+        entry_ids_to_delete: list[str],
+    ) -> str:
+        """Atomically insert a compacted_summary entry and delete the source entries."""
+        now = datetime.now(UTC).isoformat()
+        entry_id = str(uuid.uuid4())
+        placeholders = ",".join("?" * len(entry_ids_to_delete))
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO episodic_memory"
+                " (id, session_id, user_id, event_type, summary, context_json, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    entry_id,
+                    session_id,
+                    user_id,
+                    "compacted_summary",
+                    summary,
+                    json.dumps(context) if context else None,
+                    now,
+                ),
+            )
+            conn.execute(
+                f"DELETE FROM episodic_memory WHERE id IN ({placeholders})",
+                entry_ids_to_delete,
+            )
+        return entry_id

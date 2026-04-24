@@ -174,13 +174,9 @@ class Summarizer:
                         user_id,
                     )
                     break
-                # Re-check whether the session still exceeds the threshold.
-                still_above = await asyncio.to_thread(
-                    self._db.episodic_sessions_above_threshold,
-                    threshold=self._compaction_trigger_count,
-                    user_id=user_id,
-                )
-                if (user_id, session_id) not in still_above:
+                # Re-check whether this session still exceeds the threshold.
+                count = await asyncio.to_thread(self._db.episodic_count, session_id, user_id)
+                if count <= self._compaction_trigger_count:
                     break
 
     async def _compact_session(self, user_id: int, session_id: str) -> None:
@@ -211,14 +207,13 @@ class Summarizer:
 
         entry_ids = [e["id"] for e in entries]
         await asyncio.to_thread(
-            self._db.episodic_add,
+            self._db.episodic_compact,
             session_id=session_id,
             user_id=user_id,
-            event_type="compacted_summary",
             summary=response.content[0].text,
             context={"compacted_entry_ids": entry_ids, "tokens_used": tokens},
+            entry_ids_to_delete=entry_ids,
         )
-        await asyncio.to_thread(self._db.episodic_delete_batch, entry_ids)
 
         logger.debug(
             "Compacted session %s: merged %d entries into 1 (%d tokens)",
