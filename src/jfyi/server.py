@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .retrieval import Retriever
 
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
@@ -258,23 +261,38 @@ _DISCOVER_SCHEMA = {
                 "If provided alongside tool_name, invoke that tool with these arguments."
             ),
         },
+        "query": {
+            "type": "string",
+            "description": (
+                "Natural-language query to semantically filter the tool list "
+                "to only those relevant to the task. Requires ITR to be enabled server-side."
+            ),
+        },
     },
 }
 
 
 async def dispatch_tool(
-    name: str, arguments: dict[str, Any], db: Database, analytics: AnalyticsEngine, user_id: int = 1
+    name: str,
+    arguments: dict[str, Any],
+    db: Database,
+    analytics: AnalyticsEngine,
+    user_id: int = 1,
+    retriever: Retriever | None = None,
 ) -> list[TextContent]:
     """Execute a JFYI tool by name. Shared by the MCP server handler and tests."""
     if name == "discover_tools":
         tool_name = arguments.get("tool_name")
         invoke_args = arguments.get("arguments")
+        query = arguments.get("query")
 
         if tool_name and invoke_args is not None:
             # Proxy-execute the named tool
             if tool_name not in _TOOL_CATALOGUE:
                 return [TextContent(type="text", text=f"Unknown tool: {tool_name}")]
-            return await dispatch_tool(tool_name, invoke_args, db, analytics, user_id=user_id)
+            return await dispatch_tool(
+                tool_name, invoke_args, db, analytics, user_id=user_id, retriever=retriever
+            )
 
         if tool_name:
             # Return full schema for a specific tool
@@ -292,12 +310,20 @@ async def dispatch_tool(
             ]
             return [TextContent(type="text", text="\n".join(lines))]
 
-        # Return compact catalogue
+        # Return compact catalogue, optionally filtered by semantic query
+        if retriever and query:
+            relevant = set(retriever.retrieve(query))
+            always_on = {n for n, i in _TOOL_CATALOGUE.items() if i["always_on"]}
+            visible = relevant | always_on
+            catalogue_items = [(n, i) for n, i in _TOOL_CATALOGUE.items() if n in visible]
+        else:
+            catalogue_items = list(_TOOL_CATALOGUE.items())
+
         lines = [
             "JFYI capabilities — call discover_tools(tool_name='X') for full schema, "
             "or discover_tools(tool_name='X', arguments={{...}}) to invoke:\n"
         ]
-        for tname, info in _TOOL_CATALOGUE.items():
+        for tname, info in catalogue_items:
             tag = " [always-on]" if info["always_on"] else ""
             lines.append(f"  {tname}{tag} — {info['description']} (~{info['token_cost']} tokens)")
         lines.append(
@@ -482,7 +508,12 @@ async def dispatch_tool(
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
 
-def build_mcp_server(db: Database, analytics: AnalyticsEngine, user_id: int = 1) -> Server:
+def build_mcp_server(
+    db: Database,
+    analytics: AnalyticsEngine,
+    user_id: int = 1,
+    retriever: Retriever | None = None,
+) -> Server:
     """Build and configure the MCP server with all JFYI tools."""
 
     server = Server("jfyi")
@@ -515,18 +546,20 @@ def build_mcp_server(db: Database, analytics: AnalyticsEngine, user_id: int = 1)
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        return await dispatch_tool(name, arguments, db, analytics, user_id=user_id)
+        return await dispatch_tool(
+            name, arguments, db, analytics, user_id=user_id, retriever=retriever
+        )
 
     return server
 
 
-async def run_stdio(db: Database, analytics: AnalyticsEngine, summarizer=None) -> None:
+async def run_stdio(
+    db: Database, analytics: AnalyticsEngine, summarizer=None, retriever: Retriever | None = None
+) -> None:
     """Run the MCP server over stdio transport."""
-    import asyncio
-
     from mcp.server.stdio import stdio_server
 
-    server = build_mcp_server(db, analytics)
+    server = build_mcp_server(db, analytics, retriever=retriever)
     summarizer_task = asyncio.create_task(summarizer.run()) if summarizer else None
     try:
         async with stdio_server() as (read_stream, write_stream):
