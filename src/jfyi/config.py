@@ -47,5 +47,9 @@ class Settings(BaseSettings):
     summarizer_min_interactions: int = 3
     anthropic_api_key: str | None = None
 
+    # Context compaction (runs inside the summarizer loop when summarizer_enabled=true)
+    compaction_trigger_count: int = 10  # compact when session has > N episodic entries
+    compaction_batch_size: int = 5  # how many oldest entries to merge per round
+
 
 settings = Settings()

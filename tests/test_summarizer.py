@@ -298,5 +298,134 @@ def test_create_summarizer_success(db):
                 mock_settings.summarizer_interval_s = 300
                 mock_settings.summarizer_daily_token_cap = 100_000
                 mock_settings.summarizer_min_interactions = 3
+                mock_settings.compaction_trigger_count = 10
+                mock_settings.compaction_batch_size = 5
                 result = create_summarizer(db)
     assert isinstance(result, Summarizer)
+
+
+# ── Context compaction DB helpers ──────────────────────────────────────────────
+
+
+def test_episodic_sessions_above_threshold_empty(db):
+    assert db.episodic_sessions_above_threshold(threshold=5) == []
+
+
+def test_episodic_sessions_above_threshold_below(db):
+    for i in range(3):
+        db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}")
+    assert db.episodic_sessions_above_threshold(threshold=5) == []
+
+
+def test_episodic_sessions_above_threshold_above(db):
+    for i in range(6):
+        db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}")
+    result = db.episodic_sessions_above_threshold(threshold=5)
+    assert (1, "s1") in result
+
+
+def test_episodic_sessions_above_threshold_user_filter(db):
+    db.create_user("user2@example.com")
+    for i in range(6):
+        db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}")
+    for i in range(6):
+        db.episodic_add("s2", 2, "interaction_summary", f"Summary {i}")
+    only_user1 = db.episodic_sessions_above_threshold(threshold=5, user_id=1)
+    assert (1, "s1") in only_user1
+    assert (2, "s2") not in only_user1
+
+
+def test_episodic_get_oldest_returns_asc_order(db):
+    ids = [db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}") for i in range(4)]
+    oldest = db.episodic_get_oldest("s1", 1, limit=2)
+    assert len(oldest) == 2
+    assert oldest[0]["id"] == ids[0]
+    assert oldest[1]["id"] == ids[1]
+
+
+def test_episodic_delete_batch(db):
+    ids = [db.episodic_add("s1", 1, "interaction_summary", f"S{i}") for i in range(3)]
+    deleted = db.episodic_delete_batch(ids[:2])
+    assert deleted == 2
+    remaining = db.episodic_get("s1", 1)
+    assert len(remaining) == 1
+    assert remaining[0]["id"] == ids[2]
+
+
+def test_episodic_delete_batch_empty(db):
+    assert db.episodic_delete_batch([]) == 0
+
+
+# ── Compaction integration tests ───────────────────────────────────────────────
+
+
+async def test_compact_tick_skips_below_threshold(db):
+    for i in range(3):
+        db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}")
+
+    s = _make_summarizer(db, compaction_trigger_count=5, daily_token_cap=100_000)
+    s._client.messages.create.return_value = _mock_response("Compacted.", 20, 10)
+    await s._compact_tick()
+    s._client.messages.create.assert_not_called()
+
+
+async def test_compact_session_writes_compacted_summary(db):
+    for i in range(6):
+        db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}")
+
+    s = _make_summarizer(
+        db, compaction_trigger_count=5, compaction_batch_size=5, daily_token_cap=100_000
+    )
+    s._client.messages.create.return_value = _mock_response("Compacted result.", 30, 15)
+    await s._compact_tick()
+
+    s._client.messages.create.assert_called_once()
+    entries = db.episodic_get("s1", 1, limit=50)
+    # 6 original - 5 compacted + 1 new compacted_summary = 2 entries
+    assert len(entries) == 2
+    types = {e["event_type"] for e in entries}
+    assert "compacted_summary" in types
+    assert s._tokens_used_today == 45
+
+
+async def test_compact_session_respects_token_cap(db):
+    for i in range(6):
+        db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}")
+
+    s = _make_summarizer(db, compaction_trigger_count=5, compaction_batch_size=5, daily_token_cap=0)
+    s._client.messages.create.return_value = _mock_response("x", 1, 1)
+    await s._compact_tick()
+    s._client.messages.create.assert_not_called()
+
+
+async def test_compact_prompt_includes_cache_control(db):
+    for i in range(6):
+        db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}")
+
+    s = _make_summarizer(
+        db, compaction_trigger_count=5, compaction_batch_size=5, daily_token_cap=100_000
+    )
+    s._client.messages.create.return_value = _mock_response("Compacted.", 20, 10)
+    await s._compact_tick()
+
+    call_kwargs = s._client.messages.create.call_args.kwargs
+    system = call_kwargs["system"]
+    assert isinstance(system, list)
+    assert system[0]["cache_control"] == {"type": "ephemeral"}
+
+
+async def test_compact_recursive_reduces_below_threshold(db):
+    # 12 entries, trigger=5, batch=5 → two rounds needed
+    for i in range(12):
+        db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}")
+
+    s = _make_summarizer(
+        db, compaction_trigger_count=5, compaction_batch_size=5, daily_token_cap=100_000
+    )
+    s._client.messages.create.return_value = _mock_response("Compacted.", 20, 10)
+    await s._compact_tick()
+
+    # Should have called LLM at least twice (two compaction rounds)
+    assert s._client.messages.create.call_count >= 2
+    entries = db.episodic_get("s1", 1, limit=50)
+    assert len(entries) <= 5
