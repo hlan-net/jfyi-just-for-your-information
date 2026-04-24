@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     friction_threshold: float = 0.7
 
     # Feature flags
-    enable_vector_db: bool = False  # Optional; falls back to SQLite FTS
+    enable_vector_db: bool = False  # Enable semantic search via ChromaDB + sentence-transformers
+    embedding_model: str = "all-MiniLM-L6-v2"  # Sentence-transformer model for embeddings
     single_user_mode: bool = False  # Optional; bypass OAuth and use a predefined local admin
     base_url: str | None = (
         None  # Optional; forces the base URL for OAuth redirects (e.g. https://jfyi.k3s.hlan.net)

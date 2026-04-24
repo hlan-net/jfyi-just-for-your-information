@@ -16,9 +16,14 @@ console = Console()
 
 def _get_db_and_analytics(data_dir: Path):
     from .analytics import AnalyticsEngine
+    from .config import settings
     from .database import Database
+    from .vector import create_vector_store
 
-    db = Database(data_dir / "jfyi.db")
+    vs = None
+    if settings.enable_vector_db:
+        vs = create_vector_store(data_dir, settings.embedding_model)
+    db = Database(data_dir / "jfyi.db", vector_store=vs)
     analytics = AnalyticsEngine(db)
     return db, analytics
 

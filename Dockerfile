@@ -13,10 +13,13 @@ RUN mkdir -p src/jfyi && touch src/jfyi/__init__.py && \
     pip install --no-cache-dir . && \
     rm -rf src/ build/ *.egg-info
 
-# 2. Copy the actual source code
+# 2. Pre-download the embedding model so first startup is offline-capable
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
+# 3. Copy the actual source code
 COPY src/ ./src/
 
-# 3. Install the app itself (dependencies are already installed). Force reinstall to overwrite the dummy package.
+# 4. Install the app itself (dependencies are already installed). Force reinstall to overwrite the dummy package.
 RUN pip install --no-cache-dir --no-deps --force-reinstall .
 
 RUN mkdir -p /data
