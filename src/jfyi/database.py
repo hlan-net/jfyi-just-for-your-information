@@ -123,15 +123,14 @@ class Database:
 
     def _run_migrations(self) -> None:
         """Apply forward-only, idempotent schema migrations tracked by PRAGMA user_version."""
-        conn = sqlite3.connect(self.db_path)
-        try:
+        with self._conn() as conn:
             version = conn.execute("PRAGMA user_version").fetchone()[0]
             if version < 1:
                 conn.executescript("""
                     CREATE TABLE IF NOT EXISTS short_term_memory (
                         id TEXT PRIMARY KEY,
                         session_id TEXT NOT NULL,
-                        user_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         key TEXT NOT NULL,
                         value TEXT NOT NULL,
                         expires_at TEXT NOT NULL,
@@ -142,15 +141,13 @@ class Database:
                     CREATE TABLE IF NOT EXISTS episodic_memory (
                         id TEXT PRIMARY KEY,
                         session_id TEXT NOT NULL,
-                        user_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         event_type TEXT NOT NULL,
                         summary TEXT NOT NULL,
                         context_json TEXT,
                         created_at TEXT NOT NULL
                     );
 
-                    CREATE INDEX IF NOT EXISTS idx_stm_session
-                        ON short_term_memory(session_id, user_id);
                     CREATE INDEX IF NOT EXISTS idx_stm_expires
                         ON short_term_memory(expires_at);
                     CREATE INDEX IF NOT EXISTS idx_episodic_session
@@ -158,8 +155,6 @@ class Database:
 
                     PRAGMA user_version = 1;
                 """)
-        finally:
-            conn.close()
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
