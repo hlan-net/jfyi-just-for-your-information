@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from typing import Any
@@ -173,6 +174,70 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
         "example": (
             "discover_tools(tool_name='recall_episodic',"
             " arguments={'session_id': '...', 'limit': 10})"
+        ),
+    },
+    "store_artifact": {
+        "description": (
+            "Store a large text artifact (crash log, diff, terminal output) on disk "
+            "and receive a compact handle in return. Pass the handle to run_local_script "
+            "to extract summaries without injecting the full content into context."
+        ),
+        "token_cost": 20,
+        "always_on": False,
+        "inputSchema": {
+            "type": "object",
+            "required": ["content", "type"],
+            "properties": {
+                "content": {"type": "string", "description": "Full text content to store."},
+                "type": {
+                    "type": "string",
+                    "description": "Artifact type label (e.g. 'log', 'diff', 'profile').",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Associate artifact with a session (optional).",
+                },
+                "compiled_view": {
+                    "type": "string",
+                    "description": "Pre-computed summary to cache with the artifact (optional).",
+                },
+            },
+        },
+        "example": (
+            "discover_tools(tool_name='store_artifact',"
+            " arguments={'content': '...', 'type': 'log', 'session_id': '...'})"
+        ),
+    },
+    "run_local_script": {
+        "description": (
+            "Execute a short Python script against a stored artifact. "
+            "The artifact's file path is available as the variable `artifact_path`. "
+            "Returns up to 50 lines of stdout. Use this to extract a focused summary "
+            "without loading the full artifact into context."
+        ),
+        "token_cost": 30,
+        "always_on": False,
+        "inputSchema": {
+            "type": "object",
+            "required": ["artifact_id", "script"],
+            "properties": {
+                "artifact_id": {
+                    "type": "string",
+                    "description": "ID returned by store_artifact.",
+                },
+                "script": {
+                    "type": "string",
+                    "description": (
+                        "Python script to run. The variable `artifact_path` is pre-defined "
+                        "as the absolute path to the artifact file."
+                    ),
+                },
+            },
+        },
+        "example": (
+            "discover_tools(tool_name='run_local_script',"
+            " arguments={'artifact_id': '...', 'script': "
+            "'with open(artifact_path) as f: print(f.read()[:500])'})"
         ),
     },
 }
@@ -354,6 +419,65 @@ async def dispatch_tool(
                 text=f"Episodic memory ({len(entries)} entries):\n{_serializer.dumps(payload)}",  # noqa: E501
             )
         ]
+
+    if name == "store_artifact":
+        artifact = await asyncio.to_thread(
+            db.artifact_store,
+            user_id=user_id,
+            content=arguments["content"],
+            artifact_type=arguments["type"],
+            session_id=arguments.get("session_id"),
+            compiled_view=arguments.get("compiled_view"),
+        )
+        size_kb = round(artifact["size_bytes"] / 1024, 1)
+        handle = f"artifact:{artifact['id']} | type:{artifact['type']} | size:{size_kb}KB"
+        payload = {"handle": handle, "artifact_id": artifact["id"]}
+        if artifact.get("compiled_view"):
+            payload["compiled_view"] = artifact["compiled_view"]
+        return [TextContent(type="text", text=f"Artifact stored.\n{_serializer.dumps(payload)}")]
+
+    if name == "run_local_script":
+        import os
+        import tempfile
+
+        artifact = db.artifact_get(user_id, arguments["artifact_id"])
+        if not artifact:
+            return [TextContent(type="text", text="Artifact not found.")]
+
+        script = arguments["script"]
+        # Prepend the artifact_path binding so agents can reference it directly.
+        full_script = f"artifact_path = {artifact['path']!r}\n{script}"
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", dir="/tmp", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(full_script)
+            script_path = f.name
+
+        try:
+            # Minimal env: only PATH so the subprocess can find python3 but inherits
+            # no secrets (API keys, tokens) from the parent process environment.
+            safe_env = {"PATH": os.environ.get("PATH", "/usr/bin:/usr/local/bin")}
+            proc = await asyncio.create_subprocess_exec(
+                "python3",
+                script_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=safe_env,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            except TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                return [TextContent(type="text", text="Script timed out after 10 seconds.")]
+            output = stdout.decode() or stderr.decode() or "(no output)"
+            lines = output.splitlines()
+            if len(lines) > 50:
+                lines = lines[:50] + [f"... ({len(lines) - 50} lines truncated)"]
+            return [TextContent(type="text", text="\n".join(lines))]
+        finally:
+            os.unlink(script_path)
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 

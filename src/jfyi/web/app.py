@@ -469,7 +469,9 @@ class ClientRegistration(BaseModel):
 
 def _register_oauth_server_api(app: FastAPI) -> None:
     import secrets
-    from urllib.parse import urlencode
+    from urllib.parse import urlencode, urlparse
+
+    _ALLOWED_REDIRECT_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
     from fastapi.responses import JSONResponse
 
@@ -528,6 +530,17 @@ def _register_oauth_server_api(app: FastAPI) -> None:
             response = RedirectResponse(url="/")
             response.set_cookie("oauth_next", auth_url, max_age=300)
             return response
+
+        # Validate redirect_uri: only localhost/loopback allowed (MCP CLI OAuth).
+        parsed = urlparse(redirect_uri)
+        if parsed.hostname not in _ALLOWED_REDIRECT_HOSTS:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "invalid_request",
+                    "error_description": "redirect_uri must target localhost",
+                },
+            )
 
         # Generate authorization code
         code = secrets.token_urlsafe(32)
