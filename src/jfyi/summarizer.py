@@ -34,6 +34,14 @@ _SYSTEM_PROMPT = (
     "Write only the summary, no preamble or headers."
 )
 
+_COMPACTION_PROMPT = (
+    "You are a session history compactor for JFYI. "
+    "Given multiple session summaries in chronological order, "
+    "produce a single condensed summary that preserves all key insights, "
+    "patterns, and notable events. "
+    "Write only the compacted summary, no preamble or headers."
+)
+
 
 def _format_session(data: dict[str, Any]) -> str:
     interactions = data["interactions"]
@@ -81,6 +89,8 @@ class Summarizer:
         interval_s: int = 300,
         daily_token_cap: int = 100_000,
         min_interactions: int = 3,
+        compaction_trigger_count: int = 10,
+        compaction_batch_size: int = 5,
     ) -> None:
         if not _ANTHROPIC_AVAILABLE:
             raise RuntimeError(
@@ -92,6 +102,8 @@ class Summarizer:
         self._interval_s = interval_s
         self._daily_token_cap = daily_token_cap
         self._min_interactions = min_interactions
+        self._compaction_trigger_count = compaction_trigger_count
+        self._compaction_batch_size = compaction_batch_size
         self._tokens_used_today: int = 0
         self._reset_date: date = datetime.now(UTC).date()
 
@@ -134,6 +146,81 @@ class Summarizer:
                 logger.exception(
                     "Failed to summarize session %s for user %d; skipping.", session_id, user_id
                 )
+
+        await self._compact_tick()
+
+    async def _compact_tick(self) -> None:
+        """Compact sessions whose episodic entry count exceeds the trigger threshold."""
+        if self._tokens_used_today >= self._daily_token_cap:
+            return
+
+        sessions = await asyncio.to_thread(
+            self._db.episodic_sessions_above_threshold,
+            threshold=self._compaction_trigger_count,
+        )
+        for user_id, session_id in sessions:
+            if self._tokens_used_today >= self._daily_token_cap:
+                break
+            # Run up to 3 recursive compaction rounds per session per tick.
+            for _ in range(3):
+                if self._tokens_used_today >= self._daily_token_cap:
+                    break
+                try:
+                    await self._compact_session(user_id, session_id)
+                except Exception:
+                    logger.exception(
+                        "Failed to compact session %s for user %d; skipping.",
+                        session_id,
+                        user_id,
+                    )
+                    break
+                # Re-check whether this session still exceeds the threshold.
+                count = await asyncio.to_thread(self._db.episodic_count, session_id, user_id)
+                if count <= self._compaction_trigger_count:
+                    break
+
+    async def _compact_session(self, user_id: int, session_id: str) -> None:
+        """Merge the oldest batch of episodic entries into one compacted_summary."""
+        entries = await asyncio.to_thread(
+            self._db.episodic_get_oldest, session_id, user_id, self._compaction_batch_size
+        )
+        if not entries:
+            return
+
+        formatted = "\n".join(
+            f"[{i + 1}] {e['event_type']}: {e['summary']}" for i, e in enumerate(entries)
+        )
+        response = await self._client.messages.create(
+            model=self._model,
+            max_tokens=500,
+            system=[
+                {
+                    "type": "text",
+                    "text": _COMPACTION_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{"role": "user", "content": formatted}],
+        )
+        tokens = response.usage.input_tokens + response.usage.output_tokens
+        self._tokens_used_today += tokens
+
+        entry_ids = [e["id"] for e in entries]
+        await asyncio.to_thread(
+            self._db.episodic_compact,
+            session_id=session_id,
+            user_id=user_id,
+            summary=response.content[0].text,
+            context={"compacted_entry_ids": entry_ids, "tokens_used": tokens},
+            entry_ids_to_delete=entry_ids,
+        )
+
+        logger.debug(
+            "Compacted session %s: merged %d entries into 1 (%d tokens)",
+            session_id,
+            len(entry_ids),
+            tokens,
+        )
 
     async def _summarize(self, user_id: int, session_id: str) -> None:
         data = await asyncio.to_thread(self._db.get_session_data_for_summary, user_id, session_id)
@@ -196,4 +283,6 @@ def create_summarizer(db: Database) -> Summarizer | None:
         interval_s=settings.summarizer_interval_s,
         daily_token_cap=settings.summarizer_daily_token_cap,
         min_interactions=settings.summarizer_min_interactions,
+        compaction_trigger_count=settings.compaction_trigger_count,
+        compaction_batch_size=settings.compaction_batch_size,
     )

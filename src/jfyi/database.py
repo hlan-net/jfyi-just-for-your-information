@@ -617,3 +617,88 @@ class Database:
                 (session_id, user_id),
             )
             return cur.rowcount
+
+    def episodic_sessions_above_threshold(
+        self, threshold: int, user_id: int | None = None
+    ) -> list[tuple[int, str]]:
+        """Return (user_id, session_id) pairs whose episodic entry count exceeds threshold."""
+        with self._conn() as conn:
+            if user_id is not None:
+                rows = conn.execute(
+                    "SELECT user_id, session_id FROM episodic_memory"
+                    " WHERE user_id=?"
+                    " GROUP BY user_id, session_id HAVING COUNT(*) > ?",
+                    (user_id, threshold),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT user_id, session_id FROM episodic_memory"
+                    " GROUP BY user_id, session_id HAVING COUNT(*) > ?",
+                    (threshold,),
+                ).fetchall()
+            return [(r["user_id"], r["session_id"]) for r in rows]
+
+    def episodic_get_oldest(
+        self, session_id: str, user_id: int, limit: int
+    ) -> list[dict[str, Any]]:
+        """Return the oldest `limit` episodic entries for a session (ascending by created_at)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM episodic_memory"
+                " WHERE session_id=? AND user_id=?"
+                " ORDER BY created_at ASC LIMIT ?",
+                (session_id, user_id, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def episodic_delete_batch(self, entry_ids: list[str]) -> int:
+        """Delete episodic entries by ID. Returns count deleted."""
+        if not entry_ids:
+            return 0
+        placeholders = ",".join("?" * len(entry_ids))
+        with self._conn() as conn:
+            cur = conn.execute(
+                f"DELETE FROM episodic_memory WHERE id IN ({placeholders})", entry_ids
+            )
+            return cur.rowcount
+
+    def episodic_count(self, session_id: str, user_id: int) -> int:
+        """Return the total number of episodic entries for a session."""
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM episodic_memory WHERE session_id=? AND user_id=?",
+                (session_id, user_id),
+            ).fetchone()[0]
+
+    def episodic_compact(
+        self,
+        session_id: str,
+        user_id: int,
+        summary: str,
+        context: dict | None,
+        entry_ids_to_delete: list[str],
+    ) -> str:
+        """Atomically insert a compacted_summary entry and delete the source entries."""
+        now = datetime.now(UTC).isoformat()
+        entry_id = str(uuid.uuid4())
+        placeholders = ",".join("?" * len(entry_ids_to_delete))
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO episodic_memory"
+                " (id, session_id, user_id, event_type, summary, context_json, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    entry_id,
+                    session_id,
+                    user_id,
+                    "compacted_summary",
+                    summary,
+                    json.dumps(context) if context else None,
+                    now,
+                ),
+            )
+            conn.execute(
+                f"DELETE FROM episodic_memory WHERE id IN ({placeholders})",
+                entry_ids_to_delete,
+            )
+        return entry_id
