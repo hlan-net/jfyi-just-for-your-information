@@ -312,10 +312,17 @@ async def dispatch_tool(
 
         # Return compact catalogue, optionally filtered by semantic query
         if retriever and query:
-            relevant = set(retriever.retrieve(query))
-            always_on = {n for n, i in _TOOL_CATALOGUE.items() if i["always_on"]}
-            visible = relevant | always_on
-            catalogue_items = [(n, i) for n, i in _TOOL_CATALOGUE.items() if n in visible]
+            # Run CPU-bound embedding + retrieval off the event loop
+            relevant = await asyncio.to_thread(retriever.retrieve, query)
+            always_on = [n for n, i in _TOOL_CATALOGUE.items() if i["always_on"]]
+            # Preserve relevance ranking: retrieved first, then always-on
+            seen: set[str] = set()
+            ordered: list[str] = []
+            for n in relevant + always_on:
+                if n in _TOOL_CATALOGUE and n not in seen:
+                    ordered.append(n)
+                    seen.add(n)
+            catalogue_items = [(n, _TOOL_CATALOGUE[n]) for n in ordered]
         else:
             catalogue_items = list(_TOOL_CATALOGUE.items())
 

@@ -38,7 +38,7 @@ class Retriever:
         for name, info in catalogue.items():
             cost = info.get("token_cost", 0)
             self._costs[name] = cost
-            self._vs.add("tools", name, info["description"])
+            self._vs.add("tools", name, info.get("description", ""))
         logger.debug("ITR: indexed %d tools into vector store", len(catalogue))
 
     def retrieve(self, query: str) -> list[str]:
@@ -52,7 +52,9 @@ class Retriever:
         selected: list[str] = []
         remaining = self._token_budget
         for name in candidates:
-            cost = self._costs.get(name, 0)
+            if name not in self._costs:
+                continue
+            cost = self._costs[name]
             if cost <= remaining:
                 selected.append(name)
                 remaining -= cost
