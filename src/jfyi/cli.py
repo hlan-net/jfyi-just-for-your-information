@@ -18,6 +18,8 @@ def _get_db_and_analytics(data_dir: Path):
     from .analytics import AnalyticsEngine
     from .config import settings
     from .database import Database
+    from .retrieval import create_retriever
+    from .server import _TOOL_CATALOGUE
     from .vector import create_vector_store
 
     vs = None
@@ -25,7 +27,10 @@ def _get_db_and_analytics(data_dir: Path):
         vs = create_vector_store(data_dir, settings.embedding_model)
     db = Database(data_dir / "jfyi.db", vector_store=vs)
     analytics = AnalyticsEngine(db)
-    return db, analytics
+    retriever = None
+    if settings.itr_enabled:
+        retriever = create_retriever(vs, _TOOL_CATALOGUE)
+    return db, analytics, retriever
 
 
 def _authenticate(request, db, settings, verify_mcp_jwt) -> int | None:
@@ -69,7 +74,9 @@ def _init_options(mcp_server):
     )
 
 
-def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings, verify_mcp_jwt):
+def _build_sse_handler(
+    db, analytics, sse_transport, build_mcp_server, settings, verify_mcp_jwt, retriever=None
+):
     """Legacy MCP SSE transport (GET to open long-poll; POST /mcp/messages/ for JSON-RPC)."""
     from starlette.requests import Request
 
@@ -78,7 +85,7 @@ def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings,
         if not user_id:
             return _unauthorized(request)
 
-        mcp_server = build_mcp_server(db, analytics, user_id=user_id)
+        mcp_server = build_mcp_server(db, analytics, user_id=user_id, retriever=retriever)
 
         class SseResponse:
             async def __call__(self, scope, receive, send):
@@ -93,7 +100,9 @@ def _build_sse_handler(db, analytics, sse_transport, build_mcp_server, settings,
     return handle_sse
 
 
-def _build_streamable_handler(db, analytics, build_mcp_server, settings, verify_mcp_jwt):
+def _build_streamable_handler(
+    db, analytics, build_mcp_server, settings, verify_mcp_jwt, retriever=None
+):
     """MCP Streamable HTTP transport (single POST endpoint, stateless per request)."""
     import anyio
     from mcp.server.streamable_http import StreamableHTTPServerTransport
@@ -104,7 +113,7 @@ def _build_streamable_handler(db, analytics, build_mcp_server, settings, verify_
         if not user_id:
             return _unauthorized(request)
 
-        mcp_server = build_mcp_server(db, analytics, user_id=user_id)
+        mcp_server = build_mcp_server(db, analytics, user_id=user_id, retriever=retriever)
         transport = StreamableHTTPServerTransport(
             mcp_session_id=None,
             is_json_response_enabled=False,
@@ -140,7 +149,7 @@ def serve(
     data_dir: Path = typer.Option(Path("/data"), help="Directory for persistent storage"),
 ) -> None:
     """Start the JFYI MCP server."""
-    db, analytics = _get_db_and_analytics(data_dir)
+    db, analytics, retriever = _get_db_and_analytics(data_dir)
 
     from .summarizer import create_summarizer
 
@@ -150,7 +159,7 @@ def serve(
         console.print(f"[cyan]Starting JFYI MCP server v{__version__} (stdio transport)…[/cyan]")
         from .server import run_stdio
 
-        asyncio.run(run_stdio(db, analytics, summarizer=summarizer))
+        asyncio.run(run_stdio(db, analytics, summarizer=summarizer, retriever=retriever))
     else:
         console.print(
             f"[cyan]Starting JFYI MCP server v{__version__} (SSE) on {host}:{port}…[/cyan]"
@@ -167,10 +176,11 @@ def serve(
         sse_transport = SseServerTransport("/mcp/messages/")
 
         handle_sse = _build_sse_handler(
-            db, analytics, sse_transport, build_mcp_server, settings, verify_mcp_jwt
+            db, analytics, sse_transport, build_mcp_server, settings, verify_mcp_jwt,
+            retriever=retriever,
         )
         handle_streamable = _build_streamable_handler(
-            db, analytics, build_mcp_server, settings, verify_mcp_jwt
+            db, analytics, build_mcp_server, settings, verify_mcp_jwt, retriever=retriever,
         )
 
         # GET opens a legacy SSE long-poll stream.
@@ -194,7 +204,7 @@ def dashboard(
     """Start the JFYI web dashboard only."""
     import uvicorn
 
-    db, analytics = _get_db_and_analytics(data_dir)
+    db, analytics, _retriever = _get_db_and_analytics(data_dir)
     from .web.app import create_app
 
     web_app = create_app(db, analytics)
