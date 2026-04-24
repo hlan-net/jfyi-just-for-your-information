@@ -52,7 +52,11 @@ class MemoryFacade:
         raise ValueError(f"Unknown memory tier: {tier!r}")
 
     def recall(self, tier: str, **kwargs: Any) -> Any:
-        """Read from the specified tier. Returns value/list or None."""
+        """Read from the specified tier. Returns value/list or None.
+
+        Pass semantic_query=<str> on long_term or episodic tiers to use vector similarity
+        ranking instead of the default recency/confidence ordering.
+        """
         if tier == "short_term":
             return self._db.stm_get(
                 session_id=kwargs["session_id"],
@@ -60,11 +64,24 @@ class MemoryFacade:
                 key=kwargs["key"],
             )
         if tier == "long_term":
+            if kwargs.get("semantic_query"):
+                return self._db.get_rules_semantic(
+                    user_id=kwargs["user_id"],
+                    query=kwargs["semantic_query"],
+                    k=int(kwargs.get("k", 5)),
+                )
             return self._db.get_rules(
                 user_id=kwargs["user_id"],
                 category=kwargs.get("category"),
             )
         if tier == "episodic":
+            if kwargs.get("semantic_query"):
+                return self._db.episodic_get_semantic(
+                    session_id=kwargs["session_id"],
+                    user_id=kwargs["user_id"],
+                    query=kwargs["semantic_query"],
+                    k=int(kwargs.get("limit", 20)),
+                )
             return self._db.episodic_get(
                 session_id=kwargs["session_id"],
                 user_id=kwargs["user_id"],

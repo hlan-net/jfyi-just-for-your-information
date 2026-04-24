@@ -1,21 +1,27 @@
 """Database layer for JFYI - SQLite-backed persistent storage."""
 
+from __future__ import annotations
+
 import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .prompt import sanitize_rule
+
+if TYPE_CHECKING:
+    from .vector import VectorStore
 
 
 class Database:
     """SQLite database manager for JFYI persistent state."""
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, vector_store: VectorStore | None = None) -> None:
         self.db_path = db_path
+        self._vs = vector_store
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
         self._run_migrations()
@@ -302,14 +308,18 @@ class Database:
         source: str = "auto",
     ) -> int:
         now = datetime.now(UTC).isoformat()
+        clean = sanitize_rule(rule)
         with self._conn() as conn:
             cur = conn.execute(
                 "INSERT INTO profile_rules"
                 " (user_id, rule, category, confidence, source, created_at, updated_at)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (user_id, sanitize_rule(rule), category, confidence, source, now, now),
+                (user_id, clean, category, confidence, source, now, now),
             )
-            return cur.lastrowid
+            rule_id = cur.lastrowid
+        if self._vs:
+            self._vs.add("rules", str(rule_id), clean, {"user_id": user_id, "category": category})
+        return rule_id
 
     def get_rules(self, user_id: int, category: str | None = None) -> list[dict[str, Any]]:
         with self._conn() as conn:
@@ -343,7 +353,26 @@ class Database:
             cur = conn.execute(
                 "DELETE FROM profile_rules WHERE id=? AND user_id=?", (rule_id, user_id)
             )
-            return cur.rowcount > 0
+            deleted = cur.rowcount > 0
+        if deleted and self._vs:
+            self._vs.delete("rules", ids=str(rule_id))
+        return deleted
+
+    def get_rules_semantic(self, user_id: int, query: str, k: int = 5) -> list[dict[str, Any]]:
+        """Return rules ranked by semantic similarity. Falls back to recency order."""
+        if not self._vs:
+            return self.get_rules(user_id)
+        ids = self._vs.query("rules", query, k=k, where={"user_id": user_id})
+        if not ids:
+            return self.get_rules(user_id)
+        placeholders = ",".join("?" * len(ids))
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM profile_rules WHERE id IN ({placeholders}) AND user_id=?",
+                (*ids, user_id),
+            ).fetchall()
+        id_order = {id_: i for i, id_ in enumerate(ids)}
+        return sorted([dict(r) for r in rows], key=lambda r: id_order.get(str(r["id"]), 999))
 
     # ── Agents ─────────────────────────────────────────────────────────────
 
@@ -618,7 +647,38 @@ class Database:
                     now,
                 ),
             )
+        if self._vs:
+            self._vs.add(
+                "episodic",
+                entry_id,
+                summary,
+                {"session_id": session_id, "user_id": user_id},
+            )
         return entry_id
+
+    def episodic_get_semantic(
+        self, session_id: str, user_id: int, query: str, k: int = 20
+    ) -> list[dict[str, Any]]:
+        """Return episodic entries ranked by semantic similarity. Falls back to recency order."""
+        if not self._vs:
+            return self.episodic_get(session_id, user_id, limit=k)
+        ids = self._vs.query(
+            "episodic",
+            query,
+            k=k,
+            where={"$and": [{"session_id": session_id}, {"user_id": user_id}]},
+        )
+        if not ids:
+            return self.episodic_get(session_id, user_id, limit=k)
+        placeholders = ",".join("?" * len(ids))
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM episodic_memory"
+                f" WHERE id IN ({placeholders}) AND session_id=? AND user_id=?",
+                (*ids, session_id, user_id),
+            ).fetchall()
+        id_order = {id_: i for i, id_ in enumerate(ids)}
+        return sorted([dict(r) for r in rows], key=lambda r: id_order.get(r["id"], 999))
 
     def episodic_get(self, session_id: str, user_id: int, limit: int = 20) -> list[dict[str, Any]]:
         with self._conn() as conn:
@@ -630,6 +690,10 @@ class Database:
             return [dict(r) for r in rows]
 
     def episodic_delete_session(self, session_id: str, user_id: int) -> int:
+        if self._vs:
+            self._vs.delete(
+                "episodic", where={"$and": [{"session_id": session_id}, {"user_id": user_id}]}
+            )
         with self._conn() as conn:
             cur = conn.execute(
                 "DELETE FROM episodic_memory WHERE session_id=? AND user_id=?",
@@ -674,6 +738,8 @@ class Database:
         """Delete episodic entries by ID. Returns count deleted."""
         if not entry_ids:
             return 0
+        if self._vs:
+            self._vs.delete("episodic", ids=entry_ids)
         placeholders = ",".join("?" * len(entry_ids))
         with self._conn() as conn:
             cur = conn.execute(
@@ -720,6 +786,14 @@ class Database:
                 f"DELETE FROM episodic_memory WHERE id IN ({placeholders})",
                 entry_ids_to_delete,
             )
+        if self._vs:
+            self._vs.add(
+                "episodic",
+                entry_id,
+                summary,
+                {"session_id": session_id, "user_id": user_id},
+            )
+            self._vs.delete("episodic", ids=entry_ids_to_delete)
         return entry_id
 
     # ── Artifacts ──────────────────────────────────────────────────────────
