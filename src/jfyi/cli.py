@@ -137,11 +137,15 @@ def serve(
     """Start the JFYI MCP server."""
     db, analytics = _get_db_and_analytics(data_dir)
 
+    from .summarizer import create_summarizer
+
+    summarizer = create_summarizer(db)
+
     if transport == "stdio":
         console.print(f"[cyan]Starting JFYI MCP server v{__version__} (stdio transport)…[/cyan]")
         from .server import run_stdio
 
-        asyncio.run(run_stdio(db, analytics))
+        asyncio.run(run_stdio(db, analytics, summarizer=summarizer))
     else:
         console.print(
             f"[cyan]Starting JFYI MCP server v{__version__} (SSE) on {host}:{port}…[/cyan]"
@@ -154,7 +158,7 @@ def serve(
         from .server import build_mcp_server
         from .web.app import create_app
 
-        web_app = create_app(db, analytics)
+        web_app = create_app(db, analytics, summarizer=summarizer)
         sse_transport = SseServerTransport("/mcp/messages/")
 
         handle_sse = _build_sse_handler(

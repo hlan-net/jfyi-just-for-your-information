@@ -432,6 +432,68 @@ class Database:
                 ).fetchall()
             return [dict(r) for r in rows]
 
+    # ── Summarizer queries ─────────────────────────────────────────────────
+
+    def get_unsummarized_sessions(self, min_interactions: int = 3) -> list[tuple[int, str]]:
+        """Return (user_id, session_id) pairs that have unsummarized interactions."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT i.user_id, i.session_id
+                FROM interactions i
+                LEFT JOIN (
+                    SELECT user_id, session_id, MAX(created_at) AS last_at
+                    FROM episodic_memory
+                    WHERE event_type = 'interaction_summary'
+                    GROUP BY user_id, session_id
+                ) e ON e.user_id = i.user_id AND e.session_id = i.session_id
+                WHERE e.last_at IS NULL OR i.created_at > e.last_at
+                GROUP BY i.user_id, i.session_id
+                HAVING COUNT(*) >= ?
+                """,
+                (min_interactions,),
+            ).fetchall()
+            return [(r["user_id"], r["session_id"]) for r in rows]
+
+    def get_session_data_for_summary(self, user_id: int, session_id: str) -> dict[str, Any]:
+        """Return interactions and friction events not yet covered by a summary."""
+        with self._conn() as conn:
+            last_summary_at = conn.execute(
+                "SELECT COALESCE(MAX(created_at), '1970-01-01') FROM episodic_memory"
+                " WHERE user_id=? AND session_id=? AND event_type='interaction_summary'",
+                (user_id, session_id),
+            ).fetchone()[0]
+
+            interactions = conn.execute(
+                """
+                SELECT i.id, i.was_corrected, i.correction_latency_s,
+                       i.friction_score, i.metadata, i.created_at,
+                       a.name AS agent_name, a.model
+                FROM interactions i
+                JOIN agents a ON a.id = i.agent_id
+                WHERE i.user_id=? AND i.session_id=? AND i.created_at > ?
+                ORDER BY i.created_at ASC
+                """,
+                (user_id, session_id, last_summary_at),
+            ).fetchall()
+
+            interaction_ids = [r["id"] for r in interactions]
+            friction_events: list = []
+            if interaction_ids:
+                placeholders = ",".join("?" * len(interaction_ids))
+                friction_events = conn.execute(
+                    f"SELECT event_type, description, created_at"
+                    f" FROM friction_events WHERE interaction_id IN ({placeholders})"
+                    f" ORDER BY created_at ASC",
+                    interaction_ids,
+                ).fetchall()
+
+            return {
+                "session_id": session_id,
+                "interactions": [dict(r) for r in interactions],
+                "friction_events": [dict(r) for r in friction_events],
+            }
+
     # ── Analytics queries ──────────────────────────────────────────────────
 
     def get_agent_stats(self, user_id: int) -> list[dict[str, Any]]:

@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
+
+if TYPE_CHECKING:
+    from ..summarizer import Summarizer
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -577,12 +582,24 @@ class ProxySchemeMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def create_app(db: Database, analytics: AnalyticsEngine) -> FastAPI:
+def create_app(
+    db: Database, analytics: AnalyticsEngine, summarizer: Summarizer | None = None
+) -> FastAPI:
     """Create and configure the FastAPI web dashboard."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        task = asyncio.create_task(summarizer.run()) if summarizer else None
+        yield
+        if task:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
     app = FastAPI(
         title="JFYI Dashboard",
         description="JFYI MCP Server & Analytics Hub - Web Dashboard",
         version=__version__,
+        lifespan=lifespan,
     )
 
     app.add_middleware(ProxySchemeMiddleware)
