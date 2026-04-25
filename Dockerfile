@@ -4,6 +4,11 @@ LABEL org.opencontainers.image.title="JFYI MCP Server" \
       org.opencontainers.image.description="Just For Your Information — MCP Server & Analytics Hub" \
       org.opencontainers.image.licenses="Apache-2.0"
 
+# Create a non-root user with a known UID so pwd.getpwuid() works when
+# Kubernetes applies securityContext.runAsUser=1000.
+RUN addgroup --system --gid 1000 jfyi && \
+    adduser --system --uid 1000 --gid 1000 --home /home/jfyi --shell /bin/false jfyi
+
 WORKDIR /app
 
 # 1. Cache dependencies by installing them before copying the full source code
@@ -22,7 +27,9 @@ COPY src/ ./src/
 # 4. Install the app itself (dependencies are already installed). Force reinstall to overwrite the dummy package.
 RUN pip install --no-cache-dir --no-deps --force-reinstall .
 
-RUN mkdir -p /data
+RUN mkdir -p /data && chown jfyi:jfyi /data /app /home/jfyi
+
+USER jfyi
 
 EXPOSE 8080
 
@@ -32,6 +39,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
 ENV JFYI_DATA_DIR=/data \
     JFYI_DB_PATH=/data/jfyi.db \
     JFYI_MCP_HOST=0.0.0.0 \
-    JFYI_MCP_PORT=8080
+    JFYI_MCP_PORT=8080 \
+    HOME=/home/jfyi
 
 CMD ["jfyi", "serve", "--host", "0.0.0.0", "--port", "8080"]
