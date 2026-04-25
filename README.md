@@ -169,6 +169,7 @@ docker-compose up
 │   ├── itr.md                     — Phase 3: semantic tool/instruction retrieval
 │   ├── vector-embeddings.md       — Phase 3: ChromaDB core dependency
 │   ├── dlp-redaction.md           — Phase 4: inline PII scrubbing
+│   ├── developer-analytics.md     — Phase 4: developer self-reflection analytics
 │   ├── sandboxed-execution.md     — Phase 4: filesystem root enforcement
 │   ├── oauth-rbac.md              — Phase 4: OAuth 2.1 + JWT RBAC
 │   ├── acp.md                     — Phase 5: Agent Communication Protocol
