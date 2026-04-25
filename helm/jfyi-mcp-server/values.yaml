@@ -77,6 +77,18 @@ env:
   PYTHONDONTWRITEBYTECODE: "1"
   # JFYI_DLP_ENABLED: "true"   # Set to "false" to bypass PII redaction in local dev
 
+# JWT / session secret — stable across pod restarts and upgrades.
+# If existingSecret is set, the chart reads JFYI_JWT_SECRET from that Secret.
+# Otherwise a Secret named <fullname>-jwt is created automatically; the value
+# is generated once and preserved across Helm upgrades via the lookup function.
+jwtSecret:
+  # Name of a pre-existing Secret that contains the key JFYI_JWT_SECRET.
+  # Leave empty to let the chart manage the Secret for you.
+  existingSecret: ""
+  # Optional: set an explicit secret value. If empty, a random 64-char value
+  # is generated on first install and preserved across upgrades.
+  value: ""
+
 # List of envFrom sources (configMapRef or secretRef) injected into the container.
 # Example: [{ secretRef: { name: jfyi-jwt } }]
 extraEnvFrom: []

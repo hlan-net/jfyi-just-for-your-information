@@ -221,6 +221,11 @@
           <input type="password" v-model="form.client_secret" required placeholder="Paste Client Secret here" />
         </div>
 
+        <div class="form-group" v-if="form.provider === 'entra'">
+          <label>Secret ID <span style="color:var(--muted);font-weight:400;font-size:0.85rem;">(optional — from Entra ID &rarr; Certificates &amp; secrets)</span></label>
+          <input type="text" v-model="form.client_secret_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+        </div>
+
         <div style="display:flex;gap:1rem;margin-top:2rem;">
           <button type="button" class="btn btn-outline" @click="step = 1">&larr; Back</button>
           <button type="submit" class="btn" style="flex:1" :disabled="saving">
@@ -707,23 +712,44 @@
       <p class="desc">Configured OAuth / OIDC identity providers. At least one must remain active.</p>
       <table>
         <thead>
-          <tr><th>#</th><th>Name</th><th>Type</th><th>Client ID</th><th>Secret</th><th>Callback URL</th><th>Configured</th><th>Actions</th></tr>
+          <tr><th>Name</th><th>Type</th><th>Added</th><th>Actions</th></tr>
         </thead>
         <tbody>
-          <tr v-for="p in idps" :key="p.id">
-            <td style="color:var(--muted);font-size:0.8rem;">{{ p.id }}</td>
-            <td>{{ p.name }}</td>
-            <td><span class="pill pill-orange">{{ p.provider }}</span></td>
-            <td style="font-family:monospace;font-size:0.85rem;">{{ p.client_id }}</td>
-            <td style="font-family:monospace;font-size:0.85rem;color:var(--muted)">{{ p.client_secret_hint }}</td>
-            <td style="font-family:monospace;font-size:0.8rem;color:var(--muted)">{{ p.callback_url }}</td>
-            <td>{{ new Date(p.created_at).toLocaleDateString() }}</td>
-            <td>
-              <button @click="removeIdp(p)" class="btn btn-danger" style="padding:0.2rem 0.5rem;font-size:0.75rem;" :disabled="idps.length <= 1">Remove</button>
-            </td>
-          </tr>
+          <template v-for="p in idps" :key="p.id">
+            <tr style="cursor:pointer;" @click="expandedIdp = expandedIdp === p.id ? null : p.id">
+              <td>{{ p.name }}</td>
+              <td><span class="pill pill-orange">{{ p.provider }}</span></td>
+              <td style="color:var(--muted);font-size:0.85rem;">{{ new Date(p.created_at).toLocaleDateString() }}</td>
+              <td style="white-space:nowrap;">
+                <button @click.stop="expandedIdp = expandedIdp === p.id ? null : p.id" class="btn btn-outline" style="padding:0.2rem 0.5rem;font-size:0.75rem;margin-right:0.4rem;">{{ expandedIdp === p.id ? '▲ Less' : '▼ Details' }}</button>
+                <button @click.stop="removeIdp(p)" class="btn btn-danger" style="padding:0.2rem 0.5rem;font-size:0.75rem;" :disabled="idps.length <= 1">Remove</button>
+              </td>
+            </tr>
+            <tr v-if="expandedIdp === p.id">
+              <td colspan="4" style="background:var(--surface2);padding:0.75rem 1rem;">
+                <table style="width:100%;border:none;font-size:0.85rem;">
+                  <tr>
+                    <td style="color:var(--muted);padding:0.2rem 0.5rem 0.2rem 0;width:130px;">Client ID</td>
+                    <td style="font-family:monospace;">{{ p.client_id }}</td>
+                  </tr>
+                  <tr>
+                    <td style="color:var(--muted);padding:0.2rem 0.5rem 0.2rem 0;">Client Secret</td>
+                    <td style="font-family:monospace;">{{ p.client_secret_hint }}</td>
+                  </tr>
+                  <tr v-if="p.client_secret_id">
+                    <td style="color:var(--muted);padding:0.2rem 0.5rem 0.2rem 0;">Secret ID</td>
+                    <td style="font-family:monospace;">{{ p.client_secret_id }}</td>
+                  </tr>
+                  <tr>
+                    <td style="color:var(--muted);padding:0.2rem 0.5rem 0.2rem 0;">Callback URL</td>
+                    <td style="font-family:monospace;word-break:break-all;">{{ p.callback_url }}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </template>
           <tr v-if="idps.length === 0">
-            <td colspan="8" class="empty" style="padding:1rem;">No identity providers configured.</td>
+            <td colspan="4" class="empty" style="padding:1rem;">No identity providers configured.</td>
           </tr>
         </tbody>
       </table>
@@ -776,7 +802,7 @@ const IdpWizard = {
   props: { endpoint: String, onSaved: Function },
   setup(props) {
     const step = ref(1);
-    const form = reactive({ name: '', provider: 'github', client_id: '', client_secret: '', discovery_url: '' });
+    const form = reactive({ name: '', provider: 'github', client_id: '', client_secret: '', discovery_url: '', client_secret_id: '' });
     const saving = ref(false);
     const origin = globalThis.location.origin;
 
@@ -795,6 +821,9 @@ const IdpWizard = {
         const payload = { provider: form.provider, name: form.name, client_id: form.client_id, client_secret: form.client_secret };
         if (form.provider === 'custom_oidc') {
           payload.discovery_url = form.discovery_url;
+        }
+        if (form.client_secret_id) {
+          payload.client_secret_id = form.client_secret_id;
         }
         const res = await fetch(API + props.endpoint, {
           method: 'POST',
@@ -1062,6 +1091,7 @@ const Admin = {
   setup() {
     const users = ref([]);
     const idps = ref([]);
+    const expandedIdp = ref(null);
     const settings = reactive({ registration_open: true });
     const showWizard = ref(false);
     const currentUser = computed(() => globalState.user || {});
@@ -1127,7 +1157,7 @@ const Admin = {
 
     onMounted(() => { loadUsers(); loadIdps(); loadSettings(); });
 
-    return { users, idps, showWizard, currentUser, settings, toggleAdmin, deleteUser, unlink, removeIdp, onWizardSaved };
+    return { users, idps, expandedIdp, showWizard, currentUser, settings, toggleAdmin, deleteUser, unlink, removeIdp, onWizardSaved };
   }
 };
 

@@ -269,6 +269,12 @@ class Database:
 
                     PRAGMA user_version = 6;
                 """)
+            if version < 7:
+                conn.executescript("""
+                    ALTER TABLE identity_providers ADD COLUMN client_secret_id TEXT;
+
+                    PRAGMA user_version = 7;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -282,17 +288,22 @@ class Database:
         client_id: str,
         client_secret: str,
         discovery_url: str | None = None,
+        client_secret_id: str | None = None,
     ) -> int:
         """Persist an IdP and return its system-assigned integer id."""
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
+            cols = (
+                "(id, name, provider, client_id, client_secret,"
+                " discovery_url, client_secret_id, created_at)"
+            )
+            vals = (name, provider, client_id, client_secret, discovery_url, client_secret_id, now)
             if provider in self.BUILTIN_PROVIDER_IDS:
                 idp_id = self.BUILTIN_PROVIDER_IDS[provider]
                 conn.execute(
-                    "INSERT OR REPLACE INTO identity_providers "
-                    "(id, name, provider, client_id, client_secret, discovery_url, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (idp_id, name, provider, client_id, client_secret, discovery_url, now),
+                    f"INSERT OR REPLACE INTO identity_providers {cols}"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (idp_id, *vals),
                 )
             else:
                 row = conn.execute(
@@ -300,10 +311,9 @@ class Database:
                 ).fetchone()
                 idp_id = row[0] + 1
                 conn.execute(
-                    "INSERT INTO identity_providers "
-                    "(id, name, provider, client_id, client_secret, discovery_url, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (idp_id, name, provider, client_id, client_secret, discovery_url, now),
+                    f"INSERT INTO identity_providers {cols}"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (idp_id, *vals),
                 )
         return idp_id
 

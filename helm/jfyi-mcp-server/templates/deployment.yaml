@@ -46,8 +46,10 @@ spec:
             - name: {{ $key }}
               value: {{ $val | quote }}
             {{- end }}
-          {{- with .Values.extraEnvFrom }}
           envFrom:
+            - secretRef:
+                name: {{ .Values.jwtSecret.existingSecret | default (printf "%s-jwt" (include "jfyi-mcp-server.fullname" .)) }}
+          {{- with .Values.extraEnvFrom }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- with .Values.livenessProbe }}

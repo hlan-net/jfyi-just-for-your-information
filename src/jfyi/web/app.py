@@ -95,6 +95,8 @@ class IdpCreate(BaseModel):
     client_id: str
     client_secret: str
     discovery_url: str | None = None  # Required when provider == 'custom_oidc'
+    # Optional provider-assigned secret identifier (e.g. Entra ID Secret ID GUID)
+    client_secret_id: str | None = None
 
 
 class UserUpdate(BaseModel):
@@ -172,7 +174,8 @@ def _validate_and_save_idp(body: IdpCreate, db: Database) -> int:
         raise HTTPException(status_code=400, detail="discovery_url is required for custom_oidc")
 
     idp_id = db.add_identity_provider(
-        body.name, body.provider, body.client_id, body.client_secret, body.discovery_url
+        body.name, body.provider, body.client_id, body.client_secret, body.discovery_url,
+        body.client_secret_id,
     )
     client_name = get_oauth_client_name({"provider": body.provider, "id": idp_id})
     if client_name in oauth._clients:
@@ -193,6 +196,7 @@ def _register_admin_idps_api(app: FastAPI) -> None:
                 "provider": p["provider"],
                 "client_id": p["client_id"],
                 "client_secret_hint": p["client_secret"][:4] + "****",
+                "client_secret_id": p.get("client_secret_id"),
                 "callback_url": f"{base}/auth/callback/{get_oauth_client_name(p)}",
                 "created_at": p["created_at"],
             }
