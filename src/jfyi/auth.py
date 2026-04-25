@@ -30,19 +30,29 @@ OAUTH_CONFIGS = {
 }
 
 
+def get_oauth_client_name(idp: dict) -> str:
+    """Return the authlib client name (and auth callback path segment) for an IdP.
+
+    Built-in providers use their provider string so existing OAuth app callback
+    URLs (e.g. /auth/callback/github) remain unchanged. Custom OIDC providers
+    use their integer id as a string (e.g. /auth/callback/101).
+    """
+    if idp["provider"] in OAUTH_CONFIGS:
+        return idp["provider"]
+    return str(idp["id"])
+
+
 def register_oauth_clients(db: Database) -> None:
     """Register all identity providers found in the database with authlib."""
-    providers = db.get_identity_providers()
-    for idp in providers:
-        client_name = idp["id"]
-        idp_type = idp["provider"]
+    for idp in db.get_identity_providers():
+        client_name = get_oauth_client_name(idp)
 
         if client_name in oauth._clients:
             continue
 
-        if idp_type in OAUTH_CONFIGS:
-            config = OAUTH_CONFIGS[idp_type].copy()
-        elif idp_type == "custom_oidc" and idp.get("discovery_url"):
+        if idp["provider"] in OAUTH_CONFIGS:
+            config = OAUTH_CONFIGS[idp["provider"]].copy()
+        elif idp["provider"] == "custom_oidc" and idp.get("discovery_url"):
             config = {
                 "server_metadata_url": idp["discovery_url"],
                 "client_kwargs": {"scope": "openid email profile"},

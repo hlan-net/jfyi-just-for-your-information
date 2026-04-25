@@ -192,9 +192,9 @@
           <h3>Custom OIDC Provider setup:</h3>
           <ol>
             <li>Register a new OAuth / OIDC application in your identity provider's admin console.</li>
-            <li>Set the <strong>redirect / callback URI</strong> to: <code>{{ origin }}/auth/callback/{{ form.id }}</code></li>
             <li>Enter the provider's <strong>OIDC Discovery URL</strong> (ends in <code>/.well-known/openid-configuration</code>) below.</li>
             <li>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> from your provider.</li>
+            <li>After saving, the exact <strong>callback URL</strong> will appear in the Identity Providers table — copy it into your OIDC provider app.</li>
           </ol>
         </template>
       </div>
@@ -257,7 +257,7 @@
       <h2 style="margin-bottom: 1.5rem;">Choose a Provider</h2>
 
       <div v-if="system.providers && system.providers.length > 0">
-        <a v-for="p in system.providers" :key="p.id" :href="'/auth/login/' + p.id" class="btn btn-login btn-outline">
+        <a v-for="p in system.providers" :key="p.id" :href="'/auth/login/' + p.auth_key" class="btn btn-login btn-outline">
           <span v-if="p.provider === 'github'">🐙</span>
           <span v-if="p.provider === 'google'">🌐</span>
           <span v-if="p.provider === 'entra'">🏢</span>
@@ -439,21 +439,23 @@
       <p class="desc">Configured OAuth / OIDC identity providers. At least one must remain active.</p>
       <table>
         <thead>
-          <tr><th>Name</th><th>Type</th><th>Client ID</th><th>Secret</th><th>Configured</th><th>Actions</th></tr>
+          <tr><th>#</th><th>Name</th><th>Type</th><th>Client ID</th><th>Secret</th><th>Callback URL</th><th>Configured</th><th>Actions</th></tr>
         </thead>
         <tbody>
           <tr v-for="p in idps" :key="p.id">
+            <td style="color:var(--muted);font-size:0.8rem;">{{ p.id }}</td>
             <td>{{ p.name }}</td>
             <td><span class="pill pill-orange">{{ p.provider }}</span></td>
             <td style="font-family:monospace;font-size:0.85rem;">{{ p.client_id }}</td>
             <td style="font-family:monospace;font-size:0.85rem;color:var(--muted)">{{ p.client_secret_hint }}</td>
+            <td style="font-family:monospace;font-size:0.8rem;color:var(--muted)">{{ p.callback_url }}</td>
             <td>{{ new Date(p.created_at).toLocaleDateString() }}</td>
             <td>
               <button @click="removeIdp(p)" class="btn btn-danger" style="padding:0.2rem 0.5rem;font-size:0.75rem;" :disabled="idps.length <= 1">Remove</button>
             </td>
           </tr>
           <tr v-if="idps.length === 0">
-            <td colspan="6" class="empty" style="padding:1rem;">No identity providers configured.</td>
+            <td colspan="8" class="empty" style="padding:1rem;">No identity providers configured.</td>
           </tr>
         </tbody>
       </table>
@@ -506,7 +508,7 @@ const IdpWizard = {
   props: { endpoint: String, onSaved: Function },
   setup(props) {
     const step = ref(1);
-    const form = reactive({ id: '', name: '', provider: 'github', client_id: '', client_secret: '', discovery_url: '' });
+    const form = reactive({ name: '', provider: 'github', client_id: '', client_secret: '', discovery_url: '' });
     const saving = ref(false);
     const origin = globalThis.location.origin;
 
@@ -517,19 +519,13 @@ const IdpWizard = {
       form.name = PROVIDER_LABELS[p] || '';
     };
 
-    const goStep2 = () => {
-      if (form.provider === 'custom_oidc' && !form.id) {
-        form.id = crypto.randomUUID();
-      }
-      step.value = 2;
-    };
+    const goStep2 = () => { step.value = 2; };
 
     const submit = async () => {
       saving.value = true;
       try {
         const payload = { provider: form.provider, name: form.name, client_id: form.client_id, client_secret: form.client_secret };
         if (form.provider === 'custom_oidc') {
-          payload.id = form.id;
           payload.discovery_url = form.discovery_url;
         }
         const res = await fetch(API + props.endpoint, {
