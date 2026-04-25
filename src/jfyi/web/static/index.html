@@ -275,9 +275,14 @@
 <script type="text/x-template" id="profile-template">
   <div>
     <div class="card">
-      <h2>Your Coding DNA</h2>
-      <p class="desc">Rules JFYI has learned about your development style. These are injected into your AI assistant's system prompt.</p>
-      
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:0.5rem;">
+        <h2 style="margin:0;">Your Developer Constitution</h2>
+        <button v-if="rules.length > 0" @click="copyRules" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">
+          {{ copied ? 'Copied!' : 'Copy all' }}
+        </button>
+      </div>
+      <p class="desc">Cross-project, cross-agent rules describing how you work. Injected into every AI assistant's context at session start — not project-specific notes, but your developer DNA.</p>
+
       <div v-if="loading" class="loading-screen" style="height: 100px;">Loading rules...</div>
       <div v-else-if="rules.length === 0" class="empty">
         <div class="icon">🧬</div>No profile rules yet.
@@ -635,7 +640,8 @@ const Profile = {
   setup() {
     const rules = ref([]);
     const loading = ref(true);
-    
+    const copied = ref(false);
+
     const loadRules = async () => {
       loading.value = true;
       try {
@@ -643,21 +649,33 @@ const Profile = {
         if (res.ok) rules.value = await res.json();
       } finally { loading.value = false; }
     };
-    
+
     const deleteRule = async (id) => {
       if (!confirm('Delete this rule?')) return;
       const res = await fetch(API + `/api/profile/rules/${id}`, { method: 'DELETE' });
       if (res.ok) loadRules();
     };
-    
+
     const categoryColor = (c) => {
-      const map = {style:'orange', architecture:'purple', testing:'green', docs:'blue'};
+      const map = { style: 'orange', architecture: 'purple', testing: 'green', docs: 'blue' };
       return map[c] || 'blue';
     };
-    
+
+    const copyRules = () => {
+      const header = 'Category\tRule\tConfidence\tSource';
+      const rows = rules.value.map(r =>
+        `${r.category}\t${r.rule}\t${(r.confidence * 100).toFixed(0)}%\t${r.source}`
+      );
+      const text = [header, ...rows].join('\n');
+      navigator.clipboard.writeText(text).then(() => {
+        copied.value = true;
+        setTimeout(() => copied.value = false, 2000);
+      }).catch(() => alert('Failed to copy to clipboard.'));
+    };
+
     onMounted(loadRules);
-    
-    return { rules, loading, categoryColor, deleteRule };
+
+    return { rules, loading, copied, categoryColor, deleteRule, copyRules };
   }
 };
 
