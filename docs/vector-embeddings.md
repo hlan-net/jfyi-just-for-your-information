@@ -1,7 +1,7 @@
 # Vector Embeddings Core
 
 **Roadmap phase:** 3 — Advanced Retrieval  
-**Status:** Planned
+**Status:** Done
 
 ## Problem
 

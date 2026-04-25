@@ -1,7 +1,7 @@
 # Compiled View Memory Architecture
 
 **Roadmap phase:** 2 — Memory Architecture  
-**Status:** Planned
+**Status:** Done
 
 ## Problem
 

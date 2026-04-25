@@ -1,7 +1,7 @@
 # Progressive Disclosure
 
 **Roadmap phase:** 1 — Foundation  
-**Status:** Planned
+**Status:** Done
 
 ## Problem
 

@@ -1,7 +1,7 @@
 # Instruction-Tool Retrieval (ITR)
 
 **Roadmap phase:** 3 — Advanced Retrieval  
-**Status:** Planned
+**Status:** Done
 
 ## Problem
 
@@ -84,6 +84,12 @@ The assembled prompt structure for an ITR-powered step:
 - Hidden-tool miss rate (agent fails to receive a tool it needed) < 2% measured over 1,000 steps.
 - Retrieval latency adds < 100ms to step assembly time.
 - Sufficiency fallback triggers < 5% of steps in steady state.
+
+## Implementation status
+
+**Shipped (v2.5.0):** spec Phase 1 (corpus indexing + dense embeddings via ChromaDB) and spec Phase 3 (greedy knapsack budget selection). ITR is off by default; enable via `JFYI_ENABLE_VECTOR_DB=true` once the rule corpus reaches ~10+ rules across multiple domains.
+
+**Deferred:** spec Phases 2, 4–6 (BM25 hybrid scoring, cross-encoder reranking, retrieval caching, telemetry, corpus governance). These are only meaningful at 50+ rules / 20+ tools scale.
 
 ## Related
 

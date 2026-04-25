@@ -100,14 +100,13 @@ class TestRetrieve:
         r.retrieve("find testing tools")
         vs.query.assert_called_once_with("tools", "find testing tools", k=7)
 
-    def test_unknown_candidate_name_treated_as_zero_cost(self):
-        # VectorStore may return a name not in the catalogue (stale index edge case)
+    def test_stale_candidate_skipped(self):
+        # VectorStore may return a name removed from the catalogue (stale index)
         vs = _mock_vs(["ghost"])
-        r = Retriever(vs, token_budget=0, k=1)
-        # Do not call index_catalogue — _costs will be empty
+        r = Retriever(vs, token_budget=1000, k=1)
+        # Do not call index_catalogue — _costs will be empty, ghost is unknown
         result = r.retrieve("query")
-        # cost 0 ≤ budget 0 → included
-        assert result == ["ghost"]
+        assert result == []
 
     def test_all_candidates_fit(self):
         vs = _mock_vs(["x", "y", "z"])
