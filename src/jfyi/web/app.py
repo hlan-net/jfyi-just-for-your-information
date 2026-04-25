@@ -68,6 +68,7 @@ class RuleCreate(BaseModel):
     rule: str
     category: str = "general"
     confidence: float = 1.0
+    agent_id: str | None = None
 
 
 class RuleUpdate(BaseModel):
@@ -439,6 +440,7 @@ def _register_profile_api(app: FastAPI) -> None:
             category=body.category,
             confidence=body.confidence,
             source="manual",
+            agent_id=body.agent_id,
         )
         return {"id": rule_id, "rule": body.rule, "category": body.category}
 

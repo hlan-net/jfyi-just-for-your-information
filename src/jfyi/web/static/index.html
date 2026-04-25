@@ -299,6 +299,7 @@
               <th>Rule</th>
               <th>Confidence</th>
               <th>Source</th>
+              <th>Agent</th>
               <th></th>
             </tr>
           </thead>
@@ -308,6 +309,7 @@
               <td>{{ r.rule }}</td>
               <td>{{ (r.confidence * 100).toFixed(0) }}%</td>
               <td><span :class="r.source === 'synthesized' ? 'pill pill-orange' : r.source === 'manual' ? 'pill pill-purple' : 'pill pill-green'">{{ r.source }}</span></td>
+              <td style="color: var(--muted); font-size: 0.8rem;">{{ r.agent_id || '—' }}</td>
               <td style="text-align: right;"><button class="btn-danger" style="border:none; cursor:pointer;" @click="deleteRule(r.id)">×</button></td>
             </tr>
           </tbody>

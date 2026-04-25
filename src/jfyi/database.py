@@ -263,6 +263,12 @@ class Database:
 
                     PRAGMA user_version = 5;
                 """)
+            if version < 6:
+                conn.executescript("""
+                    ALTER TABLE profile_rules ADD COLUMN agent_id TEXT;
+
+                    PRAGMA user_version = 6;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -414,15 +420,16 @@ class Database:
         category: str = "general",
         confidence: float = 1.0,
         source: str = "auto",
+        agent_id: str | None = None,
     ) -> int:
         now = datetime.now(UTC).isoformat()
         clean = sanitize_rule(rule)
         with self._conn() as conn:
             cur = conn.execute(
                 "INSERT INTO profile_rules"
-                " (user_id, rule, category, confidence, source, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (user_id, clean, category, confidence, source, now, now),
+                " (user_id, rule, category, confidence, source, agent_id, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, clean, category, confidence, source, agent_id, now, now),
             )
             rule_id = cur.lastrowid
         if self._vs:
