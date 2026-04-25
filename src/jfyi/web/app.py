@@ -592,6 +592,42 @@ def _register_analytics_api(app: FastAPI) -> None:
         }
 
 
+def _register_developer_api(app: FastAPI) -> None:
+    @app.get("/api/developer/summary")
+    async def developer_summary(current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
+        return db.developer_summary(current_user["id"])
+
+    @app.get("/api/developer/trend")
+    async def developer_trend(
+        current_user: CurrentUser, db: DBDep, days: int = 30
+    ) -> list[dict[str, Any]]:
+        return db.developer_trend(current_user["id"], days=min(days, 365))
+
+    @app.get("/api/developer/friction-by-agent")
+    async def developer_friction_by_agent(
+        current_user: CurrentUser, db: DBDep
+    ) -> list[dict[str, Any]]:
+        return db.developer_friction_by_agent(current_user["id"])
+
+    @app.get("/api/developer/rule-accumulation")
+    async def developer_rule_accumulation(
+        current_user: CurrentUser, db: DBDep, weeks: int = 12
+    ) -> list[dict[str, Any]]:
+        return db.developer_rule_accumulation(current_user["id"], weeks=min(weeks, 52))
+
+    @app.get("/api/developer/latency-distribution")
+    async def developer_latency_distribution(
+        current_user: CurrentUser, db: DBDep
+    ) -> list[dict[str, Any]]:
+        return db.developer_latency_distribution(current_user["id"])
+
+    @app.get("/api/developer/rule-confidence")
+    async def developer_rule_confidence(
+        current_user: CurrentUser, db: DBDep
+    ) -> list[dict[str, Any]]:
+        return db.developer_rule_confidence(current_user["id"])
+
+
 class ClientRegistration(BaseModel):
     client_name: str
     client_uri: str | None = None
@@ -777,6 +813,7 @@ def create_app(
     _register_auth_api(app)
     _register_profile_api(app)
     _register_analytics_api(app)
+    _register_developer_api(app)
     _register_oauth_server_api(app)
 
     if STATIC_DIR.exists():

@@ -116,6 +116,7 @@
       <router-link to="/connect">🔌 How to Connect</router-link>
       <router-link to="/profile">👤 Developer Profile</router-link>
       <router-link to="/analytics">📊 Agent Analytics</router-link>
+      <router-link to="/developer">📈 My Analytics</router-link>
       <router-link to="/memory">🧠 Memory Explorer</router-link>
       <router-link v-if="user?.is_admin" to="/admin">🛡️ Admin</router-link>
     </nav>
@@ -479,6 +480,157 @@
     <div class="card">
       <h2>Agent Analytics</h2>
       <div class="empty"><div class="icon">📊</div>Analytics module coming soon.</div>
+    </div>
+  </div>
+</script>
+
+<script type="text/x-template" id="developer-template">
+  <div>
+    <div v-if="loading" class="loading-screen" style="height:200px;"><div class="spinner"></div></div>
+    <div v-else>
+
+      <!-- Summary stat row -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;">
+        <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+          <div style="font-size:1.8rem;font-weight:700;color:var(--accent);">{{ summary.total_interactions ?? 0 }}</div>
+          <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Total Interactions</div>
+        </div>
+        <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+          <div style="font-size:1.8rem;font-weight:700;" :style="{color: corrColor(summary.correction_rate)}">
+            {{ summary.correction_rate != null ? (summary.correction_rate * 100).toFixed(1) + '%' : '—' }}
+          </div>
+          <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Correction Rate</div>
+        </div>
+        <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+          <div style="font-size:1.8rem;font-weight:700;" :style="{color: frictionColor(summary.avg_friction)}">
+            {{ summary.avg_friction != null ? (summary.avg_friction * 100).toFixed(1) + '%' : '—' }}
+          </div>
+          <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Avg Friction</div>
+        </div>
+        <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+          <div style="font-size:1.8rem;font-weight:700;color:var(--purple);">{{ summary.total_rules ?? 0 }}</div>
+          <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Active Rules</div>
+        </div>
+      </div>
+
+      <!-- Correction rate trend -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <h2 style="margin:0;">Correction Rate Trend</h2>
+          <select v-model.number="trendDays" @change="loadTrend" style="width:auto;background:#21262d;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.3rem 0.6rem;font-size:0.85rem;">
+            <option :value="7">Last 7 days</option>
+            <option :value="30">Last 30 days</option>
+            <option :value="90">Last 90 days</option>
+          </select>
+        </div>
+        <div v-if="!trend.length" class="empty" style="padding:2rem;">No interaction data yet.</div>
+        <svg v-else viewBox="0 0 620 175" width="100%" style="display:block;overflow:visible;">
+          <!-- Gridlines and Y labels -->
+          <g v-for="v in [0, 0.25, 0.5, 0.75, 1.0]" :key="'g'+v">
+            <line :x1="45" :y1="tY(v)" x2="610" :y2="tY(v)" stroke="#30363d" stroke-width="1" />
+            <text :x="40" :y="tY(v)+4" text-anchor="end" fill="#8b949e" font-size="10">{{ (v*100).toFixed(0) }}%</text>
+          </g>
+          <!-- Area fill -->
+          <path v-if="trendArea" :d="trendArea" fill="#58a6ff18" />
+          <!-- Line -->
+          <path v-if="trendPath" :d="trendPath" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linejoin="round" />
+          <!-- Data points -->
+          <circle v-for="p in trendPoints" :key="p.day" :cx="p.x" :cy="p.y" r="3.5" fill="#58a6ff" />
+          <!-- X labels (every nth) -->
+          <text v-for="p in trendXLabels" :key="'xl'+p.day" :x="p.x" y="170" text-anchor="middle" fill="#8b949e" font-size="9">{{ p.label }}</text>
+        </svg>
+      </div>
+
+      <!-- 2-column: Friction by Agent + Latency Distribution -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
+        <div class="card" style="margin-bottom:0;">
+          <h2>Friction by Agent</h2>
+          <div v-if="!frictionByAgent.length" class="empty" style="padding:1rem;">No agent data yet.</div>
+          <div v-else>
+            <div v-for="a in frictionByAgent" :key="a.agent" style="margin-bottom:0.75rem;">
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.25rem;">
+                <span style="color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;">{{ a.agent }}</span>
+                <span style="color:var(--muted);flex-shrink:0;margin-left:0.5rem;">{{ (a.avg_friction*100).toFixed(1) }}% · {{ a.total }} calls</span>
+              </div>
+              <div style="height:10px;background:#21262d;border-radius:4px;overflow:hidden;">
+                <div :style="{width: barPct(a.avg_friction, maxFriction), background: frictionColor(a.avg_friction), height:'100%', borderRadius:'4px', transition:'width 0.3s'}"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:0;">
+          <h2>Correction Latency</h2>
+          <div v-if="!latencyDist.some(l => l.count > 0)" class="empty" style="padding:1rem;">No correction latency data yet.</div>
+          <div v-else>
+            <div v-for="b in latencyDist" :key="b.bucket" style="margin-bottom:0.75rem;">
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.25rem;">
+                <span style="color:var(--text);font-family:monospace;">{{ b.bucket }}</span>
+                <span style="color:var(--muted);">{{ b.count }}</span>
+              </div>
+              <div style="height:10px;background:#21262d;border-radius:4px;overflow:hidden;">
+                <div :style="{width: barPct(b.count, maxLatency), background:'var(--accent)', height:'100%', borderRadius:'4px', transition:'width 0.3s'}"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rule health by category -->
+      <div class="card">
+        <h2>Rule Health by Category</h2>
+        <div v-if="!ruleConfidence.length" class="empty" style="padding:1rem;">No rules yet.</div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Rules</th>
+              <th>Avg Confidence</th>
+              <th style="width:180px;">Low / Med / High</th>
+              <th>Confidence bar</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in ruleConfidence" :key="r.category">
+              <td><span :class="'pill pill-' + catColor(r.category)">{{ r.category }}</span></td>
+              <td>{{ r.rules }}</td>
+              <td :style="{color: confColor(r.avg_confidence)}">{{ (r.avg_confidence * 100).toFixed(0) }}%</td>
+              <td style="font-size:0.8rem;color:var(--muted);">{{ r.low }} / {{ r.medium }} / {{ r.high }}</td>
+              <td>
+                <div style="display:flex;height:10px;border-radius:4px;overflow:hidden;min-width:120px;">
+                  <div v-if="r.low" :style="{flex: r.low, background:'var(--red)'}" :title="r.low + ' low'"></div>
+                  <div v-if="r.medium" :style="{flex: r.medium, background:'var(--orange)'}" :title="r.medium + ' medium'"></div>
+                  <div v-if="r.high" :style="{flex: r.high, background:'var(--green)'}" :title="r.high + ' high'"></div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Rule accumulation -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <h2 style="margin:0;">Rule Accumulation</h2>
+          <select v-model.number="accumWeeks" @change="loadAccum" style="width:auto;background:#21262d;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.3rem 0.6rem;font-size:0.85rem;">
+            <option :value="4">Last 4 weeks</option>
+            <option :value="12">Last 12 weeks</option>
+            <option :value="26">Last 26 weeks</option>
+          </select>
+        </div>
+        <div v-if="!ruleAccum.length" class="empty" style="padding:1rem;">No new rules in this window.</div>
+        <table v-else>
+          <thead><tr><th>Week</th><th>Category</th><th>New Rules</th></tr></thead>
+          <tbody>
+            <tr v-for="r in ruleAccum" :key="r.week+r.category">
+              <td style="font-family:monospace;font-size:0.85rem;color:var(--muted);">{{ r.week }}</td>
+              <td><span :class="'pill pill-' + catColor(r.category)">{{ r.category }}</span></td>
+              <td>{{ r.count }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </div>
 </script>
@@ -978,6 +1130,98 @@ const Admin = {
 };
 
 const Analytics = { template: '#analytics-template' };
+
+const DeveloperAnalytics = {
+  template: '#developer-template',
+  setup() {
+    const loading = ref(true);
+    const summary = ref({ total_interactions: 0, correction_rate: null, avg_friction: null, total_rules: 0 });
+    const trend = ref([]);
+    const frictionByAgent = ref([]);
+    const latencyDist = ref([]);
+    const ruleConfidence = ref([]);
+    const ruleAccum = ref([]);
+    const trendDays = ref(30);
+    const accumWeeks = ref(12);
+
+    // SVG chart constants: viewBox "0 0 620 175", margins l=45 r=10 t=10 b=35, area 565×130
+    const SX = 45, EX = 610, SY = 10, EY = 140;
+    const tY = (v) => EY - v * (EY - SY);
+    const tX = (i, len) => SX + (len > 1 ? (i / (len - 1)) * (EX - SX) : (EX - SX) / 2);
+
+    const trendPoints = computed(() =>
+      trend.value.map((d, i) => ({ x: tX(i, trend.value.length), y: tY(d.rate), day: d.day, rate: d.rate }))
+    );
+    const trendPath = computed(() => {
+      const pts = trendPoints.value;
+      if (pts.length < 2) return '';
+      return 'M ' + pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+    });
+    const trendArea = computed(() => {
+      const pts = trendPoints.value;
+      if (pts.length < 2) return '';
+      const line = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+      return `M ${pts[0].x.toFixed(1)},${EY} L ${line} L ${pts[pts.length-1].x.toFixed(1)},${EY} Z`;
+    });
+    const trendXLabels = computed(() => {
+      const pts = trendPoints.value;
+      if (!pts.length) return [];
+      const step = Math.max(1, Math.floor(pts.length / 6));
+      return pts.filter((_, i) => i % step === 0 || i === pts.length - 1)
+        .map(p => ({ x: p.x, day: p.day, label: p.day.slice(5) }));
+    });
+
+    const maxFriction = computed(() => Math.max(...frictionByAgent.value.map(a => a.avg_friction), 0.01));
+    const maxLatency = computed(() => Math.max(...latencyDist.value.map(l => l.count), 1));
+    const barPct = (v, max) => (v / max * 100).toFixed(1) + '%';
+
+    const catColor = (c) => ({ style:'orange', architecture:'purple', testing:'green', docs:'blue' }[c] || 'blue');
+    const frictionColor = (v) => !v ? 'var(--muted)' : v < 0.3 ? 'var(--green)' : v < 0.6 ? 'var(--orange)' : 'var(--red)';
+    const corrColor = (v) => !v ? 'var(--muted)' : v < 0.2 ? 'var(--green)' : v < 0.5 ? 'var(--orange)' : 'var(--red)';
+    const confColor = (v) => v >= 0.75 ? 'var(--green)' : v >= 0.4 ? 'var(--orange)' : 'var(--red)';
+
+    const loadAll = async () => {
+      loading.value = true;
+      try {
+        const [s, t, f, l, c, a] = await Promise.all([
+          fetch(API + '/api/developer/summary').then(r => r.json()),
+          fetch(API + `/api/developer/trend?days=${trendDays.value}`).then(r => r.json()),
+          fetch(API + '/api/developer/friction-by-agent').then(r => r.json()),
+          fetch(API + '/api/developer/latency-distribution').then(r => r.json()),
+          fetch(API + '/api/developer/rule-confidence').then(r => r.json()),
+          fetch(API + `/api/developer/rule-accumulation?weeks=${accumWeeks.value}`).then(r => r.json()),
+        ]);
+        summary.value = s;
+        trend.value = t;
+        frictionByAgent.value = f;
+        latencyDist.value = l;
+        ruleConfidence.value = c;
+        ruleAccum.value = a;
+      } finally { loading.value = false; }
+    };
+
+    const loadTrend = async () => {
+      const t = await fetch(API + `/api/developer/trend?days=${trendDays.value}`).then(r => r.json());
+      trend.value = t;
+    };
+    const loadAccum = async () => {
+      const a = await fetch(API + `/api/developer/rule-accumulation?weeks=${accumWeeks.value}`).then(r => r.json());
+      ruleAccum.value = a;
+    };
+
+    onMounted(loadAll);
+
+    return {
+      loading, summary, trend, frictionByAgent, latencyDist, ruleConfidence, ruleAccum,
+      trendDays, accumWeeks, tY,
+      trendPoints, trendPath, trendArea, trendXLabels,
+      maxFriction, maxLatency, barPct,
+      catColor, frictionColor, corrColor, confColor,
+      loadTrend, loadAccum,
+    };
+  }
+};
+
 const Memory = { template: '#memory-template' };
 
 const routes = [
@@ -987,6 +1231,7 @@ const routes = [
   { path: '/connect', component: Connect },
   { path: '/profile', component: Profile },
   { path: '/analytics', component: Analytics },
+  { path: '/developer', component: DeveloperAnalytics },
   { path: '/memory', component: Memory },
   { path: '/admin', component: Admin, meta: { requiresAdmin: true } }
 ];

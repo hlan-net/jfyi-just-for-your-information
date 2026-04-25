@@ -82,7 +82,7 @@ The Phase 3 ITR implementation shipped dense retrieval (all-MiniLM-L6-v2 embeddi
 | Item | Target | Status | Spec |
 |------|--------|--------|------|
 | [Inline DLP / PII Redaction](docs/dlp-redaction.md) | `v2.6.0` | Planned | [docs/dlp-redaction.md](docs/dlp-redaction.md) |
-| [Developer Behavior Analytics](docs/developer-analytics.md) | `v2.6.0` | Planned | [docs/developer-analytics.md](docs/developer-analytics.md) |
+| [Developer Behavior Analytics](docs/developer-analytics.md) | `v2.6.0` | Done | [docs/developer-analytics.md](docs/developer-analytics.md) |
 | Agent Provenance Tracking | `v2.6.0` | Planned | — |
 | [Sandboxed Execution](docs/sandboxed-execution.md) | Deferred | Deferred | [docs/sandboxed-execution.md](docs/sandboxed-execution.md) |
 

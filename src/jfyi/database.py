@@ -714,6 +714,127 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    # ── Developer analytics ────────────────────────────────────────────────
+
+    def developer_summary(self, user_id: int) -> dict[str, Any]:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    COUNT(*) as total_interactions,
+                    ROUND(CAST(SUM(was_corrected) AS REAL)
+                          / NULLIF(COUNT(*), 0), 3) as correction_rate,
+                    ROUND(AVG(friction_score), 3) as avg_friction
+                FROM interactions WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            total_rules = conn.execute(
+                "SELECT COUNT(*) FROM profile_rules WHERE user_id=? AND archived=0", (user_id,)
+            ).fetchone()[0]
+        d = dict(row)
+        d["total_rules"] = total_rules
+        return d
+
+    def developer_trend(self, user_id: int, days: int = 30) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    date(created_at) as day,
+                    COUNT(*) as total,
+                    SUM(was_corrected) as corrected,
+                    ROUND(CAST(SUM(was_corrected) AS REAL) / COUNT(*), 3) as rate
+                FROM interactions
+                WHERE user_id = ? AND created_at >= datetime('now', ? || ' days')
+                GROUP BY date(created_at)
+                ORDER BY day ASC
+                """,
+                (user_id, f"-{days}"),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def developer_friction_by_agent(self, user_id: int) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    a.name as agent,
+                    COUNT(i.id) as total,
+                    ROUND(AVG(i.friction_score), 3) as avg_friction,
+                    ROUND(CAST(SUM(i.was_corrected) AS REAL) / COUNT(*), 3) as correction_rate
+                FROM interactions i
+                JOIN agents a ON i.agent_id = a.id
+                WHERE i.user_id = ?
+                GROUP BY a.id, a.name
+                ORDER BY avg_friction DESC
+                """,
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def developer_rule_accumulation(self, user_id: int, weeks: int = 12) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    strftime('%Y-W%W', created_at) as week,
+                    category,
+                    COUNT(*) as count
+                FROM profile_rules
+                WHERE user_id = ? AND created_at >= datetime('now', ? || ' days')
+                GROUP BY week, category
+                ORDER BY week ASC, category ASC
+                """,
+                (user_id, f"-{weeks * 7}"),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    _LATENCY_BUCKETS = ["0-10s", "10-30s", "30-60s", "60-120s", "120s+"]
+
+    def developer_latency_distribution(self, user_id: int) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    CASE
+                        WHEN correction_latency_s < 10  THEN '0-10s'
+                        WHEN correction_latency_s < 30  THEN '10-30s'
+                        WHEN correction_latency_s < 60  THEN '30-60s'
+                        WHEN correction_latency_s < 120 THEN '60-120s'
+                        ELSE '120s+'
+                    END as bucket,
+                    COUNT(*) as count
+                FROM interactions
+                WHERE user_id = ? AND was_corrected = 1 AND correction_latency_s IS NOT NULL
+                GROUP BY bucket
+                """,
+                (user_id,),
+            ).fetchall()
+        data = {r["bucket"]: r["count"] for r in rows}
+        return [{"bucket": b, "count": data.get(b, 0)} for b in self._LATENCY_BUCKETS]
+
+    def developer_rule_confidence(self, user_id: int) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    category,
+                    COUNT(*) as rules,
+                    ROUND(AVG(confidence), 2) as avg_confidence,
+                    SUM(CASE WHEN confidence < 0.4 THEN 1 ELSE 0 END) as low,
+                    SUM(CASE WHEN confidence >= 0.4 AND confidence < 0.75
+                             THEN 1 ELSE 0 END) as medium,
+                    SUM(CASE WHEN confidence >= 0.75 THEN 1 ELSE 0 END) as high
+                FROM profile_rules
+                WHERE user_id = ? AND archived = 0
+                GROUP BY category
+                ORDER BY rules DESC
+                """,
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     # ── Short-term memory ──────────────────────────────────────────────────
 
     def stm_set(
