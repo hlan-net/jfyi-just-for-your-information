@@ -122,7 +122,7 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
                     "type": "number",
                     "description": "Confidence score 0.0-1.0 (default 1.0).",
                 },
-                "agent_id": {
+                "agent_name": {
                     "type": "string",
                     "description": "Identifier of the agent authoring this rule (e.g. 'claude-sonnet-4-6').",  # noqa: E501
                 },
@@ -425,7 +425,7 @@ async def dispatch_tool(
             category=arguments.get("category", "general"),
             confidence=arguments.get("confidence", 1.0),
             source="manual",
-            agent_id=arguments.get("agent_id"),
+            agent_name=arguments.get("agent_name"),
         )
         return [TextContent(type="text", text=f"Rule added (id={rule_id}).")]
 

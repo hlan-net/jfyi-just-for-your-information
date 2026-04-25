@@ -265,7 +265,7 @@ class Database:
                 """)
             if version < 6:
                 conn.executescript("""
-                    ALTER TABLE profile_rules ADD COLUMN agent_id TEXT;
+                    ALTER TABLE profile_rules ADD COLUMN agent_name TEXT;
 
                     PRAGMA user_version = 6;
                 """)
@@ -420,20 +420,25 @@ class Database:
         category: str = "general",
         confidence: float = 1.0,
         source: str = "auto",
-        agent_id: str | None = None,
+        agent_name: str | None = None,
     ) -> int:
         now = datetime.now(UTC).isoformat()
         clean = sanitize_rule(rule)
         with self._conn() as conn:
             cur = conn.execute(
                 "INSERT INTO profile_rules"
-                " (user_id, rule, category, confidence, source, agent_id, created_at, updated_at)"
+                " (user_id, rule, category, confidence, source, agent_name, created_at, updated_at)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (user_id, clean, category, confidence, source, agent_id, now, now),
+                (user_id, clean, category, confidence, source, agent_name, now, now),
             )
             rule_id = cur.lastrowid
         if self._vs:
-            self._vs.add("rules", str(rule_id), clean, {"user_id": user_id, "category": category})
+            self._vs.add(
+                "rules",
+                str(rule_id),
+                clean,
+                {"user_id": user_id, "category": category, "agent_name": agent_name or ""},
+            )
         return rule_id
 
     def get_rules(self, user_id: int, category: str | None = None) -> list[dict[str, Any]]:
@@ -487,14 +492,21 @@ class Database:
             )
 
     def update_rule(
-        self, user_id: int, rule_id: int, rule: str, category: str, confidence: float
+        self,
+        user_id: int,
+        rule_id: int,
+        rule: str,
+        category: str,
+        confidence: float,
+        agent_name: str | None = None,
     ) -> bool:
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             cur = conn.execute(
                 "UPDATE profile_rules"
-                " SET rule=?, category=?, confidence=?, updated_at=? WHERE id=? AND user_id=?",
-                (rule, category, confidence, now, rule_id, user_id),
+                " SET rule=?, category=?, confidence=?, agent_name=?, updated_at=?"
+                " WHERE id=? AND user_id=?",
+                (rule, category, confidence, agent_name, now, rule_id, user_id),
             )
             return cur.rowcount > 0
 

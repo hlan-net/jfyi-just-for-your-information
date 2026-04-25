@@ -68,13 +68,14 @@ class RuleCreate(BaseModel):
     rule: str
     category: str = "general"
     confidence: float = 1.0
-    agent_id: str | None = None
+    agent_name: str | None = None
 
 
 class RuleUpdate(BaseModel):
     rule: str
     category: str
     confidence: float
+    agent_name: str | None = None
 
 
 class InteractionCreate(BaseModel):
@@ -440,15 +441,28 @@ def _register_profile_api(app: FastAPI) -> None:
             category=body.category,
             confidence=body.confidence,
             source="manual",
-            agent_id=body.agent_id,
+            agent_name=body.agent_name,
         )
-        return {"id": rule_id, "rule": body.rule, "category": body.category}
+        return {
+            "id": rule_id,
+            "rule": body.rule,
+            "category": body.category,
+            "confidence": body.confidence,
+            "agent_name": body.agent_name,
+        }
 
     @app.put("/api/profile/rules/{rule_id}", responses={404: {"description": "Rule not found"}})
     async def update_rule(
         rule_id: int, body: RuleUpdate, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
-        ok = db.update_rule(current_user["id"], rule_id, body.rule, body.category, body.confidence)
+        ok = db.update_rule(
+            current_user["id"],
+            rule_id,
+            body.rule,
+            body.category,
+            body.confidence,
+            body.agent_name,
+        )
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
         return {"id": rule_id, **body.model_dump()}
