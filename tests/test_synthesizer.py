@@ -42,7 +42,7 @@ def test_parse_response_clean_json():
     assert len(result) == 1
     assert result[0]["rule"] == "Use snake_case"
     assert result[0]["category"] == "style"
-    assert result[0]["confidence"] == 0.95
+    assert result[0]["confidence"] == pytest.approx(0.95)
 
 
 def test_parse_response_strips_markdown_fences():
@@ -57,7 +57,7 @@ def test_parse_response_defaults_missing_fields():
     raw = json.dumps([{"rule": "Minimal rule"}])
     result = _parse_response(raw)
     assert result[0]["category"] == "general"
-    assert result[0]["confidence"] == 0.9
+    assert result[0]["confidence"] == pytest.approx(0.9)
 
 
 def test_parse_response_invalid_json_raises():
@@ -87,7 +87,7 @@ async def test_synthesizer_too_few_rules_raises():
 # ── RuleSynthesizer HTTP calls (mocked) ───────────────────────────────────────
 
 
-async def _make_mock_response(body: dict) -> MagicMock:
+def _make_mock_response(body: dict) -> MagicMock:
     mock = MagicMock()
     mock.raise_for_status = MagicMock()
     mock.json.return_value = body
@@ -102,7 +102,7 @@ async def test_synthesize_anthropic_provider():
 
     mock_ctx = AsyncMock()
     mock_ctx.__aenter__.return_value.post = AsyncMock(
-        return_value=await _make_mock_response(anthropic_response)
+        return_value=_make_mock_response(anthropic_response)
     )
 
     with patch("jfyi.synthesizer.httpx.AsyncClient", return_value=mock_ctx):
@@ -124,7 +124,7 @@ async def test_synthesize_openai_provider():
 
     mock_ctx = AsyncMock()
     mock_ctx.__aenter__.return_value.post = AsyncMock(
-        return_value=await _make_mock_response(openai_response)
+        return_value=_make_mock_response(openai_response)
     )
 
     with patch("jfyi.synthesizer.httpx.AsyncClient", return_value=mock_ctx):

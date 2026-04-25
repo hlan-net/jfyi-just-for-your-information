@@ -13,7 +13,7 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("github_pat", re.compile(r"ghp_[A-Za-z0-9]{36}")),
     ("anthropic_key", re.compile(r"sk-ant-[A-Za-z0-9\-_]{20,}")),
     ("openai_key", re.compile(r"sk-[A-Za-z0-9]{20,}")),
-    ("bearer_token", re.compile(r"(?i)Bearer\s+[A-Za-z0-9\-._~+/]+=*")),
+    ("bearer_token", re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE)),
     (
         "private_key_pem",
         re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),

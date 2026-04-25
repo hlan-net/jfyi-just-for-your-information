@@ -461,6 +461,8 @@ def _register_profile_api(app: FastAPI) -> None:
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
 
+
+def _register_synthesis_api(app: FastAPI) -> None:
     @app.get("/api/profile/synthesis-config")
     async def get_synthesis_config(current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
         cfg = db.get_synthesis_config(current_user["id"])
@@ -474,7 +476,10 @@ def _register_profile_api(app: FastAPI) -> None:
             "has_key": bool(cfg["api_key"]),
         }
 
-    @app.put("/api/profile/synthesis-config")
+    @app.put(
+        "/api/profile/synthesis-config",
+        responses={400: {"description": "Invalid provider or missing api_key"}},
+    )
     async def save_synthesis_config(
         body: SynthesisConfigBody, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
@@ -489,7 +494,13 @@ def _register_profile_api(app: FastAPI) -> None:
         )
         return {"status": "saved"}
 
-    @app.post("/api/profile/rules/synthesize")
+    @app.post(
+        "/api/profile/rules/synthesize",
+        responses={
+            400: {"description": "No config or insufficient rules"},
+            502: {"description": "LLM synthesis failed"},
+        },
+    )
     async def synthesize_rules(
         body: SynthesizeRequest, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
@@ -812,6 +823,7 @@ def create_app(
     _register_system_api(app)
     _register_auth_api(app)
     _register_profile_api(app)
+    _register_synthesis_api(app)
     _register_analytics_api(app)
     _register_developer_api(app)
     _register_oauth_server_api(app)

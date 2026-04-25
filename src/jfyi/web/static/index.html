@@ -914,7 +914,7 @@ const RuleSynthesis = {
 
     const selectedCount = computed(() => Object.values(selected).filter(Boolean).length);
     const selectedIds = computed(() =>
-      Object.entries(selected).filter(([, v]) => v).map(([k]) => parseInt(k))
+      Object.entries(selected).filter(([, v]) => v).map(([k]) => Number.parseInt(k))
     );
 
     const catColor = (c) => ({ style:'orange', architecture:'purple', testing:'green', docs:'blue' }[c] || 'blue');
@@ -1176,9 +1176,23 @@ const DeveloperAnalytics = {
     const barPct = (v, max) => (v / max * 100).toFixed(1) + '%';
 
     const catColor = (c) => ({ style:'orange', architecture:'purple', testing:'green', docs:'blue' }[c] || 'blue');
-    const frictionColor = (v) => !v ? 'var(--muted)' : v < 0.3 ? 'var(--green)' : v < 0.6 ? 'var(--orange)' : 'var(--red)';
-    const corrColor = (v) => !v ? 'var(--muted)' : v < 0.2 ? 'var(--green)' : v < 0.5 ? 'var(--orange)' : 'var(--red)';
-    const confColor = (v) => v >= 0.75 ? 'var(--green)' : v >= 0.4 ? 'var(--orange)' : 'var(--red)';
+    function frictionColor(v) {
+      if (v === null || v === undefined || v === 0) return 'var(--muted)';
+      if (v < 0.3) return 'var(--green)';
+      if (v < 0.6) return 'var(--orange)';
+      return 'var(--red)';
+    }
+    function corrColor(v) {
+      if (v === null || v === undefined || v === 0) return 'var(--muted)';
+      if (v < 0.2) return 'var(--green)';
+      if (v < 0.5) return 'var(--orange)';
+      return 'var(--red)';
+    }
+    function confColor(v) {
+      if (v >= 0.75) return 'var(--green)';
+      if (v >= 0.4) return 'var(--orange)';
+      return 'var(--red)';
+    }
 
     const loadAll = async () => {
       loading.value = true;
