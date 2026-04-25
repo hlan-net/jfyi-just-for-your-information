@@ -62,16 +62,15 @@ class Retriever:
 
 
 def create_retriever(
-    vector_store: VectorStore | None,
-    catalogue: dict[str, dict[str, Any]],
-    token_budget: int,
-    k: int,
+    vector_store: VectorStore | None, catalogue: dict[str, Any]
 ) -> Retriever | None:
     """Return a Retriever with the catalogue pre-indexed, or None if unavailable."""
     if vector_store is None:
         return None
     try:
-        r = Retriever(vector_store, token_budget=token_budget, k=k)
+        from .config import settings
+
+        r = Retriever(vector_store, token_budget=settings.itr_token_budget, k=settings.itr_k_tools)
         r.index_catalogue(catalogue)
         return r
     except Exception:

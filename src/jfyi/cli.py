@@ -29,9 +29,7 @@ def _get_db_and_analytics(data_dir: Path):
     analytics = AnalyticsEngine(db)
     retriever = None
     if settings.itr_enabled:
-        retriever = create_retriever(
-            vs, _TOOL_CATALOGUE, settings.itr_token_budget, settings.itr_k_tools
-        )
+        retriever = create_retriever(vs, _TOOL_CATALOGUE)
     return db, analytics, retriever
 
 
