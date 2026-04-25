@@ -75,6 +75,7 @@ env:
   JFYI_DB_PATH: /data/jfyi.db
   JFYI_MCP_PORT: "8080"
   PYTHONDONTWRITEBYTECODE: "1"
+  # JFYI_DLP_ENABLED: "true"   # Set to "false" to bypass PII redaction in local dev
 
 # List of envFrom sources (configMapRef or secretRef) injected into the container.
 # Example: [{ secretRef: { name: jfyi-jwt } }]
