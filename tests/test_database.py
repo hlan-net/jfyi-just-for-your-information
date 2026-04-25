@@ -98,3 +98,30 @@ def test_add_and_get_friction_events(db):
     events = db.get_friction_events(1)
     assert len(events) == 1
     assert events[0]["event_type"] == "correction"
+
+
+# ── Agent Provenance ───────────────────────────────────────────────────────────
+
+
+def test_add_rule_with_agent_name(db):
+    rule_id = db.add_rule(1, "Use early returns", category="style", agent_name="claude-sonnet-4-6")
+    rules = db.get_rules(1)
+    assert rules[0]["id"] == rule_id
+    assert rules[0]["agent_name"] == "claude-sonnet-4-6"
+
+
+def test_add_rule_without_agent_name_is_null(db):
+    db.add_rule(1, "No agent rule", category="style")
+    rules = db.get_rules(1)
+    assert rules[0]["agent_name"] is None
+
+
+def test_agent_name_preserved_across_rules(db):
+    db.add_rule(1, "Rule from claude", category="style", agent_name="claude-sonnet-4-6")
+    db.add_rule(1, "Rule from gemini", category="testing", agent_name="gemini-2.0-flash")
+    db.add_rule(1, "Manual rule", category="architecture")
+    rules = db.get_rules(1)
+    agent_names = {r["rule"]: r["agent_name"] for r in rules}
+    assert agent_names["Rule from claude"] == "claude-sonnet-4-6"
+    assert agent_names["Rule from gemini"] == "gemini-2.0-flash"
+    assert agent_names["Manual rule"] is None

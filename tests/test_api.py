@@ -111,3 +111,27 @@ def test_get_friction_events(client):
     events = resp.json()
     assert len(events) == 1
     assert events[0]["event_type"] == "correction"
+
+
+# ── Agent Provenance ───────────────────────────────────────────────────────────
+
+
+def test_create_rule_with_agent_name(client):
+    resp = client.post(
+        "/api/profile/rules",
+        json={
+            "rule": "Prefer composition",
+            "category": "architecture",
+            "agent_name": "claude-sonnet-4-6",
+        },
+    )
+    assert resp.status_code == 201
+    rules = client.get("/api/profile/rules").json()
+    assert rules[0]["agent_name"] == "claude-sonnet-4-6"
+
+
+def test_create_rule_without_agent_name(client):
+    resp = client.post("/api/profile/rules", json={"rule": "No agent"})
+    assert resp.status_code == 201
+    rules = client.get("/api/profile/rules").json()
+    assert rules[0]["agent_name"] is None
