@@ -62,7 +62,10 @@ class Retriever:
 
 
 def create_retriever(
-    vector_store: VectorStore | None, catalogue: dict[str, Any]
+    vector_store: VectorStore | None,
+    catalogue: dict[str, dict[str, Any]],
+    token_budget: int,
+    k: int,
 ) -> Retriever | None:
     """Return a Retriever with the catalogue pre-indexed, or None if unavailable."""
     if vector_store is None:
