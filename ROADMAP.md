@@ -79,24 +79,27 @@ The Phase 3 ITR implementation shipped dense retrieval (all-MiniLM-L6-v2 embeddi
 
 ## Phase 4 — Security & Hardening `v2.6.0`
 
-| Item | Target | Status | Spec |
-|------|--------|--------|------|
-| [Inline DLP / PII Redaction](docs/dlp-redaction.md) | `v2.6.0` | Planned | [docs/dlp-redaction.md](docs/dlp-redaction.md) |
+| Item | Shipped | Status | Spec |
+|------|---------|--------|------|
+| [Inline DLP / PII Redaction](docs/dlp-redaction.md) | `v2.6.0` | Done | [docs/dlp-redaction.md](docs/dlp-redaction.md) |
 | [Developer Behavior Analytics](docs/developer-analytics.md) | `v2.6.0` | Done | [docs/developer-analytics.md](docs/developer-analytics.md) |
+| [Rule Synthesis](docs/rule-synthesis.md) | `v2.6.0` | Done | — |
 | Agent Provenance Tracking | `v2.6.0` | Planned | — |
 | [Sandboxed Execution](docs/sandboxed-execution.md) | Deferred | Deferred | [docs/sandboxed-execution.md](docs/sandboxed-execution.md) |
 
-**Inline DLP / PII Redaction** automatically scrubs API keys, tokens, and personal data from all text before it is stored or injected into any agent context, with a regex pack covering common secret patterns. This is the active Phase 4 item.
+**Inline DLP / PII Redaction** scrubs API keys, tokens, and personal data from all text at two boundaries: before any text is written to the database (`record_interaction`, `add_profile_rule`) and before it is assembled into a prompt. Eight regex patterns cover the most common secret types. Controlled by `JFYI_DLP_ENABLED` (default true).
 
-**Developer Behavior Analytics** adds a self-reflection view to the web dashboard — the other side of the Agent Analytics mirror. It surfaces correction rate trends, friction by domain, rule accumulation over time, correction latency distribution, and rule confidence breakdown. All read-side queries against existing tables; no schema changes. Optionally exposed as a `get_developer_analytics` MCP tool so an agent can surface insights mid-session.
+**Developer Behavior Analytics** adds a self-reflection view ("📈 My Analytics") alongside Agent Analytics. Surfaces correction rate trend (SVG line chart), friction by agent, correction latency distribution, rule health by category (stacked confidence bar), and rule accumulation by week. All queries run against existing tables; no schema changes.
 
-**Agent Provenance Tracking** stores which agent authored each profile rule (`agent_id` on `profile_rules`). This closes the shared-constitution loop: agents can see not only what the rule says but which agent generated it, enabling trust-weighted retrieval and cross-agent attribution in the analytics dashboard.
+**Rule Synthesis** lets the developer periodically compact the rule corpus. They select rules from the constitution, rate their importance (1–5 stars), and send them to a configurable LLM (Anthropic or any OpenAI-compatible endpoint including Ollama and Groq). The model returns a smaller, merged ruleset for preview before applying. Originals are soft-archived rather than deleted. Driven by the observation that rules accumulate indefinitely without a housekeeping mechanism.
 
-**Sandboxed Execution** is deferred. The existing `run_local_script` subprocess isolation is a reasonable first cut for the current single-user homelab deployment. Container-level isolation is real engineering investment that is not justified yet. The spec is preserved for when deployment context changes.
+**Agent Provenance Tracking** will store which agent authored each profile rule (`agent_id` on `profile_rules`). This closes the shared-constitution loop: agents can see not only what the rule says but which agent generated it, enabling cross-agent attribution in the analytics dashboard. Schema change and UI work deferred from this phase.
 
-### Phase 4 scope rationale
+**Sandboxed Execution** is deferred. The existing `run_local_script` subprocess isolation is adequate for the current single-user homelab deployment. Container-level isolation is real engineering investment not yet justified. The spec is preserved for when deployment context changes.
 
-DLP closes the more immediate risk: `run_local_script` and `store_artifact` can capture content containing secrets from live coding sessions, and there is currently no scrubbing at the storage layer. A small self-contained `dlp.py` module with a regex pattern pack addresses this directly. Sandboxed execution hardening addresses a narrower, lower-likelihood threat for the current deployment.
+### Phase 4 evaluation notes
+
+Three of the four active items are done. The remaining item (Agent Provenance Tracking) requires a schema migration and analytics UI work. It is the natural first item for v2.6.1 or an early Phase 5 prerequisite. Rule Synthesis was not in the original spec but emerged from a real operational need — the rule corpus grows indefinitely and there was no mechanism to keep it healthy. The DLP scope rationale in the original spec remains accurate; the implementation is a self-contained `dlp.py` module with no new dependencies (httpx was already a core dep).
 
 ---
 
