@@ -277,9 +277,12 @@
     <div class="card">
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:0.5rem;">
         <h2 style="margin:0;">Your Developer Constitution</h2>
-        <button v-if="rules.length > 0" @click="copyRules" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">
-          {{ copied ? 'Copied!' : 'Copy all' }}
-        </button>
+        <div style="display:flex;gap:0.5rem;">
+          <button v-if="rules.length >= 2" @click="showSynthesis = true" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">Synthesize</button>
+          <button v-if="rules.length > 0" @click="copyRules" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">
+            {{ copied ? 'Copied!' : 'Copy all' }}
+          </button>
+        </div>
       </div>
       <p class="desc">Cross-project, cross-agent rules describing how you work. Injected into every AI assistant's context at session start — not project-specific notes, but your developer DNA.</p>
 
@@ -303,11 +306,117 @@
               <td><span :class="'pill pill-' + categoryColor(r.category)">{{ r.category }}</span></td>
               <td>{{ r.rule }}</td>
               <td>{{ (r.confidence * 100).toFixed(0) }}%</td>
-              <td><span :class="r.source === 'manual' ? 'pill pill-purple' : 'pill pill-green'">{{ r.source }}</span></td>
+              <td><span :class="r.source === 'synthesized' ? 'pill pill-orange' : r.source === 'manual' ? 'pill pill-purple' : 'pill pill-green'">{{ r.source }}</span></td>
               <td style="text-align: right;"><button class="btn-danger" style="border:none; cursor:pointer;" @click="deleteRule(r.id)">×</button></td>
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+    <rule-synthesis :show="showSynthesis" :rules="rules" @close="showSynthesis = false" @applied="onApplied" />
+  </div>
+</script>
+
+<script type="text/x-template" id="rule-synthesis-template">
+  <div v-if="show" class="modal-overlay" @click.self="close">
+    <div class="modal-box" style="max-width:680px;width:100%;max-height:85vh;overflow-y:auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+        <h2 style="margin:0;font-size:1.1rem;">Rule Synthesis</h2>
+        <button @click="close" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">×</button>
+      </div>
+
+      <!-- Step indicator -->
+      <div style="display:flex;gap:0.4rem;margin-bottom:1.25rem;">
+        <span :class="['pill', step >= 1 ? 'pill-purple' : '']">1. Select</span>
+        <span :class="['pill', step >= 2 ? 'pill-purple' : '']">2. Model</span>
+        <span :class="['pill', step >= 3 ? 'pill-purple' : '']">3. Preview</span>
+      </div>
+
+      <!-- Step 1: Rule selection -->
+      <div v-if="step === 1">
+        <p class="desc" style="margin-bottom:0.75rem;">Select rules to include and rate their importance. High-priority rules will be preserved most faithfully.</p>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;">
+          <button @click="selectAll" class="btn btn-outline" style="font-size:0.8rem;padding:0.2rem 0.6rem;">Select all</button>
+          <button @click="deselectAll" class="btn btn-outline" style="font-size:0.8rem;padding:0.2rem 0.6rem;">Clear</button>
+        </div>
+        <div v-for="r in rules" :key="r.id" style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border);">
+          <input type="checkbox" :id="'sr'+r.id" v-model="selected[r.id]" style="flex-shrink:0;width:1rem;height:1rem;cursor:pointer;" />
+          <label :for="'sr'+r.id" style="flex:1;cursor:pointer;font-size:0.9rem;line-height:1.4;">
+            <span :class="'pill pill-' + catColor(r.category)" style="margin-right:0.35rem;">{{ r.category }}</span>{{ r.rule }}
+          </label>
+          <div style="flex-shrink:0;font-size:1.15rem;letter-spacing:1px;">
+            <span v-for="s in 5" :key="s" @click="setPriority(r.id, s)"
+              :style="{cursor:'pointer', color: (priorities[r.id]||3) >= s ? 'var(--orange)' : 'var(--border)'}">★</span>
+          </div>
+        </div>
+        <div style="margin-top:1rem;display:flex;justify-content:flex-end;">
+          <button @click="step = 2" class="btn" :disabled="selectedCount < 2">
+            Next — {{ selectedCount }} rule{{ selectedCount !== 1 ? 's' : '' }} selected
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 2: Model configuration -->
+      <div v-if="step === 2">
+        <p class="desc" style="margin-bottom:1rem;">Configure the model that will synthesize your rules. The API key is stored on your JFYI instance only.</p>
+        <div class="form-group">
+          <label>Provider</label>
+          <select v-model="cfg.provider">
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI-compatible (OpenAI, Groq, Ollama…)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Model</label>
+          <input type="text" v-model="cfg.model"
+            :placeholder="cfg.provider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'" />
+        </div>
+        <div class="form-group">
+          <label>API Key <span v-if="savedCfg.has_key" style="color:var(--muted);font-weight:400;">(saved — leave blank to keep)</span></label>
+          <input :type="showKey ? 'text' : 'password'" v-model="cfg.api_key"
+            :placeholder="savedCfg.has_key ? '●●●●●●●●●●●● (leave blank to keep)' : 'sk-…'" />
+          <button @click="showKey = !showKey" class="btn btn-outline" style="font-size:0.75rem;padding:0.15rem 0.5rem;margin-top:0.3rem;">{{ showKey ? 'Hide' : 'Show' }}</button>
+        </div>
+        <div v-if="cfg.provider === 'openai'" class="form-group">
+          <label>Base URL <span style="color:var(--muted);font-weight:400;">(optional — defaults to OpenAI)</span></label>
+          <input type="text" v-model="cfg.base_url" placeholder="http://localhost:11434/v1" />
+        </div>
+        <div v-if="error" style="color:var(--red);font-size:0.85rem;margin-bottom:0.75rem;">{{ error }}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:0.25rem;">
+          <button @click="step = 1" class="btn btn-outline">Back</button>
+          <button @click="runSynthesis" class="btn"
+            :disabled="synthesizing || !cfg.provider || !cfg.model || (!cfg.api_key && !savedCfg.has_key)">
+            {{ synthesizing ? 'Synthesizing…' : 'Synthesize' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 3: Preview & apply -->
+      <div v-if="step === 3">
+        <p class="desc" style="margin-bottom:0.75rem;">
+          {{ synthesized.length }} synthesized rules from {{ selectedCount }} originals.
+          Apply to replace the originals, or add alongside them.
+        </p>
+        <table style="margin-bottom:1rem;">
+          <thead><tr><th>Category</th><th>Rule</th><th>Confidence</th></tr></thead>
+          <tbody>
+            <tr v-for="(r, i) in synthesized" :key="i">
+              <td><span :class="'pill pill-' + catColor(r.category)">{{ r.category }}</span></td>
+              <td>{{ r.rule }}</td>
+              <td>{{ (r.confidence * 100).toFixed(0) }}%</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="error" style="color:var(--red);font-size:0.85rem;margin-bottom:0.75rem;">{{ error }}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+          <button @click="step = 2" class="btn btn-outline" :disabled="applying">Back</button>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button @click="applyOnly" class="btn btn-outline" :disabled="applying">Add only (keep originals)</button>
+            <button @click="applyAndArchive" class="btn" :disabled="applying">
+              {{ applying ? 'Applying…' : 'Apply & archive originals' }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -494,7 +603,7 @@
 
 <!-- Vue App Logic -->
 <script>
-const { createApp, ref, reactive, onMounted, computed } = Vue;
+const { createApp, ref, reactive, onMounted, computed, watch } = Vue;
 const { createRouter, createWebHashHistory } = VueRouter;
 
 const API = '';
@@ -635,12 +744,125 @@ const Connect = {
   }
 };
 
+const RuleSynthesis = {
+  template: '#rule-synthesis-template',
+  props: ['show', 'rules'],
+  emits: ['close', 'applied'],
+  setup(props, { emit }) {
+    const step = ref(1);
+    const selected = reactive({});
+    const priorities = reactive({});
+    const cfg = reactive({ provider: 'anthropic', model: '', api_key: '', base_url: '' });
+    const savedCfg = reactive({ configured: false, has_key: false, provider: '', model: '', base_url: '' });
+    const showKey = ref(false);
+    const synthesizing = ref(false);
+    const applying = ref(false);
+    const synthesized = ref([]);
+    const error = ref('');
+
+    const selectedCount = computed(() => Object.values(selected).filter(Boolean).length);
+    const selectedIds = computed(() =>
+      Object.entries(selected).filter(([, v]) => v).map(([k]) => parseInt(k))
+    );
+
+    const catColor = (c) => ({ style:'orange', architecture:'purple', testing:'green', docs:'blue' }[c] || 'blue');
+    const selectAll = () => props.rules.forEach(r => { selected[r.id] = true; });
+    const deselectAll = () => props.rules.forEach(r => { selected[r.id] = false; });
+    const setPriority = (id, stars) => { priorities[id] = stars; };
+
+    const loadSavedCfg = async () => {
+      const res = await fetch(API + '/api/profile/synthesis-config');
+      if (res.ok) {
+        const data = await res.json();
+        Object.assign(savedCfg, data);
+        if (data.configured) {
+          cfg.provider = data.provider || 'anthropic';
+          cfg.model = data.model || '';
+          cfg.base_url = data.base_url || '';
+        }
+      }
+    };
+
+    watch(() => props.show, (val) => { if (val) { step.value = 1; error.value = ''; synthesized.value = []; loadSavedCfg(); } });
+
+    const runSynthesis = async () => {
+      synthesizing.value = true;
+      error.value = '';
+      try {
+        const saveBody = { provider: cfg.provider, model: cfg.model, base_url: cfg.base_url || null };
+        if (cfg.api_key) saveBody.api_key = cfg.api_key;
+        const saveRes = await fetch(API + '/api/profile/synthesis-config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(saveBody),
+        });
+        if (!saveRes.ok) { const d = await saveRes.json(); throw new Error(d.detail || 'Failed to save config'); }
+        Object.assign(savedCfg, { configured: true, has_key: true, provider: cfg.provider, model: cfg.model });
+
+        const prioritiesObj = {};
+        props.rules.forEach(r => { prioritiesObj[r.id] = priorities[r.id] || 3; });
+        const synthRes = await fetch(API + '/api/profile/rules/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rule_ids: selectedIds.value, priorities: prioritiesObj }),
+        });
+        if (!synthRes.ok) { const d = await synthRes.json(); throw new Error(d.detail || 'Synthesis failed'); }
+        const data = await synthRes.json();
+        synthesized.value = data.synthesized;
+        step.value = 3;
+      } catch (e) {
+        error.value = e.message || 'Synthesis failed';
+      } finally {
+        synthesizing.value = false;
+      }
+    };
+
+    const _apply = async (archiveIds) => {
+      applying.value = true;
+      error.value = '';
+      try {
+        const res = await fetch(API + '/api/profile/rules/synthesize/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ synthesized: synthesized.value, archive_ids: archiveIds }),
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Apply failed'); }
+        emit('applied');
+        close();
+      } catch (e) {
+        error.value = e.message || 'Apply failed';
+      } finally {
+        applying.value = false;
+      }
+    };
+
+    const applyAndArchive = () => _apply(selectedIds.value);
+    const applyOnly = () => _apply([]);
+
+    const close = () => {
+      step.value = 1;
+      error.value = '';
+      synthesized.value = [];
+      emit('close');
+    };
+
+    return {
+      step, selected, priorities, cfg, savedCfg, showKey,
+      synthesizing, applying, synthesized, error,
+      selectedCount, catColor,
+      selectAll, deselectAll, setPriority, runSynthesis,
+      applyAndArchive, applyOnly, close,
+    };
+  }
+};
+
 const Profile = {
   template: '#profile-template',
   setup() {
     const rules = ref([]);
     const loading = ref(true);
     const copied = ref(false);
+    const showSynthesis = ref(false);
 
     const loadRules = async () => {
       loading.value = true;
@@ -673,9 +895,11 @@ const Profile = {
       }).catch(() => alert('Failed to copy to clipboard.'));
     };
 
+    const onApplied = () => { showSynthesis.value = false; loadRules(); };
+
     onMounted(loadRules);
 
-    return { rules, loading, copied, categoryColor, deleteRule, copyRules };
+    return { rules, loading, copied, showSynthesis, categoryColor, deleteRule, copyRules, onApplied };
   }
 };
 
@@ -837,7 +1061,7 @@ const App = {
   }
 };
 
-createApp(App).use(router).component('IdpWizard', IdpWizard).mount('#app');
+createApp(App).use(router).component('IdpWizard', IdpWizard).component('RuleSynthesis', RuleSynthesis).mount('#app');
 </script>
 </body>
 </html>

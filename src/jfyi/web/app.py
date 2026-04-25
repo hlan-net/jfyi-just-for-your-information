@@ -32,12 +32,36 @@ from ..auth import (
 )
 from ..config import settings
 from ..database import Database
+from ..dlp import redact
 
 STATIC_DIR = Path(__file__).parent / "static"
 LOCAL_USER_EMAIL = "local@jfyi.internal"
 ERR_USER_NOT_FOUND = "User not found"
 ERR_PROVIDER_NOT_FOUND = "Provider not found"
 SETTING_REGISTRATION_OPEN = "registration_open"
+
+
+class SynthesisConfigBody(BaseModel):
+    provider: str
+    model: str
+    api_key: str | None = None  # None = keep existing stored key
+    base_url: str | None = None
+
+
+class SynthesizeRequest(BaseModel):
+    rule_ids: list[int]
+    priorities: dict[str, int]  # JSON object keys are always strings
+
+
+class SynthesizedRuleItem(BaseModel):
+    rule: str
+    category: str = "general"
+    confidence: float = 0.9
+
+
+class SynthesizeApplyRequest(BaseModel):
+    synthesized: list[SynthesizedRuleItem]
+    archive_ids: list[int]
 
 
 class RuleCreate(BaseModel):
@@ -436,6 +460,86 @@ def _register_profile_api(app: FastAPI) -> None:
         ok = db.delete_rule(current_user["id"], rule_id)
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
+
+    @app.get("/api/profile/synthesis-config")
+    async def get_synthesis_config(current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
+        cfg = db.get_synthesis_config(current_user["id"])
+        if not cfg:
+            return {"configured": False}
+        return {
+            "configured": True,
+            "provider": cfg["provider"],
+            "model": cfg["model"],
+            "base_url": cfg["base_url"],
+            "has_key": bool(cfg["api_key"]),
+        }
+
+    @app.put("/api/profile/synthesis-config")
+    async def save_synthesis_config(
+        body: SynthesisConfigBody, current_user: CurrentUser, db: DBDep
+    ) -> dict[str, Any]:
+        if body.provider not in ("anthropic", "openai"):
+            raise HTTPException(status_code=400, detail="provider must be 'anthropic' or 'openai'")
+        existing = db.get_synthesis_config(current_user["id"])
+        api_key = body.api_key or (existing["api_key"] if existing else None)
+        if not api_key:
+            raise HTTPException(status_code=400, detail="api_key is required")
+        db.save_synthesis_config(
+            current_user["id"], body.provider, body.model, api_key, body.base_url
+        )
+        return {"status": "saved"}
+
+    @app.post("/api/profile/rules/synthesize")
+    async def synthesize_rules(
+        body: SynthesizeRequest, current_user: CurrentUser, db: DBDep
+    ) -> dict[str, Any]:
+        from ..synthesizer import RuleSynthesizer
+
+        cfg = db.get_synthesis_config(current_user["id"])
+        if not cfg:
+            raise HTTPException(
+                status_code=400,
+                detail="No synthesis model configured. Save a model config first.",
+            )
+
+        all_rules = db.get_rules(current_user["id"])
+        rules = [r for r in all_rules if r["id"] in body.rule_ids]
+        if len(rules) < 2:
+            raise HTTPException(status_code=400, detail="Select at least 2 rules to synthesize.")
+
+        priorities = {int(k): v for k, v in body.priorities.items()}
+        synthesizer = RuleSynthesizer(
+            provider=cfg["provider"],
+            model=cfg["model"],
+            api_key=cfg["api_key"],
+            base_url=cfg["base_url"],
+        )
+        try:
+            synthesized = await synthesizer.synthesize(rules, priorities)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Synthesis failed: {exc}") from exc
+
+        return {"synthesized": synthesized, "source_count": len(rules)}
+
+    @app.post("/api/profile/rules/synthesize/apply", status_code=201)
+    async def apply_synthesized_rules(
+        body: SynthesizeApplyRequest, current_user: CurrentUser, db: DBDep
+    ) -> dict[str, Any]:
+        archived = db.archive_rules(current_user["id"], body.archive_ids)
+        added = 0
+        for item in body.synthesized:
+            rule_text = item.rule
+            if settings.dlp_enabled:
+                rule_text, _ = redact(rule_text)
+            db.add_rule(
+                user_id=current_user["id"],
+                rule=rule_text,
+                category=item.category,
+                confidence=item.confidence,
+                source="synthesized",
+            )
+            added += 1
+        return {"added": added, "archived": archived}
 
 
 def _register_analytics_api(app: FastAPI) -> None:

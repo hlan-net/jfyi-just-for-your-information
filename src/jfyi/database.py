@@ -248,6 +248,21 @@ class Database:
 
                     PRAGMA user_version = 4;
                 """)
+            if version < 5:
+                conn.executescript("""
+                    ALTER TABLE profile_rules ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+
+                    CREATE TABLE IF NOT EXISTS synthesis_config (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                        provider TEXT NOT NULL,
+                        model TEXT NOT NULL,
+                        api_key TEXT NOT NULL,
+                        base_url TEXT
+                    );
+
+                    PRAGMA user_version = 5;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -419,15 +434,50 @@ class Database:
             if category:
                 rows = conn.execute(
                     "SELECT * FROM profile_rules WHERE user_id = ? AND category = ? "
-                    "ORDER BY confidence DESC",
+                    "AND archived = 0 ORDER BY confidence DESC",
                     (user_id, category),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM profile_rules WHERE user_id = ? ORDER BY confidence DESC",
+                    "SELECT * FROM profile_rules WHERE user_id = ? AND archived = 0 "
+                    "ORDER BY confidence DESC",
                     (user_id,),
                 ).fetchall()
             return [dict(r) for r in rows]
+
+    def archive_rules(self, user_id: int, rule_ids: list[int]) -> int:
+        """Soft-delete rules by marking them archived. Returns count archived."""
+        if not rule_ids:
+            return 0
+        placeholders = ",".join("?" * len(rule_ids))
+        with self._conn() as conn:
+            cur = conn.execute(
+                f"UPDATE profile_rules SET archived=1 WHERE user_id=? AND id IN ({placeholders})",
+                (user_id, *rule_ids),
+            )
+            return cur.rowcount
+
+    def get_synthesis_config(self, user_id: int) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM synthesis_config WHERE user_id=?", (user_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def save_synthesis_config(
+        self,
+        user_id: int,
+        provider: str,
+        model: str,
+        api_key: str,
+        base_url: str | None = None,
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO synthesis_config "
+                "(user_id, provider, model, api_key, base_url) VALUES (?, ?, ?, ?, ?)",
+                (user_id, provider, model, api_key, base_url),
+            )
 
     def update_rule(
         self, user_id: int, rule_id: int, rule: str, category: str, confidence: float
