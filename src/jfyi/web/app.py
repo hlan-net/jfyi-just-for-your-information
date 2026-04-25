@@ -24,6 +24,7 @@ from ..analytics import AnalyticsEngine
 from ..auth import (
     create_mcp_jwt,
     create_session_cookie,
+    get_oauth_client_name,
     oauth,
     register_oauth_clients,
     verify_mcp_jwt,
@@ -63,9 +64,11 @@ class InteractionCreate(BaseModel):
 
 
 class IdpCreate(BaseModel):
-    provider: str
+    name: str
+    provider: str  # 'github', 'google', 'entra', 'custom_oidc'
     client_id: str
     client_secret: str
+    discovery_url: str | None = None  # Required when provider == 'custom_oidc'
 
 
 class UserUpdate(BaseModel):
@@ -128,15 +131,43 @@ AnalyticsDep = Annotated[AnalyticsEngine, Depends(get_analytics)]
 # ── API Registration ────────────────────────────────────────────────────────
 
 
+def _validate_and_save_idp(body: IdpCreate, db: Database) -> int:
+    """Shared validation + persistence logic for both setup and admin IdP endpoints."""
+    from ..auth import OAUTH_CONFIGS
+
+    supported = set(OAUTH_CONFIGS) | {"custom_oidc"}
+    if body.provider not in supported:
+        supported_str = ", ".join(sorted(supported))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown provider '{body.provider}'. Supported: {supported_str}",
+        )
+    if body.provider == "custom_oidc" and not body.discovery_url:
+        raise HTTPException(status_code=400, detail="discovery_url is required for custom_oidc")
+
+    idp_id = db.add_identity_provider(
+        body.name, body.provider, body.client_id, body.client_secret, body.discovery_url
+    )
+    client_name = get_oauth_client_name({"provider": body.provider, "id": idp_id})
+    if client_name in oauth._clients:
+        oauth._clients.pop(client_name)
+    register_oauth_clients(db)
+    return idp_id
+
+
 def _register_admin_idps_api(app: FastAPI) -> None:
     @app.get("/api/admin/idps")
-    async def list_idps(admin: AdminUser, db: DBDep) -> dict[str, Any]:
+    async def list_idps(request: Request, admin: AdminUser, db: DBDep) -> dict[str, Any]:
+        base = (settings.base_url or str(request.base_url)).rstrip("/")
         providers = db.get_identity_providers()
         masked = [
             {
+                "id": p["id"],
+                "name": p["name"],
                 "provider": p["provider"],
                 "client_id": p["client_id"],
                 "client_secret_hint": p["client_secret"][:4] + "****",
+                "callback_url": f"{base}/auth/callback/{get_oauth_client_name(p)}",
                 "created_at": p["created_at"],
             }
             for p in providers
@@ -148,38 +179,31 @@ def _register_admin_idps_api(app: FastAPI) -> None:
         responses={400: {"description": "Invalid provider"}},
     )
     async def add_idp(body: IdpCreate, admin: AdminUser, db: DBDep) -> dict[str, Any]:
-        from ..auth import OAUTH_CONFIGS
-
-        if body.provider not in OAUTH_CONFIGS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown provider '{body.provider}'. Supported: {', '.join(OAUTH_CONFIGS)}",
-            )
-        if body.provider in oauth._clients:
-            oauth._clients.pop(body.provider)
-        db.add_identity_provider(body.provider, body.client_id, body.client_secret)
-        register_oauth_clients(db)
-        return {"status": "success", "provider": body.provider}
+        idp_id = _validate_and_save_idp(body, db)
+        return {"status": "success", "id": idp_id}
 
     @app.delete(
-        "/api/admin/idps/{provider}",
+        "/api/admin/idps/{idp_id}",
         responses={
             400: {"description": "Cannot remove the last identity provider"},
             404: {"description": ERR_PROVIDER_NOT_FOUND},
         },
     )
-    async def delete_idp(provider: str, admin: AdminUser, db: DBDep) -> dict[str, Any]:
+    async def delete_idp(idp_id: int, admin: AdminUser, db: DBDep) -> dict[str, Any]:
         providers = db.get_identity_providers()
         if len(providers) <= 1:
             raise HTTPException(
                 status_code=400,
                 detail="Cannot remove the last identity provider — no one could log in.",
             )
-        success = db.delete_identity_provider(provider)
+        idp = next((p for p in providers if p["id"] == idp_id), None)
+        success = db.delete_identity_provider(idp_id)
         if not success:
             raise HTTPException(status_code=404, detail=ERR_PROVIDER_NOT_FOUND)
-        if provider in oauth._clients:
-            oauth._clients.pop(provider)
+        if idp:
+            client_name = get_oauth_client_name(idp)
+            if client_name in oauth._clients:
+                oauth._clients.pop(client_name)
         return {"status": "success"}
 
 
@@ -255,7 +279,15 @@ def _register_system_api(app: FastAPI) -> None:
     @app.get("/api/system/status")
     async def get_system_status(db: DBDep) -> dict[str, Any]:
         init_status = db.is_initialized()
-        idp_list = [p["provider"] for p in db.get_identity_providers()]
+        idp_list = [
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "provider": p["provider"],
+                "auth_key": get_oauth_client_name(p),
+            }
+            for p in db.get_identity_providers()
+        ]
         return {
             "has_idp": init_status["has_idp"] or settings.single_user_mode,
             "has_admin": init_status["has_admin"] or settings.single_user_mode,
@@ -276,10 +308,8 @@ def _register_system_api(app: FastAPI) -> None:
                 status_code=403,
                 detail="System already initialized. Use the Admin panel (/admin) to manage identity providers.",  # noqa: E501
             )
-
-        db.add_identity_provider(body.provider, body.client_id, body.client_secret)
-        register_oauth_clients(db)
-        return {"status": "success", "provider": body.provider}
+        idp_id = _validate_and_save_idp(body, db)
+        return {"status": "success", "id": idp_id}
 
 
 def _register_auth_api(app: FastAPI) -> None:

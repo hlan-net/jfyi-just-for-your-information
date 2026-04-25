@@ -176,11 +176,21 @@ def serve(
         sse_transport = SseServerTransport("/mcp/messages/")
 
         handle_sse = _build_sse_handler(
-            db, analytics, sse_transport, build_mcp_server, settings, verify_mcp_jwt,
+            db,
+            analytics,
+            sse_transport,
+            build_mcp_server,
+            settings,
+            verify_mcp_jwt,
             retriever=retriever,
         )
         handle_streamable = _build_streamable_handler(
-            db, analytics, build_mcp_server, settings, verify_mcp_jwt, retriever=retriever,
+            db,
+            analytics,
+            build_mcp_server,
+            settings,
+            verify_mcp_jwt,
+            retriever=retriever,
         )
 
         # GET opens a legacy SSE long-poll stream.

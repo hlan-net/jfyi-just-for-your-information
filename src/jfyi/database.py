@@ -180,27 +180,120 @@ class Database:
 
                     PRAGMA user_version = 2;
                 """)
+            if version < 3:
+                conn.executescript("""
+                    CREATE TABLE identity_providers_v3 (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        provider TEXT NOT NULL,
+                        client_id TEXT NOT NULL,
+                        client_secret TEXT NOT NULL,
+                        discovery_url TEXT,
+                        created_at TEXT NOT NULL
+                    );
+
+                    INSERT INTO identity_providers_v3
+                    SELECT
+                        provider,
+                        CASE provider
+                            WHEN 'github' THEN 'GitHub'
+                            WHEN 'google' THEN 'Google'
+                            WHEN 'entra' THEN 'Microsoft Entra ID'
+                            ELSE provider
+                        END,
+                        provider,
+                        client_id,
+                        client_secret,
+                        NULL,
+                        created_at
+                    FROM identity_providers;
+
+                    DROP TABLE identity_providers;
+                    ALTER TABLE identity_providers_v3 RENAME TO identity_providers;
+
+                    PRAGMA user_version = 3;
+                """)
+            if version < 4:
+                conn.executescript("""
+                    CREATE TABLE identity_providers_v4 (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        provider TEXT NOT NULL,
+                        client_id TEXT NOT NULL,
+                        client_secret TEXT NOT NULL,
+                        discovery_url TEXT,
+                        created_at TEXT NOT NULL
+                    );
+
+                    INSERT INTO identity_providers_v4
+                    SELECT
+                        CASE provider
+                            WHEN 'github' THEN 1
+                            WHEN 'google' THEN 2
+                            WHEN 'entra'  THEN 3
+                        END,
+                        name, provider, client_id, client_secret, discovery_url, created_at
+                    FROM identity_providers
+                    WHERE provider IN ('github', 'google', 'entra');
+
+                    INSERT INTO identity_providers_v4
+                    SELECT
+                        100 + ROW_NUMBER() OVER (ORDER BY created_at),
+                        name, provider, client_id, client_secret, discovery_url, created_at
+                    FROM identity_providers
+                    WHERE provider NOT IN ('github', 'google', 'entra');
+
+                    DROP TABLE identity_providers;
+                    ALTER TABLE identity_providers_v4 RENAME TO identity_providers;
+
+                    PRAGMA user_version = 4;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
-    def add_identity_provider(self, provider: str, client_id: str, client_secret: str) -> None:
+    # Fixed IDs for built-in OAuth providers; custom OIDC providers start at 101.
+    BUILTIN_PROVIDER_IDS: dict[str, int] = {"github": 1, "google": 2, "entra": 3}
+
+    def add_identity_provider(
+        self,
+        name: str,
+        provider: str,
+        client_id: str,
+        client_secret: str,
+        discovery_url: str | None = None,
+    ) -> int:
+        """Persist an IdP and return its system-assigned integer id."""
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO identity_providers "
-                "(provider, client_id, client_secret, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (provider, client_id, client_secret, now),
-            )
+            if provider in self.BUILTIN_PROVIDER_IDS:
+                idp_id = self.BUILTIN_PROVIDER_IDS[provider]
+                conn.execute(
+                    "INSERT OR REPLACE INTO identity_providers "
+                    "(id, name, provider, client_id, client_secret, discovery_url, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (idp_id, name, provider, client_id, client_secret, discovery_url, now),
+                )
+            else:
+                row = conn.execute(
+                    "SELECT COALESCE(MAX(id), 100) FROM identity_providers WHERE id >= 101"
+                ).fetchone()
+                idp_id = row[0] + 1
+                conn.execute(
+                    "INSERT INTO identity_providers "
+                    "(id, name, provider, client_id, client_secret, discovery_url, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (idp_id, name, provider, client_id, client_secret, discovery_url, now),
+                )
+        return idp_id
 
     def get_identity_providers(self) -> list[dict[str, Any]]:
         with self._conn() as conn:
-            rows = conn.execute("SELECT * FROM identity_providers ORDER BY provider").fetchall()
+            rows = conn.execute("SELECT * FROM identity_providers ORDER BY id").fetchall()
             return [dict(r) for r in rows]
 
-    def delete_identity_provider(self, provider: str) -> bool:
+    def delete_identity_provider(self, idp_id: int) -> bool:
         with self._conn() as conn:
-            cur = conn.execute("DELETE FROM identity_providers WHERE provider=?", (provider,))
+            cur = conn.execute("DELETE FROM identity_providers WHERE id=?", (idp_id,))
             return cur.rowcount > 0
 
     def is_initialized(self) -> dict[str, bool]:

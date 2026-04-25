@@ -12,12 +12,10 @@ from jfyi.retrieval import Retriever, create_retriever  # noqa: E402
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+
 def _make_catalogue(*names_and_costs: tuple[str, int, str]) -> dict[str, dict[str, Any]]:
     """Build a minimal catalogue: (name, token_cost, description)."""
-    return {
-        name: {"description": desc, "token_cost": cost}
-        for name, cost, desc in names_and_costs
-    }
+    return {name: {"description": desc, "token_cost": cost} for name, cost, desc in names_and_costs}
 
 
 def _mock_vs(query_results: list[str]) -> MagicMock:
@@ -28,6 +26,7 @@ def _mock_vs(query_results: list[str]) -> MagicMock:
 
 
 # ── index_catalogue ─────────────────────────────────────────────────────────
+
 
 class TestIndexCatalogue:
     def test_indexes_all_tools(self):
@@ -57,6 +56,7 @@ class TestIndexCatalogue:
 
 
 # ── retrieve / knapsack ──────────────────────────────────────────────────────
+
 
 class TestRetrieve:
     def test_returns_candidates_within_budget(self):
@@ -118,6 +118,7 @@ class TestRetrieve:
 
 # ── create_retriever factory ─────────────────────────────────────────────────
 
+
 class TestCreateRetriever:
     def test_returns_none_when_vs_is_none(self):
         result = create_retriever(None, _make_catalogue(("a", 100, "d")))
@@ -155,6 +156,7 @@ class TestCreateRetriever:
 
 
 # ── dispatch_tool integration ────────────────────────────────────────────────
+
 
 class TestDispatchToolITR:
     """Verify discover_tools query= filtering via dispatch_tool."""
