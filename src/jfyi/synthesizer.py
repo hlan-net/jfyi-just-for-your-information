@@ -43,19 +43,20 @@ def _format_rules(rules: list[dict], priorities: dict[int, int]) -> str:
 
 
 def _parse_response(text: str) -> list[dict]:
-    text = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`").strip()
-    data = json.loads(text)
+    match = re.search(r"\[\s*\{.*\}\s*\]", text, re.DOTALL)
+    data = json.loads(match.group(0)) if match else json.loads(text)
     if not isinstance(data, list):
         raise ValueError("Expected a JSON array from the model")
     result = []
     for item in data:
-        result.append(
-            {
-                "rule": str(item["rule"]),
-                "category": str(item.get("category", "general")),
-                "confidence": float(item.get("confidence", 0.9)),
-            }
-        )
+        if isinstance(item, dict) and "rule" in item:
+            result.append(
+                {
+                    "rule": str(item["rule"]),
+                    "category": str(item.get("category", "general")),
+                    "confidence": float(item.get("confidence", 0.9)),
+                }
+            )
     return result
 
 

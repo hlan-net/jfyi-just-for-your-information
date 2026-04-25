@@ -536,20 +536,24 @@ def _register_synthesis_api(app: FastAPI) -> None:
     async def apply_synthesized_rules(
         body: SynthesizeApplyRequest, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
-        archived = db.archive_rules(current_user["id"], body.archive_ids)
-        added = 0
-        for item in body.synthesized:
-            rule_text = item.rule
-            if settings.dlp_enabled:
-                rule_text, _ = redact(rule_text)
-            db.add_rule(
-                user_id=current_user["id"],
-                rule=rule_text,
-                category=item.category,
-                confidence=item.confidence,
-                source="synthesized",
-            )
-            added += 1
+        def _sync_apply() -> tuple[int, int]:
+            archived_count = db.archive_rules(current_user["id"], body.archive_ids)
+            added_count = 0
+            for item in body.synthesized:
+                rule_text = item.rule
+                if settings.dlp_enabled:
+                    rule_text, _ = redact(rule_text)
+                db.add_rule(
+                    user_id=current_user["id"],
+                    rule=rule_text,
+                    category=item.category,
+                    confidence=item.confidence,
+                    source="synthesized",
+                )
+                added_count += 1
+            return added_count, archived_count
+
+        added, archived = await asyncio.to_thread(_sync_apply)
         return {"added": added, "archived": archived}
 
 
