@@ -83,11 +83,14 @@ The Phase 3 ITR implementation shipped dense retrieval (all-MiniLM-L6-v2 embeddi
 |------|--------|--------|------|
 | [Inline DLP / PII Redaction](docs/dlp-redaction.md) | `v2.6.0` | Planned | [docs/dlp-redaction.md](docs/dlp-redaction.md) |
 | [Developer Behavior Analytics](docs/developer-analytics.md) | `v2.6.0` | Planned | [docs/developer-analytics.md](docs/developer-analytics.md) |
+| Agent Provenance Tracking | `v2.6.0` | Planned | — |
 | [Sandboxed Execution](docs/sandboxed-execution.md) | Deferred | Deferred | [docs/sandboxed-execution.md](docs/sandboxed-execution.md) |
 
 **Inline DLP / PII Redaction** automatically scrubs API keys, tokens, and personal data from all text before it is stored or injected into any agent context, with a regex pack covering common secret patterns. This is the active Phase 4 item.
 
 **Developer Behavior Analytics** adds a self-reflection view to the web dashboard — the other side of the Agent Analytics mirror. It surfaces correction rate trends, friction by domain, rule accumulation over time, correction latency distribution, and rule confidence breakdown. All read-side queries against existing tables; no schema changes. Optionally exposed as a `get_developer_analytics` MCP tool so an agent can surface insights mid-session.
+
+**Agent Provenance Tracking** stores which agent authored each profile rule (`agent_id` on `profile_rules`). This closes the shared-constitution loop: agents can see not only what the rule says but which agent generated it, enabling trust-weighted retrieval and cross-agent attribution in the analytics dashboard.
 
 **Sandboxed Execution** is deferred. The existing `run_local_script` subprocess isolation is a reasonable first cut for the current single-user homelab deployment. Container-level isolation is real engineering investment that is not justified yet. The spec is preserved for when deployment context changes.
 

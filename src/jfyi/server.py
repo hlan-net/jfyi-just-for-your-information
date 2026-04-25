@@ -409,9 +409,15 @@ async def dispatch_tool(
         return [TextContent(type="text", text=f"Agent analytics:\n{_serializer.dumps(payload)}")]
 
     if name == "add_profile_rule":
+        from .config import settings
+        from .dlp import redact
+
+        rule_text = arguments["rule"]
+        if settings.dlp_enabled:
+            rule_text, _ = redact(rule_text)
         rule_id = db.add_rule(
             user_id=user_id,
-            rule=arguments["rule"],
+            rule=rule_text,
             category=arguments.get("category", "general"),
             confidence=arguments.get("confidence", 1.0),
             source="manual",
