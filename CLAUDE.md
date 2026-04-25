@@ -71,3 +71,7 @@ GitHub Actions runs `ruff check` and `pytest --cov` on Python 3.12 for every pus
 ## Deployment
 
 Kubernetes-native via Helm chart in `helm/jfyi-mcp-server/`. Published as OCI artifact to GHCR. Data persists on a PVC mounted at `/data`.
+
+## Infrastructure Rules
+
+- **ML models are data, not code.** Never bake embedding models (e.g. `all-MiniLM-L6-v2`) into the Docker image. They inflate the image from ~80 MB to ~3 GB, making node-to-node scheduling and base-image upgrades extremely slow. Download models at runtime to a persisted volume path (`SENTENCE_TRANSFORMERS_HOME=/data/models`) so they survive restarts without being re-downloaded.

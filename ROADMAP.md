@@ -103,6 +103,18 @@ All four active items shipped. Rule Synthesis was not in the original spec but e
 
 ---
 
+## Operational — Image & Deployment `v2.7.1`
+
+Improvements to the Docker image and deployment ergonomics discovered during operations.
+
+| Item | Target | Status |
+|------|--------|--------|
+| Externalise embedding model from image | `v2.7.1` | Planned |
+
+**Externalise embedding model from image** removes the `SentenceTransformer('all-MiniLM-L6-v2')` pre-download step from the Dockerfile, reducing the image from ~3 GB to ~80 MB. The model is instead downloaded on first startup to a path on the existing `/data` PVC (`SENTENCE_TRANSFORMERS_HOME=/data/models`), where it persists across pod restarts and upgrades. This eliminates the multi-hour first-pull penalty when the scheduler places a pod on a node that has never run JFYI, and makes base-image upgrades (e.g. Python 3.12 → 3.14) fast again since no large layer content changes.
+
+---
+
 ## Phase 5 — Protocol Expansion `v3.0.0`
 
 Major version bump: ACP and A2A introduce new communication protocols that change how external agents interact with JFYI, constituting breaking surface additions relative to the MCP-only v2.x baseline.
