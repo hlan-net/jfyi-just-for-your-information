@@ -8,21 +8,20 @@ Each item links to a detailed specification in [`docs/`](docs/).
 
 ---
 
-## Phase 1 — Foundation `v2.1.0`
+## Phase 1 — Foundation `v2.3.0`
 
 Independent, high-impact improvements that can be shipped without dependencies between them.
 
-| Item | Target | Status | Spec |
-|------|--------|--------|------|
-| [Progressive Disclosure](docs/progressive-disclosure.md) | `v2.1.0` | Planned | [docs/progressive-disclosure.md](docs/progressive-disclosure.md) |
-| [Payload Minification](docs/payload-minification.md) | `v2.1.0` | Planned | [docs/payload-minification.md](docs/payload-minification.md) |
-| [Read-only Injection Zone](docs/read-only-injection.md) | `v2.1.0` | Planned | [docs/read-only-injection.md](docs/read-only-injection.md) |
-| [OAuth 2.1 + RBAC](docs/oauth-rbac.md) | `v2.1.0` | Done | [docs/oauth-rbac.md](docs/oauth-rbac.md) |
+| Item | Shipped | Status | Spec |
+|------|---------|--------|------|
+| [Progressive Disclosure](docs/progressive-disclosure.md) | `v2.3.0` | Done | [docs/progressive-disclosure.md](docs/progressive-disclosure.md) |
+| [Payload Minification](docs/payload-minification.md) | `v2.3.0` | Done | [docs/payload-minification.md](docs/payload-minification.md) |
+| [Read-only Injection Zone](docs/read-only-injection.md) | `v2.3.0` | Done | [docs/read-only-injection.md](docs/read-only-injection.md) |
+| [OAuth 2.1 + RBAC](docs/oauth-rbac.md) | `v2.3.0` | Done | [docs/oauth-rbac.md](docs/oauth-rbac.md) |
 
 **Progressive Disclosure** replaces the current model of exposing all tools and schemas upfront with a lightweight router tool that expands on demand. MCP servers inherently consume 40–50% of the available context before an agent begins any task; this feature reclaims that budget.
 
 **Payload Minification** replaces verbose JSON serialization with compact formats — stripped JSON and TOON (Token-Optimized Object Notation) — at the LLM boundary. TOON acts as a presentation layer over the existing JSON data model: internal storage (SQLite) is unchanged; only the serialization call at prompt-assembly time is replaced. Estimated token reduction: 40–60% on data payloads.
-
 
 **OAuth 2.1 + RBAC** introduces multi-user authentication via OAuth 2.1 with PKCE and JWT validation, paired with scope-based role access control. Upgraded to a Vue 3 + Vite SPA to support identity providers natively.
 
@@ -30,16 +29,16 @@ Independent, high-impact improvements that can be shipped without dependencies b
 
 ---
 
-## Phase 2 — Memory Architecture `v2.2.0`
+## Phase 2 — Memory Architecture `v2.4.0`
 
 Structural improvements to how JFYI manages session state and large data artifacts.
 
-| Item | Target | Status | Spec |
-|------|--------|--------|------|
-| [Compiled View Memory](docs/compiled-view-memory.md) | `v2.2.0` | Planned | [docs/compiled-view-memory.md](docs/compiled-view-memory.md) |
-| [Context Compaction](docs/context-compaction.md) | `v2.2.0` | Planned | [docs/context-compaction.md](docs/context-compaction.md) |
-| [Three-Tiered Memory](docs/three-tiered-memory.md) | `v2.2.0` | Planned | [docs/three-tiered-memory.md](docs/three-tiered-memory.md) |
-| [Background Summarization](docs/background-summarization.md) | `v2.2.0` | Planned | [docs/background-summarization.md](docs/background-summarization.md) |
+| Item | Shipped | Status | Spec |
+|------|---------|--------|------|
+| [Compiled View Memory](docs/compiled-view-memory.md) | `v2.4.0` | Done | [docs/compiled-view-memory.md](docs/compiled-view-memory.md) |
+| [Context Compaction](docs/context-compaction.md) | `v2.4.0` | Done | [docs/context-compaction.md](docs/context-compaction.md) |
+| [Three-Tiered Memory](docs/three-tiered-memory.md) | `v2.4.0` | Done | [docs/three-tiered-memory.md](docs/three-tiered-memory.md) |
+| [Background Summarization](docs/background-summarization.md) | `v2.4.0` | Done | [docs/background-summarization.md](docs/background-summarization.md) |
 
 **Compiled View Memory** treats the context window as RAM and the JFYI database as disk. Large artifacts such as crash logs or raw diffs never enter the context directly; the agent receives a lightweight file handle and runs a local script to extract only the relevant summary.
 
@@ -51,29 +50,47 @@ Structural improvements to how JFYI manages session state and large data artifac
 
 ---
 
-## Phase 3 — Advanced Retrieval `v2.3.0`
+## Phase 3 — Advanced Retrieval `v2.5.0`
 
-| Item | Target | Status | Spec |
-|------|--------|--------|------|
-| [Instruction-Tool Retrieval (ITR)](docs/itr.md) | `v2.3.0` | Planned | [docs/itr.md](docs/itr.md) |
-| [Vector Embeddings Core](docs/vector-embeddings.md) | `v2.3.0` | Planned | [docs/vector-embeddings.md](docs/vector-embeddings.md) |
-
-**ITR** is a semantic retrieval layer that dynamically selects the minimal subset of instruction fragments and tools relevant to each agent step. It targets a 95% reduction in per-step context tokens and is the long-term foundation for scaling JFYI to arbitrarily large rule and tool corpora.
+| Item | Shipped | Status | Spec |
+|------|---------|--------|------|
+| [Vector Embeddings Core](docs/vector-embeddings.md) | `v2.5.0` | Done | [docs/vector-embeddings.md](docs/vector-embeddings.md) |
+| [Instruction-Tool Retrieval (ITR)](docs/itr.md) | `v2.5.0` | Done | [docs/itr.md](docs/itr.md) |
 
 **Vector Embeddings Core** promotes ChromaDB and sentence-transformers from an optional extra to a core dependency, making semantic similarity search available out of the box. This is a prerequisite for ITR's dense retrieval pipeline.
 
+**ITR** is a semantic retrieval layer that dynamically selects the minimal subset of instruction fragments and tools relevant to each agent step. It targets a 95% reduction in per-step context tokens and is the long-term foundation for scaling JFYI to arbitrarily large rule and tool corpora.
+
+### Post-Phase 3 evaluation notes
+
+The Phase 3 ITR implementation shipped dense retrieval (all-MiniLM-L6-v2 embeddings via ChromaDB) and greedy knapsack budget selection. The following ITR spec items are **deferred** — they only matter at 50+ rules / 20+ tools scale, which the current deployment has not reached:
+
+- BM25 hybrid scoring (spec Phase 2)
+- Cross-encoder reranking (spec Phase 2)
+- Retrieval caching per task signature (spec Phase 6)
+- Telemetry and corpus governance (spec Phase 6)
+
+**Key observations from implementation:**
+- ChromaDB requires careful handling of empty metadata dicts, multi-key `$and` filters, and `n_results > filtered count`. The `VectorStore` wrapper absorbs these but is fragile if ChromaDB changes its API.
+- ITR is off by default and requires a populated rule corpus. Until a deployment has 10+ rules across several domains, dense retrieval does not outperform "show everything." The feature is correct but value is deferred.
+- The **background summarizer is the primary value driver**. It is the mechanism that turns raw interactions into durable profile rules. All other Phase 3 components serve that loop.
+
 ---
 
-## Phase 4 — Security & Hardening `v2.4.0`
+## Phase 4 — Security & Hardening `v2.6.0`
 
 | Item | Target | Status | Spec |
 |------|--------|--------|------|
-| [Inline DLP / PII Redaction](docs/dlp-redaction.md) | `v2.4.0` | Planned | [docs/dlp-redaction.md](docs/dlp-redaction.md) |
-| [Sandboxed Execution](docs/sandboxed-execution.md) | `v2.4.0` | Planned | [docs/sandboxed-execution.md](docs/sandboxed-execution.md) |
+| [Inline DLP / PII Redaction](docs/dlp-redaction.md) | `v2.6.0` | Planned | [docs/dlp-redaction.md](docs/dlp-redaction.md) |
+| [Sandboxed Execution](docs/sandboxed-execution.md) | Deferred | Deferred | [docs/sandboxed-execution.md](docs/sandboxed-execution.md) |
 
-**Inline DLP / PII Redaction** automatically scrubs API keys, tokens, and personal data from all text before it is stored or injected into any agent context, with a regex pack covering common secret patterns.
+**Inline DLP / PII Redaction** automatically scrubs API keys, tokens, and personal data from all text before it is stored or injected into any agent context, with a regex pack covering common secret patterns. This is the active Phase 4 item.
 
-**Sandboxed Execution** restricts JFYI's filesystem access to explicitly declared roots, runs the container as a non-root user with a read-only root filesystem, and exposes a `sandbox.enforce()` path validation layer used by any tool that accesses local files.
+**Sandboxed Execution** is deferred. The existing `run_local_script` subprocess isolation is a reasonable first cut for the current single-user homelab deployment. Container-level isolation is real engineering investment that is not justified yet. The spec is preserved for when deployment context changes.
+
+### Phase 4 scope rationale
+
+DLP closes the more immediate risk: `run_local_script` and `store_artifact` can capture content containing secrets from live coding sessions, and there is currently no scrubbing at the storage layer. A small self-contained `dlp.py` module with a regex pattern pack addresses this directly. Sandboxed execution hardening addresses a narrower, lower-likelihood threat for the current deployment.
 
 ---
 
@@ -86,6 +103,8 @@ Major version bump: ACP and A2A introduce new communication protocols that chang
 | [ACP Support](docs/acp.md) | `v3.0.0` | Planned | [docs/acp.md](docs/acp.md) |
 | [A2A Support](docs/a2a.md) | `v3.0.0` | Planned | [docs/a2a.md](docs/a2a.md) |
 
-**ACP (Agent Communication Protocol)** exposes JFYI's profile and analytics data over the ACP transport alongside the existing MCP interface, enabling non-MCP agents to consume profile-guided hints. Gated on spec stability.
+**ACP (Agent Communication Protocol)** exposes JFYI's profile and analytics data over the ACP transport alongside the existing MCP interface, enabling non-MCP agents to consume profile-guided hints. Gated on spec stability — ACP spec was still in flux at time of evaluation.
 
 **A2A (Agent2Agent)** enables profile negotiation across AI frameworks (LangChain, CrewAI), allowing agents built on different stacks to share and apply JFYI-managed developer context without manual configuration.
+
+Phase 5 has no concrete demand signal and is blocked on protocol spec stability. It stays on the shelf until there is a specific integration target.
