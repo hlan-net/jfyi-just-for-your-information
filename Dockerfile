@@ -27,7 +27,7 @@ COPY src/ ./src/
 # 4. Install the app itself (dependencies are already installed). Force reinstall to overwrite the dummy package.
 RUN pip install --no-cache-dir --no-deps --force-reinstall .
 
-RUN mkdir -p /data && chown jfyi:jfyi /data /app /home/jfyi
+RUN mkdir -p /data && chown -R jfyi:jfyi /data /app /home/jfyi
 
 USER jfyi
 

@@ -13,7 +13,7 @@ The result is a one-sided mirror: you can see which agent suits you best, but no
 
 A **Developer Analytics** view in the web dashboard that reflects the developer's own behaviour patterns back at them. It answers the question: *"How am I working with AI, and is it getting better?"*
 
-This is a pure read-side feature — it queries existing `interactions`, `friction_events`, and `profile_rules` tables. No new MCP tools, no schema changes.
+The core five charts are a pure read-side feature — they query the existing `interactions`, `friction_events`, and `profile_rules` tables with no schema changes. An optional `get_developer_analytics` MCP tool and a "most-used rules" chart are scoped separately below, as both require additional tracking.
 
 ## Implementation
 
@@ -36,9 +36,6 @@ Histogram of `correction_latency_s` values across all sessions. Long latency mea
 **Profile rule confidence distribution**  
 Bar chart of rules bucketed by confidence score (0.0–0.3, 0.3–0.6, 0.6–0.8, 0.8–1.0). A healthy profile skews toward high-confidence rules. Many low-confidence rules suggests the rule corpus is noisy or over-broad.
 
-**Most-used rules**  
-Ordered list of profile rules by injection frequency (requires logging which rules were included in each `get_developer_profile` call). Shows which rules are earning their place in the profile and which are never retrieved.
-
 ### API endpoints
 
 New read-only REST endpoints on the FastAPI app (mirroring the existing analytics API pattern):
@@ -49,21 +46,23 @@ GET /api/developer/friction-by-domain
 GET /api/developer/rule-accumulation?weeks=12
 GET /api/developer/latency-distribution
 GET /api/developer/rule-confidence
-GET /api/developer/top-rules?limit=10
 ```
 
 All queries run against the existing SQLite tables; no new persistence layer.
 
-### MCP exposure (optional)
+### Optional extensions (require additional tracking)
 
-A `get_developer_analytics` MCP tool that returns the same summary data as the API, allowing an AI agent to surface self-reflection to the developer mid-session ("your correction rate in the `architecture` domain has risen 20% this week — want to review the rules in that category?").
+The following are out of scope for the initial implementation but are natural follow-ons:
+
+**Most-used rules** — an ordered list of profile rules by injection frequency. Requires logging which rule IDs were returned in each `get_developer_profile` call (new `rule_retrievals` table or metadata column). Out of scope for v2.6.0; tracked as a future enhancement.
+
+**`get_developer_analytics` MCP tool** — exposes the same summary data as the REST API, allowing an agent to surface self-reflection mid-session ("your correction rate in `architecture` has risen 20% this week"). Requires no schema changes but is deferred to keep the initial scope small.
 
 ## Success Criteria
 
 - Developer Analytics tab is visible and loads without error for a fresh database (all charts render empty rather than failing).
 - Correction rate trend chart correctly reflects a downward slope for a synthetic dataset where rules are being applied.
 - All API endpoints return in < 200ms on a database with 1,000 interactions.
-- `get_developer_analytics` MCP tool returns a parseable summary that an agent can act on.
 
 ## Related
 
