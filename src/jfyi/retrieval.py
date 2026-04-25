@@ -71,9 +71,7 @@ def create_retriever(
     if vector_store is None:
         return None
     try:
-        from .config import settings
-
-        r = Retriever(vector_store, token_budget=settings.itr_token_budget, k=settings.itr_k_tools)
+        r = Retriever(vector_store, token_budget=token_budget, k=k)
         r.index_catalogue(catalogue)
         return r
     except Exception:
