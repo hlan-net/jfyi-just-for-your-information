@@ -63,9 +63,12 @@ class InteractionCreate(BaseModel):
 
 
 class IdpCreate(BaseModel):
-    provider: str
+    id: str | None = None  # Pre-generated UUID for custom_oidc; omit for built-ins
+    name: str
+    provider: str  # 'github', 'google', 'entra', 'custom_oidc'
     client_id: str
     client_secret: str
+    discovery_url: str | None = None  # Required when provider == 'custom_oidc'
 
 
 class UserUpdate(BaseModel):
@@ -134,6 +137,8 @@ def _register_admin_idps_api(app: FastAPI) -> None:
         providers = db.get_identity_providers()
         masked = [
             {
+                "id": p["id"],
+                "name": p["name"],
                 "provider": p["provider"],
                 "client_id": p["client_id"],
                 "client_secret_hint": p["client_secret"][:4] + "****",
@@ -150,36 +155,44 @@ def _register_admin_idps_api(app: FastAPI) -> None:
     async def add_idp(body: IdpCreate, admin: AdminUser, db: DBDep) -> dict[str, Any]:
         from ..auth import OAUTH_CONFIGS
 
-        if body.provider not in OAUTH_CONFIGS:
+        supported = set(OAUTH_CONFIGS) | {"custom_oidc"}
+        if body.provider not in supported:
+            supported_str = ", ".join(sorted(supported))
             raise HTTPException(
                 status_code=400,
-                detail=f"Unknown provider '{body.provider}'. Supported: {', '.join(OAUTH_CONFIGS)}",
+                detail=f"Unknown provider '{body.provider}'. Supported: {supported_str}",
             )
-        if body.provider in oauth._clients:
-            oauth._clients.pop(body.provider)
-        db.add_identity_provider(body.provider, body.client_id, body.client_secret)
+        if body.provider == "custom_oidc" and not body.discovery_url:
+            raise HTTPException(status_code=400, detail="discovery_url is required for custom_oidc")
+
+        idp_id = body.provider if body.provider in OAUTH_CONFIGS else (body.id or str(uuid.uuid4()))
+        if idp_id in oauth._clients:
+            oauth._clients.pop(idp_id)
+        db.add_identity_provider(
+            idp_id, body.name, body.provider, body.client_id, body.client_secret, body.discovery_url
+        )
         register_oauth_clients(db)
-        return {"status": "success", "provider": body.provider}
+        return {"status": "success", "id": idp_id}
 
     @app.delete(
-        "/api/admin/idps/{provider}",
+        "/api/admin/idps/{idp_id}",
         responses={
             400: {"description": "Cannot remove the last identity provider"},
             404: {"description": ERR_PROVIDER_NOT_FOUND},
         },
     )
-    async def delete_idp(provider: str, admin: AdminUser, db: DBDep) -> dict[str, Any]:
+    async def delete_idp(idp_id: str, admin: AdminUser, db: DBDep) -> dict[str, Any]:
         providers = db.get_identity_providers()
         if len(providers) <= 1:
             raise HTTPException(
                 status_code=400,
                 detail="Cannot remove the last identity provider — no one could log in.",
             )
-        success = db.delete_identity_provider(provider)
+        success = db.delete_identity_provider(idp_id)
         if not success:
             raise HTTPException(status_code=404, detail=ERR_PROVIDER_NOT_FOUND)
-        if provider in oauth._clients:
-            oauth._clients.pop(provider)
+        if idp_id in oauth._clients:
+            oauth._clients.pop(idp_id)
         return {"status": "success"}
 
 
@@ -255,7 +268,10 @@ def _register_system_api(app: FastAPI) -> None:
     @app.get("/api/system/status")
     async def get_system_status(db: DBDep) -> dict[str, Any]:
         init_status = db.is_initialized()
-        idp_list = [p["provider"] for p in db.get_identity_providers()]
+        idp_list = [
+            {"id": p["id"], "name": p["name"], "provider": p["provider"]}
+            for p in db.get_identity_providers()
+        ]
         return {
             "has_idp": init_status["has_idp"] or settings.single_user_mode,
             "has_admin": init_status["has_admin"] or settings.single_user_mode,
@@ -270,6 +286,8 @@ def _register_system_api(app: FastAPI) -> None:
         responses={403: {"description": "System already initialized with an admin"}},
     )
     async def configure_idp(body: IdpCreate, db: DBDep) -> dict[str, Any]:
+        from ..auth import OAUTH_CONFIGS
+
         init_status = db.is_initialized()
         if init_status["has_admin"] and init_status["has_idp"]:
             raise HTTPException(
@@ -277,9 +295,18 @@ def _register_system_api(app: FastAPI) -> None:
                 detail="System already initialized. Use the Admin panel (/admin) to manage identity providers.",  # noqa: E501
             )
 
-        db.add_identity_provider(body.provider, body.client_id, body.client_secret)
+        supported = set(OAUTH_CONFIGS) | {"custom_oidc"}
+        if body.provider not in supported:
+            raise HTTPException(status_code=400, detail=f"Unknown provider '{body.provider}'")
+        if body.provider == "custom_oidc" and not body.discovery_url:
+            raise HTTPException(status_code=400, detail="discovery_url is required for custom_oidc")
+
+        idp_id = body.provider if body.provider in OAUTH_CONFIGS else (body.id or str(uuid.uuid4()))
+        db.add_identity_provider(
+            idp_id, body.name, body.provider, body.client_id, body.client_secret, body.discovery_url
+        )
         register_oauth_clients(db)
-        return {"status": "success", "provider": body.provider}
+        return {"status": "success", "id": idp_id}
 
 
 def _register_auth_api(app: FastAPI) -> None:

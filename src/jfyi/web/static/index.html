@@ -83,6 +83,9 @@
   .loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 50vh; color: var(--muted); gap: 1rem; }
   .spinner { border: 3px solid #21262d; border-top: 3px solid var(--accent); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
   @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 1000; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 2rem 1rem; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; max-width: 560px; width: 100%; }
 </style>
 </head>
 <body>
@@ -123,110 +126,118 @@
   </div>
 </script>
 
-<script type="text/x-template" id="setup-template">
-  <div class="setup-container">
-    <div class="setup-header">
-      <h1>Welcome to JFYI</h1>
-      <p style="color: var(--muted)">Let's set up your first Identity Provider</p>
-    </div>
-    
+<script type="text/x-template" id="idp-wizard-template">
+  <div>
     <div class="card" v-if="step === 1">
       <h2>Step 1: Choose an Identity Provider</h2>
-      <p class="desc">
-        JFYI uses OAuth 2.1 to authenticate users. Select the provider you want to configure first.
-      </p>
-      
+      <p class="desc">JFYI uses OAuth 2.0 / OIDC to authenticate users. Select the provider to configure.</p>
+
       <div class="form-group" style="margin-top: 1.5rem;">
-        <div class="provider-select" :class="{active: form.provider === 'github'}" @click="form.provider = 'github'">
+        <div class="provider-select" :class="{active: form.provider === 'github'}" @click="pick('github')">
           <span style="font-size: 1.8rem">🐙</span>
-          <div>
-            <strong style="color: var(--text); font-size: 1.05rem;">GitHub</strong>
-            <div style="font-size: 0.85rem; color: var(--muted)">Configure a GitHub OAuth App</div>
-          </div>
+          <div><strong style="color:var(--text);font-size:1.05rem;">GitHub</strong><div style="font-size:0.85rem;color:var(--muted)">Configure a GitHub OAuth App</div></div>
         </div>
-        
-        <div class="provider-select" :class="{active: form.provider === 'google'}" @click="form.provider = 'google'">
+        <div class="provider-select" :class="{active: form.provider === 'google'}" @click="pick('google')">
           <span style="font-size: 1.8rem">🌐</span>
-          <div>
-            <strong style="color: var(--text); font-size: 1.05rem;">Google</strong>
-            <div style="font-size: 0.85rem; color: var(--muted)">Configure Google Cloud OAuth</div>
-          </div>
+          <div><strong style="color:var(--text);font-size:1.05rem;">Google</strong><div style="font-size:0.85rem;color:var(--muted)">Configure Google Cloud OAuth</div></div>
         </div>
-        
-        <div class="provider-select" :class="{active: form.provider === 'entra'}" @click="form.provider = 'entra'">
+        <div class="provider-select" :class="{active: form.provider === 'entra'}" @click="pick('entra')">
           <span style="font-size: 1.8rem">🏢</span>
-          <div>
-            <strong style="color: var(--text); font-size: 1.05rem;">Microsoft Entra ID</strong>
-            <div style="font-size: 0.85rem; color: var(--muted)">Configure Azure App Registration</div>
-          </div>
+          <div><strong style="color:var(--text);font-size:1.05rem;">Microsoft Entra ID</strong><div style="font-size:0.85rem;color:var(--muted)">Configure Azure App Registration</div></div>
+        </div>
+        <div class="provider-select" :class="{active: form.provider === 'custom_oidc'}" @click="pick('custom_oidc')">
+          <span style="font-size: 1.8rem">🔐</span>
+          <div><strong style="color:var(--text);font-size:1.05rem;">Custom OIDC</strong><div style="font-size:0.85rem;color:var(--muted)">Any OpenID Connect-compatible provider</div></div>
         </div>
       </div>
-      
-      <div style="margin-top: 2rem;">
-        <button class="btn" style="width: 100%; padding: 0.75rem;" @click="step = 2" :disabled="!form.provider">Next Step &rarr;</button>
+
+      <div style="margin-top:2rem;">
+        <button class="btn" style="width:100%;padding:0.75rem;" @click="goStep2" :disabled="!form.provider">Next Step &rarr;</button>
       </div>
     </div>
-    
+
     <div class="card" v-if="step === 2">
-      <h2>Step 2: Configure {{ providerDisplay }}</h2>
-      
+      <h2>Step 2: Configure {{ providerLabel }}</h2>
+
       <div class="guidance-box">
         <template v-if="form.provider === 'github'">
           <h3>How to get GitHub credentials:</h3>
           <ol>
             <li>Go to <strong>GitHub Settings &rarr; Developer settings &rarr; OAuth Apps</strong>.</li>
             <li>Click <strong>New OAuth App</strong>.</li>
-            <li>Set <strong>Homepage URL</strong> to your JFYI root URL (e.g., <code>{{ origin }}</code>).</li>
+            <li>Set <strong>Homepage URL</strong> to <code>{{ origin }}</code>.</li>
             <li>Set <strong>Authorization callback URL</strong> to <code>{{ origin }}/auth/callback/github</code>.</li>
-            <li>Click <strong>Register application</strong>.</li>
-            <li>Copy the <strong>Client ID</strong> and generate a new <strong>Client secret</strong>.</li>
+            <li>Click <strong>Register application</strong>, then copy the <strong>Client ID</strong> and generate a <strong>Client secret</strong>.</li>
           </ol>
         </template>
-        
         <template v-else-if="form.provider === 'google'">
           <h3>How to get Google credentials:</h3>
           <ol>
-            <li>Go to the <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a>.</li>
-            <li>Navigate to <strong>APIs &amp; Services &rarr; Credentials</strong>.</li>
-            <li>Click <strong>Create Credentials &rarr; OAuth client ID</strong>.</li>
-            <li>Set Application type to <strong>Web application</strong>.</li>
-            <li>Add an <strong>Authorized redirect URI</strong>: <code>{{ origin }}/auth/callback/google</code>.</li>
-            <li>Click <strong>Create</strong> and copy the resulting Client ID and Secret.</li>
+            <li>Open the <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a> &rarr; <strong>APIs &amp; Services &rarr; Credentials</strong>.</li>
+            <li>Click <strong>Create Credentials &rarr; OAuth client ID</strong> (Web application).</li>
+            <li>Add authorized redirect URI: <code>{{ origin }}/auth/callback/google</code>.</li>
+            <li>Click <strong>Create</strong> and copy the Client ID and Secret.</li>
           </ol>
         </template>
-        
         <template v-else-if="form.provider === 'entra'">
           <h3>How to get Entra ID (Azure) credentials:</h3>
           <ol>
-            <li>Go to the <a href="https://portal.azure.com" target="_blank">Azure Portal</a> and open <strong>Microsoft Entra ID</strong>.</li>
-            <li>Navigate to <strong>App registrations &rarr; New registration</strong>.</li>
-            <li>Name your app (e.g. "JFYI").</li>
-            <li>Set the Redirect URI type to <strong>Web</strong> with value: <code>{{ origin }}/auth/callback/entra</code>.</li>
-            <li>Click <strong>Register</strong>. Copy the <strong>Application (client) ID</strong>.</li>
-            <li>Go to <strong>Certificates &amp; secrets</strong>, create a new client secret, and copy its <strong>Value</strong> (not the Secret ID).</li>
+            <li>Go to the <a href="https://portal.azure.com" target="_blank">Azure Portal</a> &rarr; <strong>Microsoft Entra ID &rarr; App registrations &rarr; New registration</strong>.</li>
+            <li>Set Redirect URI type to <strong>Web</strong>: <code>{{ origin }}/auth/callback/entra</code>.</li>
+            <li>Register and copy the <strong>Application (client) ID</strong>.</li>
+            <li>Go to <strong>Certificates &amp; secrets</strong>, create a new client secret, and copy its <strong>Value</strong>.</li>
+          </ol>
+        </template>
+        <template v-else-if="form.provider === 'custom_oidc'">
+          <h3>Custom OIDC Provider setup:</h3>
+          <ol>
+            <li>Register a new OAuth / OIDC application in your identity provider's admin console.</li>
+            <li>Set the <strong>redirect / callback URI</strong> to: <code>{{ origin }}/auth/callback/{{ form.id }}</code></li>
+            <li>Enter the provider's <strong>OIDC Discovery URL</strong> (ends in <code>/.well-known/openid-configuration</code>) below.</li>
+            <li>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> from your provider.</li>
           </ol>
         </template>
       </div>
-      
-      <form @submit.prevent="submitSetup">
+
+      <form @submit.prevent="submit">
+        <div class="form-group">
+          <label>Display Name</label>
+          <input type="text" v-model="form.name" required placeholder="e.g. GitHub, Acme Corp SSO" />
+        </div>
+
+        <div class="form-group" v-if="form.provider === 'custom_oidc'">
+          <label>OIDC Discovery URL</label>
+          <input type="text" v-model="form.discovery_url" required placeholder="https://your-idp.example.com/.well-known/openid-configuration" />
+        </div>
+
         <div class="form-group">
           <label>Client ID</label>
           <input type="text" v-model="form.client_id" required placeholder="Paste Client ID here" />
         </div>
-        
+
         <div class="form-group">
           <label>Client Secret</label>
           <input type="password" v-model="form.client_secret" required placeholder="Paste Client Secret here" />
         </div>
-        
-        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+
+        <div style="display:flex;gap:1rem;margin-top:2rem;">
           <button type="button" class="btn btn-outline" @click="step = 1">&larr; Back</button>
-          <button type="submit" class="btn" style="flex: 1" :disabled="saving">
-            {{ saving ? 'Saving...' : 'Save & Continue' }}
+          <button type="submit" class="btn" style="flex:1" :disabled="saving">
+            {{ saving ? 'Saving...' : 'Save Provider' }}
           </button>
         </div>
       </form>
     </div>
+  </div>
+</script>
+
+<script type="text/x-template" id="setup-template">
+  <div class="setup-container">
+    <div class="setup-header">
+      <h1>Welcome to JFYI</h1>
+      <p style="color: var(--muted)">Let's set up your first Identity Provider</p>
+    </div>
+    <idp-wizard endpoint="/api/system/idp" :on-saved="onSaved" />
   </div>
 </script>
 
@@ -246,11 +257,12 @@
       <h2 style="margin-bottom: 1.5rem;">Choose a Provider</h2>
 
       <div v-if="system.providers && system.providers.length > 0">
-        <a v-for="p in system.providers" :key="p" :href="'/auth/login/' + p" class="btn btn-login btn-outline">
-          <span v-if="p === 'github'">🐙</span>
-          <span v-if="p === 'google'">🌐</span>
-          <span v-if="p === 'entra'">🏢</span>
-          Sign in with {{ p.charAt(0).toUpperCase() + p.slice(1) }}
+        <a v-for="p in system.providers" :key="p.id" :href="'/auth/login/' + p.id" class="btn btn-login btn-outline">
+          <span v-if="p.provider === 'github'">🐙</span>
+          <span v-if="p.provider === 'google'">🌐</span>
+          <span v-if="p.provider === 'entra'">🏢</span>
+          <span v-if="p.provider === 'custom_oidc'">🔐</span>
+          Sign in with {{ p.name }}
         </a>
       </div>
       <div v-else class="empty" style="padding: 1rem;">
@@ -424,13 +436,14 @@
 
     <div class="card">
       <h2>Identity Providers</h2>
-      <p class="desc">Configured OAuth identity providers. At least one must remain active.</p>
+      <p class="desc">Configured OAuth / OIDC identity providers. At least one must remain active.</p>
       <table>
         <thead>
-          <tr><th>Provider</th><th>Client ID</th><th>Secret</th><th>Configured</th><th>Actions</th></tr>
+          <tr><th>Name</th><th>Type</th><th>Client ID</th><th>Secret</th><th>Configured</th><th>Actions</th></tr>
         </thead>
         <tbody>
-          <tr v-for="p in idps" :key="p.provider">
+          <tr v-for="p in idps" :key="p.id">
+            <td>{{ p.name }}</td>
             <td><span class="pill pill-orange">{{ p.provider }}</span></td>
             <td style="font-family:monospace;font-size:0.85rem;">{{ p.client_id }}</td>
             <td style="font-family:monospace;font-size:0.85rem;color:var(--muted)">{{ p.client_secret_hint }}</td>
@@ -440,35 +453,24 @@
             </td>
           </tr>
           <tr v-if="idps.length === 0">
-            <td colspan="5" class="empty" style="padding:1rem;">No identity providers configured.</td>
+            <td colspan="6" class="empty" style="padding:1rem;">No identity providers configured.</td>
           </tr>
         </tbody>
       </table>
 
       <div style="margin-top:1.25rem;">
-        <button class="btn btn-outline" @click="showIdpForm = !showIdpForm">
-          {{ showIdpForm ? 'Cancel' : '+ Add / Update Provider' }}
-        </button>
+        <button class="btn btn-outline" @click="showWizard = true">+ Add Provider</button>
       </div>
+    </div>
 
-      <div v-if="showIdpForm" style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
-        <h3 style="margin-bottom:0.75rem;">Configure Provider</h3>
-        <div style="display:flex;gap:0.75rem;margin-bottom:1rem;">
-          <div class="provider-select" :class="{active: idpForm.provider==='github'}" @click="idpForm.provider='github'" style="flex:1;margin-bottom:0;">GitHub</div>
-          <div class="provider-select" :class="{active: idpForm.provider==='google'}" @click="idpForm.provider='google'" style="flex:1;margin-bottom:0;">Google</div>
-          <div class="provider-select" :class="{active: idpForm.provider==='entra'}" @click="idpForm.provider='entra'" style="flex:1;margin-bottom:0;">Microsoft Entra</div>
+    <!-- IdP Wizard Modal -->
+    <div v-if="showWizard" class="modal-overlay" @click.self="showWizard = false">
+      <div class="modal-box">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <strong style="font-size:1rem;">Add Identity Provider</strong>
+          <button class="btn btn-outline" @click="showWizard = false" style="padding:0.2rem 0.6rem;line-height:1;">×</button>
         </div>
-        <div class="form-group">
-          <label>Client ID</label>
-          <input v-model="idpForm.client_id" class="input" placeholder="Client ID" />
-        </div>
-        <div class="form-group">
-          <label>Client Secret</label>
-          <input v-model="idpForm.client_secret" class="input" type="password" placeholder="Client Secret" />
-        </div>
-        <button class="btn" @click="saveIdp" :disabled="!idpForm.client_id || !idpForm.client_secret || idpSaving">
-          {{ idpSaving ? 'Saving…' : 'Save Provider' }}
-        </button>
+        <idp-wizard endpoint="/api/admin/idps" :on-saved="onWizardSaved" />
       </div>
     </div>
   </div>
@@ -497,47 +499,71 @@ const globalState = reactive({
   loading: true
 });
 
-const SetupWizard = {
-  template: '#setup-template',
-  setup() {
+const PROVIDER_LABELS = { github: 'GitHub', google: 'Google', entra: 'Microsoft Entra ID', custom_oidc: 'Custom OIDC' };
+
+const IdpWizard = {
+  template: '#idp-wizard-template',
+  props: { endpoint: String, onSaved: Function },
+  setup(props) {
     const step = ref(1);
-    const form = reactive({ provider: 'github', client_id: '', client_secret: '' });
+    const form = reactive({ id: '', name: '', provider: 'github', client_id: '', client_secret: '', discovery_url: '' });
     const saving = ref(false);
-    const router = VueRouter.useRouter();
     const origin = globalThis.location.origin;
-    
-    const providerDisplay = computed(() => {
-      if (form.provider === 'github') return 'GitHub';
-      if (form.provider === 'google') return 'Google';
-      if (form.provider === 'entra') return 'Microsoft Entra ID';
-      return '';
-    });
-    
-    const submitSetup = async () => {
+
+    const providerLabel = computed(() => PROVIDER_LABELS[form.provider] || form.provider);
+
+    const pick = (p) => {
+      form.provider = p;
+      form.name = PROVIDER_LABELS[p] || '';
+    };
+
+    const goStep2 = () => {
+      if (form.provider === 'custom_oidc' && !form.id) {
+        form.id = crypto.randomUUID();
+      }
+      step.value = 2;
+    };
+
+    const submit = async () => {
       saving.value = true;
       try {
-        const res = await fetch(API + '/api/system/idp', {
+        const payload = { provider: form.provider, name: form.name, client_id: form.client_id, client_secret: form.client_secret };
+        if (form.provider === 'custom_oidc') {
+          payload.id = form.id;
+          payload.discovery_url = form.discovery_url;
+        }
+        const res = await fetch(API + props.endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form)
+          body: JSON.stringify(payload)
         });
         if (res.ok) {
-          // Re-fetch system status and go to login
-          const status = await fetch(API + '/api/system/status').then(r => r.json());
-          Object.assign(globalState.system, status);
-          router.push('/login');
+          props.onSaved();
         } else {
-          alert('Failed to configure IdP');
+          const err = await res.json().catch(() => ({}));
+          alert(err.detail || 'Failed to configure IdP');
         }
       } catch (e) {
-        console.error('Error configuring IdP', e);
         alert('Error configuring IdP');
       } finally {
         saving.value = false;
       }
     };
-    
-    return { step, form, saving, origin, providerDisplay, submitSetup };
+
+    return { step, form, saving, origin, providerLabel, pick, goStep2, submit };
+  }
+};
+
+const SetupWizard = {
+  template: '#setup-template',
+  setup() {
+    const router = VueRouter.useRouter();
+    const onSaved = async () => {
+      const status = await fetch(API + '/api/system/status').then(r => r.json());
+      Object.assign(globalState.system, status);
+      router.push('/login');
+    };
+    return { onSaved };
   }
 };
 
@@ -645,25 +671,17 @@ const Admin = {
     const users = ref([]);
     const idps = ref([]);
     const settings = reactive({ registration_open: true });
-    const showIdpForm = ref(false);
-    const idpSaving = ref(false);
-    const idpForm = reactive({ provider: 'github', client_id: '', client_secret: '' });
+    const showWizard = ref(false);
     const currentUser = computed(() => globalState.user || {});
 
     const loadUsers = async () => {
       const res = await fetch(API + '/api/admin/users');
-      if (res.ok) {
-        const data = await res.json();
-        users.value = data.users;
-      }
+      if (res.ok) { const data = await res.json(); users.value = data.users; }
     };
 
     const loadSettings = async () => {
       const res = await fetch(API + '/api/admin/settings');
-      if (res.ok) {
-        const data = await res.json();
-        settings.registration_open = data.registration_open;
-      }
+      if (res.ok) { const data = await res.json(); settings.registration_open = data.registration_open; }
     };
 
     const toggleRegistration = async (e) => {
@@ -673,82 +691,51 @@ const Admin = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ registration_open: enabled })
       });
-      if (res.ok) {
-        settings.registration_open = enabled;
-      } else {
-        e.target.checked = !enabled;
-        alert('Failed to update setting');
-      }
+      if (res.ok) { settings.registration_open = enabled; }
+      else { e.target.checked = !enabled; alert('Failed to update setting'); }
     };
 
     const loadIdps = async () => {
       const res = await fetch(API + '/api/admin/idps');
-      if (res.ok) {
-        const data = await res.json();
-        idps.value = data.providers;
-      }
+      if (res.ok) { const data = await res.json(); idps.value = data.providers; }
     };
 
     const toggleAdmin = async (u) => {
       if (!confirm(`Are you sure you want to ${u.is_admin ? 'demote' : 'promote'} ${u.email}?`)) return;
       const res = await fetch(API + `/api/admin/users/${u.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_admin: !u.is_admin })
       });
-      if (res.ok) await loadUsers();
-      else alert('Failed to update user');
+      if (res.ok) await loadUsers(); else alert('Failed to update user');
     };
 
     const deleteUser = async (u) => {
       if (!confirm(`Permanently delete ${u.email} and all their data? This cannot be undone.`)) return;
       const res = await fetch(API + `/api/admin/users/${u.id}`, { method: 'DELETE' });
-      if (res.ok) await loadUsers();
-      else alert('Failed to delete user');
+      if (res.ok) await loadUsers(); else alert('Failed to delete user');
     };
 
     const unlink = async (u, idp) => {
       if (!confirm(`Unlink ${idp.provider} from ${u.email}? They will lose access if this is their only identity.`)) return;
       const res = await fetch(API + `/api/admin/users/${u.id}/identities/${idp.provider}`, { method: 'DELETE' });
-      if (res.ok) await loadUsers();
-      else alert('Failed to unlink identity');
-    };
-
-    const saveIdp = async () => {
-      idpSaving.value = true;
-      try {
-        const res = await fetch(API + '/api/admin/idps', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(idpForm)
-        });
-        if (res.ok) {
-          await loadIdps();
-          showIdpForm.value = false;
-          idpForm.client_id = '';
-          idpForm.client_secret = '';
-        } else {
-          const err = await res.json();
-          alert(err.detail || 'Failed to save provider');
-        }
-      } finally {
-        idpSaving.value = false;
-      }
+      if (res.ok) await loadUsers(); else alert('Failed to unlink identity');
     };
 
     const removeIdp = async (p) => {
-      if (!confirm(`Remove ${p.provider} as an identity provider? Users who only have this identity will lose access.`)) return;
-      const res = await fetch(API + `/api/admin/idps/${p.provider}`, { method: 'DELETE' });
+      if (!confirm(`Remove "${p.name}" as an identity provider? Users who only have this identity will lose access.`)) return;
+      const res = await fetch(API + `/api/admin/idps/${p.id}`, { method: 'DELETE' });
       if (res.ok) await loadIdps();
-      else {
-        const err = await res.json();
-        alert(err.detail || 'Failed to remove provider');
-      }
+      else { const err = await res.json().catch(() => ({})); alert(err.detail || 'Failed to remove provider'); }
+    };
+
+    const onWizardSaved = async () => {
+      showWizard.value = false;
+      await loadIdps();
     };
 
     onMounted(() => { loadUsers(); loadIdps(); loadSettings(); });
 
-    return { users, idps, showIdpForm, idpForm, idpSaving, currentUser, settings, toggleAdmin, deleteUser, unlink, saveIdp, removeIdp };
+    return { users, idps, showWizard, currentUser, settings, toggleAdmin, deleteUser, unlink, removeIdp, onWizardSaved };
   }
 };
 
@@ -836,7 +823,7 @@ const App = {
   }
 };
 
-createApp(App).use(router).mount('#app');
+createApp(App).use(router).component('IdpWizard', IdpWizard).mount('#app');
 </script>
 </body>
 </html>

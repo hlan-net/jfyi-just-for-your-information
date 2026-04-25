@@ -33,17 +33,26 @@ OAUTH_CONFIGS = {
 def register_oauth_clients(db: Database) -> None:
     """Register all identity providers found in the database with authlib."""
     providers = db.get_identity_providers()
-    for provider in providers:
-        name = provider["provider"]
-        if name in OAUTH_CONFIGS:
-            # Avoid registering the same client multiple times
-            if name in oauth._clients:
-                continue
+    for idp in providers:
+        client_name = idp["id"]
+        idp_type = idp["provider"]
 
-            config = OAUTH_CONFIGS[name].copy()
-            config["client_id"] = provider["client_id"]
-            config["client_secret"] = provider["client_secret"]
-            oauth.register(name=name, **config)
+        if client_name in oauth._clients:
+            continue
+
+        if idp_type in OAUTH_CONFIGS:
+            config = OAUTH_CONFIGS[idp_type].copy()
+        elif idp_type == "custom_oidc" and idp.get("discovery_url"):
+            config = {
+                "server_metadata_url": idp["discovery_url"],
+                "client_kwargs": {"scope": "openid email profile"},
+            }
+        else:
+            continue
+
+        config["client_id"] = idp["client_id"]
+        config["client_secret"] = idp["client_secret"]
+        oauth.register(name=client_name, **config)
 
 
 def get_oauth_client(name: str):

@@ -180,27 +180,68 @@ class Database:
 
                     PRAGMA user_version = 2;
                 """)
+            if version < 3:
+                conn.executescript("""
+                    CREATE TABLE identity_providers_new (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        provider TEXT NOT NULL,
+                        client_id TEXT NOT NULL,
+                        client_secret TEXT NOT NULL,
+                        discovery_url TEXT,
+                        created_at TEXT NOT NULL
+                    );
+
+                    INSERT INTO identity_providers_new
+                    SELECT
+                        provider,
+                        CASE provider
+                            WHEN 'github' THEN 'GitHub'
+                            WHEN 'google' THEN 'Google'
+                            WHEN 'entra' THEN 'Microsoft Entra ID'
+                            ELSE provider
+                        END,
+                        provider,
+                        client_id,
+                        client_secret,
+                        NULL,
+                        created_at
+                    FROM identity_providers;
+
+                    DROP TABLE identity_providers;
+                    ALTER TABLE identity_providers_new RENAME TO identity_providers;
+
+                    PRAGMA user_version = 3;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
-    def add_identity_provider(self, provider: str, client_id: str, client_secret: str) -> None:
+    def add_identity_provider(
+        self,
+        idp_id: str,
+        name: str,
+        provider: str,
+        client_id: str,
+        client_secret: str,
+        discovery_url: str | None = None,
+    ) -> None:
         now = datetime.now(UTC).isoformat()
         with self._conn() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO identity_providers "
-                "(provider, client_id, client_secret, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (provider, client_id, client_secret, now),
+                "(id, name, provider, client_id, client_secret, discovery_url, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (idp_id, name, provider, client_id, client_secret, discovery_url, now),
             )
 
     def get_identity_providers(self) -> list[dict[str, Any]]:
         with self._conn() as conn:
-            rows = conn.execute("SELECT * FROM identity_providers ORDER BY provider").fetchall()
+            rows = conn.execute("SELECT * FROM identity_providers ORDER BY created_at").fetchall()
             return [dict(r) for r in rows]
 
-    def delete_identity_provider(self, provider: str) -> bool:
+    def delete_identity_provider(self, idp_id: str) -> bool:
         with self._conn() as conn:
-            cur = conn.execute("DELETE FROM identity_providers WHERE provider=?", (provider,))
+            cur = conn.execute("DELETE FROM identity_providers WHERE id=?", (idp_id,))
             return cur.rowcount > 0
 
     def is_initialized(self) -> dict[str, bool]:
