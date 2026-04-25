@@ -73,8 +73,14 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
     },
     "get_developer_profile": {
         "description": (
-            "Returns the current developer profile rules inferred by JFYI. "
-            "Use these rules to customise your system prompt and avoid recurring mistakes."
+            "Returns the developer's shared constitution — cross-project, cross-agent rules "
+            "that describe how this developer thinks and works. These are not project-specific "
+            "notes; they apply regardless of what codebase or agent is in use. "
+            "Use them to align your behaviour with the developer's established preferences "
+            "before the session begins. "
+            "When you add rules via add_profile_rule, write them at the same level: "
+            "developer patterns and principles, not implementation details specific to the "
+            "current project (those belong in CLAUDE.md / GEMINI.md / etc.)."
         ),
         "token_cost": 40,
         "always_on": True,
@@ -349,9 +355,12 @@ async def dispatch_tool(
                 )
             ]
         block = render_read_only_block(rules)
-        return [
-            TextContent(type="text", text=f"Developer profile ({len(rules)} rules):\n\n{block}")
-        ]
+        preamble = (
+            f"Developer constitution ({len(rules)} rules):\n"
+            "These are cross-project, cross-agent preferences — apply them throughout "
+            "this session regardless of which codebase you are working in.\n\n"
+        )
+        return [TextContent(type="text", text=preamble + block)]
 
     if name == "record_interaction":
         session_id = arguments.get("session_id") or str(uuid.uuid4())
@@ -400,9 +409,15 @@ async def dispatch_tool(
         return [TextContent(type="text", text=f"Agent analytics:\n{_serializer.dumps(payload)}")]
 
     if name == "add_profile_rule":
+        from .config import settings
+        from .dlp import redact
+
+        rule_text = arguments["rule"]
+        if settings.dlp_enabled:
+            rule_text, _ = redact(rule_text)
         rule_id = db.add_rule(
             user_id=user_id,
-            rule=arguments["rule"],
+            rule=rule_text,
             category=arguments.get("category", "general"),
             confidence=arguments.get("confidence", 1.0),
             source="manual",

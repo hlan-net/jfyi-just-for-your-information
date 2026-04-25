@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     compaction_trigger_count: int = 10  # compact when session has > N episodic entries
     compaction_batch_size: int = 5  # how many oldest entries to merge per round
 
+    # DLP / PII redaction
+    dlp_enabled: bool = True  # Set to false in local dev to bypass redaction
+
     # Instruction-Tool Retrieval (requires enable_vector_db=true)
     itr_enabled: bool = False  # semantic tool selection on discover_tools(query=...)
     itr_token_budget: int = 2000  # max combined token cost for retrieved tools

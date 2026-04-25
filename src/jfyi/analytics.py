@@ -104,6 +104,13 @@ class AnalyticsEngine:
         model: str | None = None,
     ) -> FrictionScore:
         """Record an agent interaction and return its friction score."""
+        from .config import settings
+        from .dlp import redact
+
+        if settings.dlp_enabled:
+            prompt, _ = redact(prompt)
+            response, _ = redact(response)
+
         agent_id = self._db.get_or_create_agent(user_id, agent_name, model)
         friction_score, factors = self.compute_friction_score(
             was_corrected, correction_latency_s, num_edits

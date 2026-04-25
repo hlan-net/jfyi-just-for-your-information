@@ -116,6 +116,7 @@
       <router-link to="/connect">🔌 How to Connect</router-link>
       <router-link to="/profile">👤 Developer Profile</router-link>
       <router-link to="/analytics">📊 Agent Analytics</router-link>
+      <router-link to="/developer">📈 My Analytics</router-link>
       <router-link to="/memory">🧠 Memory Explorer</router-link>
       <router-link v-if="user?.is_admin" to="/admin">🛡️ Admin</router-link>
     </nav>
@@ -275,9 +276,17 @@
 <script type="text/x-template" id="profile-template">
   <div>
     <div class="card">
-      <h2>Your Coding DNA</h2>
-      <p class="desc">Rules JFYI has learned about your development style. These are injected into your AI assistant's system prompt.</p>
-      
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:0.5rem;">
+        <h2 style="margin:0;">Your Developer Constitution</h2>
+        <div style="display:flex;gap:0.5rem;">
+          <button v-if="rules.length >= 2" @click="showSynthesis = true" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">Synthesize</button>
+          <button v-if="rules.length > 0" @click="copyRules" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">
+            {{ copied ? 'Copied!' : 'Copy all' }}
+          </button>
+        </div>
+      </div>
+      <p class="desc">Cross-project, cross-agent rules describing how you work. Injected into every AI assistant's context at session start — not project-specific notes, but your developer DNA.</p>
+
       <div v-if="loading" class="loading-screen" style="height: 100px;">Loading rules...</div>
       <div v-else-if="rules.length === 0" class="empty">
         <div class="icon">🧬</div>No profile rules yet.
@@ -298,11 +307,117 @@
               <td><span :class="'pill pill-' + categoryColor(r.category)">{{ r.category }}</span></td>
               <td>{{ r.rule }}</td>
               <td>{{ (r.confidence * 100).toFixed(0) }}%</td>
-              <td><span :class="r.source === 'manual' ? 'pill pill-purple' : 'pill pill-green'">{{ r.source }}</span></td>
+              <td><span :class="r.source === 'synthesized' ? 'pill pill-orange' : r.source === 'manual' ? 'pill pill-purple' : 'pill pill-green'">{{ r.source }}</span></td>
               <td style="text-align: right;"><button class="btn-danger" style="border:none; cursor:pointer;" @click="deleteRule(r.id)">×</button></td>
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+    <rule-synthesis :show="showSynthesis" :rules="rules" @close="showSynthesis = false" @applied="onApplied" />
+  </div>
+</script>
+
+<script type="text/x-template" id="rule-synthesis-template">
+  <div v-if="show" class="modal-overlay" @click.self="close">
+    <div class="modal-box" style="max-width:680px;width:100%;max-height:85vh;overflow-y:auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+        <h2 style="margin:0;font-size:1.1rem;">Rule Synthesis</h2>
+        <button @click="close" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">×</button>
+      </div>
+
+      <!-- Step indicator -->
+      <div style="display:flex;gap:0.4rem;margin-bottom:1.25rem;">
+        <span :class="['pill', step >= 1 ? 'pill-purple' : '']">1. Select</span>
+        <span :class="['pill', step >= 2 ? 'pill-purple' : '']">2. Model</span>
+        <span :class="['pill', step >= 3 ? 'pill-purple' : '']">3. Preview</span>
+      </div>
+
+      <!-- Step 1: Rule selection -->
+      <div v-if="step === 1">
+        <p class="desc" style="margin-bottom:0.75rem;">Select rules to include and rate their importance. High-priority rules will be preserved most faithfully.</p>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;">
+          <button @click="selectAll" class="btn btn-outline" style="font-size:0.8rem;padding:0.2rem 0.6rem;">Select all</button>
+          <button @click="deselectAll" class="btn btn-outline" style="font-size:0.8rem;padding:0.2rem 0.6rem;">Clear</button>
+        </div>
+        <div v-for="r in rules" :key="r.id" style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border);">
+          <input type="checkbox" :id="'sr'+r.id" v-model="selected[r.id]" style="flex-shrink:0;width:1rem;height:1rem;cursor:pointer;" />
+          <label :for="'sr'+r.id" style="flex:1;cursor:pointer;font-size:0.9rem;line-height:1.4;">
+            <span :class="'pill pill-' + catColor(r.category)" style="margin-right:0.35rem;">{{ r.category }}</span>{{ r.rule }}
+          </label>
+          <div style="flex-shrink:0;font-size:1.15rem;letter-spacing:1px;">
+            <span v-for="s in 5" :key="s" @click="setPriority(r.id, s)"
+              :style="{cursor:'pointer', color: (priorities[r.id]||3) >= s ? 'var(--orange)' : 'var(--border)'}">★</span>
+          </div>
+        </div>
+        <div style="margin-top:1rem;display:flex;justify-content:flex-end;">
+          <button @click="step = 2" class="btn" :disabled="selectedCount < 2">
+            Next — {{ selectedCount }} rule{{ selectedCount !== 1 ? 's' : '' }} selected
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 2: Model configuration -->
+      <div v-if="step === 2">
+        <p class="desc" style="margin-bottom:1rem;">Configure the model that will synthesize your rules. The API key is stored on your JFYI instance only.</p>
+        <div class="form-group">
+          <label>Provider</label>
+          <select v-model="cfg.provider">
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI-compatible (OpenAI, Groq, Ollama…)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Model</label>
+          <input type="text" v-model="cfg.model"
+            :placeholder="cfg.provider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'" />
+        </div>
+        <div class="form-group">
+          <label>API Key <span v-if="savedCfg.has_key" style="color:var(--muted);font-weight:400;">(saved — leave blank to keep)</span></label>
+          <input :type="showKey ? 'text' : 'password'" v-model="cfg.api_key"
+            :placeholder="savedCfg.has_key ? '●●●●●●●●●●●● (leave blank to keep)' : 'sk-…'" />
+          <button @click="showKey = !showKey" class="btn btn-outline" style="font-size:0.75rem;padding:0.15rem 0.5rem;margin-top:0.3rem;">{{ showKey ? 'Hide' : 'Show' }}</button>
+        </div>
+        <div v-if="cfg.provider === 'openai'" class="form-group">
+          <label>Base URL <span style="color:var(--muted);font-weight:400;">(optional — defaults to OpenAI)</span></label>
+          <input type="text" v-model="cfg.base_url" placeholder="http://localhost:11434/v1" />
+        </div>
+        <div v-if="error" style="color:var(--red);font-size:0.85rem;margin-bottom:0.75rem;">{{ error }}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:0.25rem;">
+          <button @click="step = 1" class="btn btn-outline">Back</button>
+          <button @click="runSynthesis" class="btn"
+            :disabled="synthesizing || !cfg.provider || !cfg.model || (!cfg.api_key && !savedCfg.has_key)">
+            {{ synthesizing ? 'Synthesizing…' : 'Synthesize' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 3: Preview & apply -->
+      <div v-if="step === 3">
+        <p class="desc" style="margin-bottom:0.75rem;">
+          {{ synthesized.length }} synthesized rules from {{ selectedCount }} originals.
+          Apply to replace the originals, or add alongside them.
+        </p>
+        <table style="margin-bottom:1rem;">
+          <thead><tr><th>Category</th><th>Rule</th><th>Confidence</th></tr></thead>
+          <tbody>
+            <tr v-for="(r, i) in synthesized" :key="i">
+              <td><span :class="'pill pill-' + catColor(r.category)">{{ r.category }}</span></td>
+              <td>{{ r.rule }}</td>
+              <td>{{ (r.confidence * 100).toFixed(0) }}%</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="error" style="color:var(--red);font-size:0.85rem;margin-bottom:0.75rem;">{{ error }}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+          <button @click="step = 2" class="btn btn-outline" :disabled="applying">Back</button>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button @click="applyOnly" class="btn btn-outline" :disabled="applying">Add only (keep originals)</button>
+            <button @click="applyAndArchive" class="btn" :disabled="applying">
+              {{ applying ? 'Applying…' : 'Apply & archive originals' }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -365,6 +480,157 @@
     <div class="card">
       <h2>Agent Analytics</h2>
       <div class="empty"><div class="icon">📊</div>Analytics module coming soon.</div>
+    </div>
+  </div>
+</script>
+
+<script type="text/x-template" id="developer-template">
+  <div>
+    <div v-if="loading" class="loading-screen" style="height:200px;"><div class="spinner"></div></div>
+    <div v-else>
+
+      <!-- Summary stat row -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;">
+        <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+          <div style="font-size:1.8rem;font-weight:700;color:var(--accent);">{{ summary.total_interactions ?? 0 }}</div>
+          <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Total Interactions</div>
+        </div>
+        <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+          <div style="font-size:1.8rem;font-weight:700;" :style="{color: corrColor(summary.correction_rate)}">
+            {{ summary.correction_rate != null ? (summary.correction_rate * 100).toFixed(1) + '%' : '—' }}
+          </div>
+          <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Correction Rate</div>
+        </div>
+        <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+          <div style="font-size:1.8rem;font-weight:700;" :style="{color: frictionColor(summary.avg_friction)}">
+            {{ summary.avg_friction != null ? (summary.avg_friction * 100).toFixed(1) + '%' : '—' }}
+          </div>
+          <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Avg Friction</div>
+        </div>
+        <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+          <div style="font-size:1.8rem;font-weight:700;color:var(--purple);">{{ summary.total_rules ?? 0 }}</div>
+          <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Active Rules</div>
+        </div>
+      </div>
+
+      <!-- Correction rate trend -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <h2 style="margin:0;">Correction Rate Trend</h2>
+          <select v-model.number="trendDays" @change="loadTrend" style="width:auto;background:#21262d;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.3rem 0.6rem;font-size:0.85rem;">
+            <option :value="7">Last 7 days</option>
+            <option :value="30">Last 30 days</option>
+            <option :value="90">Last 90 days</option>
+          </select>
+        </div>
+        <div v-if="!trend.length" class="empty" style="padding:2rem;">No interaction data yet.</div>
+        <svg v-else viewBox="0 0 620 175" width="100%" style="display:block;overflow:visible;">
+          <!-- Gridlines and Y labels -->
+          <g v-for="v in [0, 0.25, 0.5, 0.75, 1.0]" :key="'g'+v">
+            <line :x1="45" :y1="tY(v)" x2="610" :y2="tY(v)" stroke="#30363d" stroke-width="1" />
+            <text :x="40" :y="tY(v)+4" text-anchor="end" fill="#8b949e" font-size="10">{{ (v*100).toFixed(0) }}%</text>
+          </g>
+          <!-- Area fill -->
+          <path v-if="trendArea" :d="trendArea" fill="#58a6ff18" />
+          <!-- Line -->
+          <path v-if="trendPath" :d="trendPath" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linejoin="round" />
+          <!-- Data points -->
+          <circle v-for="p in trendPoints" :key="p.day" :cx="p.x" :cy="p.y" r="3.5" fill="#58a6ff" />
+          <!-- X labels (every nth) -->
+          <text v-for="p in trendXLabels" :key="'xl'+p.day" :x="p.x" y="170" text-anchor="middle" fill="#8b949e" font-size="9">{{ p.label }}</text>
+        </svg>
+      </div>
+
+      <!-- 2-column: Friction by Agent + Latency Distribution -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
+        <div class="card" style="margin-bottom:0;">
+          <h2>Friction by Agent</h2>
+          <div v-if="!frictionByAgent.length" class="empty" style="padding:1rem;">No agent data yet.</div>
+          <div v-else>
+            <div v-for="a in frictionByAgent" :key="a.agent" style="margin-bottom:0.75rem;">
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.25rem;">
+                <span style="color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;">{{ a.agent }}</span>
+                <span style="color:var(--muted);flex-shrink:0;margin-left:0.5rem;">{{ (a.avg_friction*100).toFixed(1) }}% · {{ a.total }} calls</span>
+              </div>
+              <div style="height:10px;background:#21262d;border-radius:4px;overflow:hidden;">
+                <div :style="{width: barPct(a.avg_friction, maxFriction), background: frictionColor(a.avg_friction), height:'100%', borderRadius:'4px', transition:'width 0.3s'}"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:0;">
+          <h2>Correction Latency</h2>
+          <div v-if="!latencyDist.some(l => l.count > 0)" class="empty" style="padding:1rem;">No correction latency data yet.</div>
+          <div v-else>
+            <div v-for="b in latencyDist" :key="b.bucket" style="margin-bottom:0.75rem;">
+              <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.25rem;">
+                <span style="color:var(--text);font-family:monospace;">{{ b.bucket }}</span>
+                <span style="color:var(--muted);">{{ b.count }}</span>
+              </div>
+              <div style="height:10px;background:#21262d;border-radius:4px;overflow:hidden;">
+                <div :style="{width: barPct(b.count, maxLatency), background:'var(--accent)', height:'100%', borderRadius:'4px', transition:'width 0.3s'}"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rule health by category -->
+      <div class="card">
+        <h2>Rule Health by Category</h2>
+        <div v-if="!ruleConfidence.length" class="empty" style="padding:1rem;">No rules yet.</div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Rules</th>
+              <th>Avg Confidence</th>
+              <th style="width:180px;">Low / Med / High</th>
+              <th>Confidence bar</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in ruleConfidence" :key="r.category">
+              <td><span :class="'pill pill-' + catColor(r.category)">{{ r.category }}</span></td>
+              <td>{{ r.rules }}</td>
+              <td :style="{color: confColor(r.avg_confidence)}">{{ (r.avg_confidence * 100).toFixed(0) }}%</td>
+              <td style="font-size:0.8rem;color:var(--muted);">{{ r.low }} / {{ r.medium }} / {{ r.high }}</td>
+              <td>
+                <div style="display:flex;height:10px;border-radius:4px;overflow:hidden;min-width:120px;">
+                  <div v-if="r.low" :style="{flex: r.low, background:'var(--red)'}" :title="r.low + ' low'"></div>
+                  <div v-if="r.medium" :style="{flex: r.medium, background:'var(--orange)'}" :title="r.medium + ' medium'"></div>
+                  <div v-if="r.high" :style="{flex: r.high, background:'var(--green)'}" :title="r.high + ' high'"></div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Rule accumulation -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <h2 style="margin:0;">Rule Accumulation</h2>
+          <select v-model.number="accumWeeks" @change="loadAccum" style="width:auto;background:#21262d;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.3rem 0.6rem;font-size:0.85rem;">
+            <option :value="4">Last 4 weeks</option>
+            <option :value="12">Last 12 weeks</option>
+            <option :value="26">Last 26 weeks</option>
+          </select>
+        </div>
+        <div v-if="!ruleAccum.length" class="empty" style="padding:1rem;">No new rules in this window.</div>
+        <table v-else>
+          <thead><tr><th>Week</th><th>Category</th><th>New Rules</th></tr></thead>
+          <tbody>
+            <tr v-for="r in ruleAccum" :key="r.week+r.category">
+              <td style="font-family:monospace;font-size:0.85rem;color:var(--muted);">{{ r.week }}</td>
+              <td><span :class="'pill pill-' + catColor(r.category)">{{ r.category }}</span></td>
+              <td>{{ r.count }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </div>
 </script>
@@ -489,7 +755,7 @@
 
 <!-- Vue App Logic -->
 <script>
-const { createApp, ref, reactive, onMounted, computed } = Vue;
+const { createApp, ref, reactive, onMounted, computed, watch } = Vue;
 const { createRouter, createWebHashHistory } = VueRouter;
 
 const API = '';
@@ -630,12 +896,126 @@ const Connect = {
   }
 };
 
+const RuleSynthesis = {
+  template: '#rule-synthesis-template',
+  props: ['show', 'rules'],
+  emits: ['close', 'applied'],
+  setup(props, { emit }) {
+    const step = ref(1);
+    const selected = reactive({});
+    const priorities = reactive({});
+    const cfg = reactive({ provider: 'anthropic', model: '', api_key: '', base_url: '' });
+    const savedCfg = reactive({ configured: false, has_key: false, provider: '', model: '', base_url: '' });
+    const showKey = ref(false);
+    const synthesizing = ref(false);
+    const applying = ref(false);
+    const synthesized = ref([]);
+    const error = ref('');
+
+    const selectedCount = computed(() => Object.values(selected).filter(Boolean).length);
+    const selectedIds = computed(() =>
+      Object.entries(selected).filter(([, v]) => v).map(([k]) => Number.parseInt(k))
+    );
+
+    const catColor = (c) => ({ style:'orange', architecture:'purple', testing:'green', docs:'blue' }[c] || 'blue');
+    const selectAll = () => props.rules.forEach(r => { selected[r.id] = true; });
+    const deselectAll = () => props.rules.forEach(r => { selected[r.id] = false; });
+    const setPriority = (id, stars) => { priorities[id] = stars; };
+
+    const loadSavedCfg = async () => {
+      const res = await fetch(API + '/api/profile/synthesis-config');
+      if (res.ok) {
+        const data = await res.json();
+        Object.assign(savedCfg, data);
+        if (data.configured) {
+          cfg.provider = data.provider || 'anthropic';
+          cfg.model = data.model || '';
+          cfg.base_url = data.base_url || '';
+        }
+      }
+    };
+
+    watch(() => props.show, (val) => { if (val) { step.value = 1; error.value = ''; synthesized.value = []; loadSavedCfg(); } });
+
+    const runSynthesis = async () => {
+      synthesizing.value = true;
+      error.value = '';
+      try {
+        const saveBody = { provider: cfg.provider, model: cfg.model, base_url: cfg.base_url || null };
+        if (cfg.api_key) saveBody.api_key = cfg.api_key;
+        const saveRes = await fetch(API + '/api/profile/synthesis-config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(saveBody),
+        });
+        if (!saveRes.ok) { const d = await saveRes.json(); throw new Error(d.detail || 'Failed to save config'); }
+        Object.assign(savedCfg, { configured: true, has_key: true, provider: cfg.provider, model: cfg.model });
+
+        const prioritiesObj = {};
+        props.rules.forEach(r => { prioritiesObj[r.id] = priorities[r.id] || 3; });
+        const synthRes = await fetch(API + '/api/profile/rules/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rule_ids: selectedIds.value, priorities: prioritiesObj }),
+        });
+        if (!synthRes.ok) { const d = await synthRes.json(); throw new Error(d.detail || 'Synthesis failed'); }
+        const data = await synthRes.json();
+        synthesized.value = data.synthesized;
+        step.value = 3;
+      } catch (e) {
+        error.value = e.message || 'Synthesis failed';
+      } finally {
+        synthesizing.value = false;
+      }
+    };
+
+    const _apply = async (archiveIds) => {
+      applying.value = true;
+      error.value = '';
+      try {
+        const res = await fetch(API + '/api/profile/rules/synthesize/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ synthesized: synthesized.value, archive_ids: archiveIds }),
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Apply failed'); }
+        emit('applied');
+        close();
+      } catch (e) {
+        error.value = e.message || 'Apply failed';
+      } finally {
+        applying.value = false;
+      }
+    };
+
+    const applyAndArchive = () => _apply(selectedIds.value);
+    const applyOnly = () => _apply([]);
+
+    const close = () => {
+      step.value = 1;
+      error.value = '';
+      synthesized.value = [];
+      emit('close');
+    };
+
+    return {
+      step, selected, priorities, cfg, savedCfg, showKey,
+      synthesizing, applying, synthesized, error,
+      selectedCount, catColor,
+      selectAll, deselectAll, setPriority, runSynthesis,
+      applyAndArchive, applyOnly, close,
+    };
+  }
+};
+
 const Profile = {
   template: '#profile-template',
   setup() {
     const rules = ref([]);
     const loading = ref(true);
-    
+    const copied = ref(false);
+    const showSynthesis = ref(false);
+
     const loadRules = async () => {
       loading.value = true;
       try {
@@ -643,21 +1023,35 @@ const Profile = {
         if (res.ok) rules.value = await res.json();
       } finally { loading.value = false; }
     };
-    
+
     const deleteRule = async (id) => {
       if (!confirm('Delete this rule?')) return;
       const res = await fetch(API + `/api/profile/rules/${id}`, { method: 'DELETE' });
       if (res.ok) loadRules();
     };
-    
+
     const categoryColor = (c) => {
-      const map = {style:'orange', architecture:'purple', testing:'green', docs:'blue'};
+      const map = { style: 'orange', architecture: 'purple', testing: 'green', docs: 'blue' };
       return map[c] || 'blue';
     };
-    
+
+    const copyRules = () => {
+      const header = 'Category\tRule\tConfidence\tSource';
+      const rows = rules.value.map(r =>
+        `${r.category}\t${r.rule}\t${(r.confidence * 100).toFixed(0)}%\t${r.source}`
+      );
+      const text = [header, ...rows].join('\n');
+      navigator.clipboard.writeText(text).then(() => {
+        copied.value = true;
+        setTimeout(() => copied.value = false, 2000);
+      }).catch(() => alert('Failed to copy to clipboard.'));
+    };
+
+    const onApplied = () => { showSynthesis.value = false; loadRules(); };
+
     onMounted(loadRules);
-    
-    return { rules, loading, categoryColor, deleteRule };
+
+    return { rules, loading, copied, showSynthesis, categoryColor, deleteRule, copyRules, onApplied };
   }
 };
 
@@ -736,6 +1130,112 @@ const Admin = {
 };
 
 const Analytics = { template: '#analytics-template' };
+
+const DeveloperAnalytics = {
+  template: '#developer-template',
+  setup() {
+    const loading = ref(true);
+    const summary = ref({ total_interactions: 0, correction_rate: null, avg_friction: null, total_rules: 0 });
+    const trend = ref([]);
+    const frictionByAgent = ref([]);
+    const latencyDist = ref([]);
+    const ruleConfidence = ref([]);
+    const ruleAccum = ref([]);
+    const trendDays = ref(30);
+    const accumWeeks = ref(12);
+
+    // SVG chart constants: viewBox "0 0 620 175", margins l=45 r=10 t=10 b=35, area 565×130
+    const SX = 45, EX = 610, SY = 10, EY = 140;
+    const tY = (v) => EY - v * (EY - SY);
+    const tX = (i, len) => SX + (len > 1 ? (i / (len - 1)) * (EX - SX) : (EX - SX) / 2);
+
+    const trendPoints = computed(() =>
+      trend.value.map((d, i) => ({ x: tX(i, trend.value.length), y: tY(d.rate), day: d.day, rate: d.rate }))
+    );
+    const trendPath = computed(() => {
+      const pts = trendPoints.value;
+      if (pts.length < 2) return '';
+      return 'M ' + pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+    });
+    const trendArea = computed(() => {
+      const pts = trendPoints.value;
+      if (pts.length < 2) return '';
+      const line = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+      return `M ${pts[0].x.toFixed(1)},${EY} L ${line} L ${pts[pts.length-1].x.toFixed(1)},${EY} Z`;
+    });
+    const trendXLabels = computed(() => {
+      const pts = trendPoints.value;
+      if (!pts.length) return [];
+      const step = Math.max(1, Math.floor(pts.length / 6));
+      return pts.filter((_, i) => i % step === 0 || i === pts.length - 1)
+        .map(p => ({ x: p.x, day: p.day, label: p.day.slice(5) }));
+    });
+
+    const maxFriction = computed(() => Math.max(...frictionByAgent.value.map(a => a.avg_friction), 0.01));
+    const maxLatency = computed(() => Math.max(...latencyDist.value.map(l => l.count), 1));
+    const barPct = (v, max) => (v / max * 100).toFixed(1) + '%';
+
+    const catColor = (c) => ({ style:'orange', architecture:'purple', testing:'green', docs:'blue' }[c] || 'blue');
+    function frictionColor(v) {
+      if (v === null || v === undefined || v === 0) return 'var(--muted)';
+      if (v < 0.3) return 'var(--green)';
+      if (v < 0.6) return 'var(--orange)';
+      return 'var(--red)';
+    }
+    function corrColor(v) {
+      if (v === null || v === undefined || v === 0) return 'var(--muted)';
+      if (v < 0.2) return 'var(--green)';
+      if (v < 0.5) return 'var(--orange)';
+      return 'var(--red)';
+    }
+    function confColor(v) {
+      if (v >= 0.75) return 'var(--green)';
+      if (v >= 0.4) return 'var(--orange)';
+      return 'var(--red)';
+    }
+
+    const loadAll = async () => {
+      loading.value = true;
+      try {
+        const [s, t, f, l, c, a] = await Promise.all([
+          fetch(API + '/api/developer/summary').then(r => r.json()),
+          fetch(API + `/api/developer/trend?days=${trendDays.value}`).then(r => r.json()),
+          fetch(API + '/api/developer/friction-by-agent').then(r => r.json()),
+          fetch(API + '/api/developer/latency-distribution').then(r => r.json()),
+          fetch(API + '/api/developer/rule-confidence').then(r => r.json()),
+          fetch(API + `/api/developer/rule-accumulation?weeks=${accumWeeks.value}`).then(r => r.json()),
+        ]);
+        summary.value = s;
+        trend.value = t;
+        frictionByAgent.value = f;
+        latencyDist.value = l;
+        ruleConfidence.value = c;
+        ruleAccum.value = a;
+      } finally { loading.value = false; }
+    };
+
+    const loadTrend = async () => {
+      const t = await fetch(API + `/api/developer/trend?days=${trendDays.value}`).then(r => r.json());
+      trend.value = t;
+    };
+    const loadAccum = async () => {
+      const a = await fetch(API + `/api/developer/rule-accumulation?weeks=${accumWeeks.value}`).then(r => r.json());
+      ruleAccum.value = a;
+    };
+
+    onMounted(loadAll);
+
+    return {
+      loading, summary, trend, frictionByAgent, latencyDist, ruleConfidence, ruleAccum,
+      trendDays, accumWeeks, tY,
+      trendPoints, trendPath, trendArea, trendXLabels,
+      maxFriction, maxLatency, barPct,
+      catColor, frictionColor, corrColor, confColor,
+      loadTrend, loadAccum,
+    };
+  }
+};
+
 const Memory = { template: '#memory-template' };
 
 const routes = [
@@ -745,6 +1245,7 @@ const routes = [
   { path: '/connect', component: Connect },
   { path: '/profile', component: Profile },
   { path: '/analytics', component: Analytics },
+  { path: '/developer', component: DeveloperAnalytics },
   { path: '/memory', component: Memory },
   { path: '/admin', component: Admin, meta: { requiresAdmin: true } }
 ];
@@ -819,7 +1320,7 @@ const App = {
   }
 };
 
-createApp(App).use(router).component('IdpWizard', IdpWizard).mount('#app');
+createApp(App).use(router).component('IdpWizard', IdpWizard).component('RuleSynthesis', RuleSynthesis).mount('#app');
 </script>
 </body>
 </html>

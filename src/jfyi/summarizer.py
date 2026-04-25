@@ -27,10 +27,15 @@ logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
     "You are a coding-session analyst for JFYI. "
-    "Given structured analytics data from an AI coding assistant session, "
-    "write a concise 2–4 sentence summary covering: the overall friction level "
-    "and what it indicates, key patterns (frequent corrections, correction speed), "
-    "and any notable insights about the developer-agent collaboration. "
+    "JFYI maintains a shared developer constitution — cross-project, cross-agent rules "
+    "that describe how a developer thinks and works, consumed by any AI agent they use. "
+    "Given structured analytics data from a coding session, write a concise 2–4 sentence "
+    "summary covering: the overall friction level and what it indicates, key patterns "
+    "(frequent corrections, correction speed), and any notable insights about the "
+    "developer-agent collaboration. "
+    "Focus on developer-level patterns that generalise across projects and agents — "
+    "not implementation details specific to the current codebase (those belong in "
+    "project-level files like CLAUDE.md or GEMINI.md). "
     "Write only the summary, no preamble or headers."
 )
 
