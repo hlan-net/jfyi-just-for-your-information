@@ -18,16 +18,13 @@ RUN mkdir -p src/jfyi && touch src/jfyi/__init__.py && \
     pip install --no-cache-dir . && \
     rm -rf src/ build/ *.egg-info
 
-# 2. Pre-download the embedding model so first startup is offline-capable
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-
 # 3. Copy the actual source code
 COPY src/ ./src/
 
 # 4. Install the app itself (dependencies are already installed). Force reinstall to overwrite the dummy package.
 RUN pip install --no-cache-dir --no-deps --force-reinstall .
 
-RUN mkdir -p /data && chown -R jfyi:jfyi /data /app /home/jfyi
+RUN mkdir -p /data/models && chown -R jfyi:jfyi /data /app /home/jfyi
 
 USER jfyi
 
@@ -40,6 +37,7 @@ ENV JFYI_DATA_DIR=/data \
     JFYI_DB_PATH=/data/jfyi.db \
     JFYI_MCP_HOST=0.0.0.0 \
     JFYI_MCP_PORT=8080 \
+    SENTENCE_TRANSFORMERS_HOME=/data/models \
     HOME=/home/jfyi
 
 CMD ["jfyi", "serve", "--host", "0.0.0.0", "--port", "8080"]

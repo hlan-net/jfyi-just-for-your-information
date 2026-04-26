@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("/data")
     db_path: Path = Path("/data/jfyi.db")
     vector_db_path: Path = Path("/data/chromadb")
+    sentence_transformers_home: Path = Path("/data/models")
 
     # Server
     mcp_host: str = "0.0.0.0"

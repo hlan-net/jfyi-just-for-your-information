@@ -22,6 +22,14 @@ jobs:
           python-version: "3.14"
           cache: pip
 
+      - name: Cache sentence-transformers models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/torch/sentence_transformers
+          key: sentence-transformers-v1-${{ runner.os }}
+          restore-keys: |
+            sentence-transformers-v1-
+
       - name: Install dependencies
         run: |
           pip install -e ".[dev]"
