@@ -83,7 +83,7 @@ The Phase 3 ITR implementation shipped dense retrieval (all-MiniLM-L6-v2 embeddi
 |------|---------|--------|------|
 | [Inline DLP / PII Redaction](docs/dlp-redaction.md) | `v2.6.0` | Done | [docs/dlp-redaction.md](docs/dlp-redaction.md) |
 | [Developer Behavior Analytics](docs/developer-analytics.md) | `v2.6.0` | Done | [docs/developer-analytics.md](docs/developer-analytics.md) |
-| [Rule Synthesis](docs/rule-synthesis.md) | `v2.6.0` | Done | — |
+| [Rule Synthesis](docs/rule-synthesis.md) | `v2.6.0` | Done | [docs/rule-synthesis.md](docs/rule-synthesis.md) |
 | Agent Provenance Tracking | `v2.6.0` | Done | — |
 | [Sandboxed Execution](docs/sandboxed-execution.md) | Deferred | Deferred | [docs/sandboxed-execution.md](docs/sandboxed-execution.md) |
 
@@ -107,9 +107,9 @@ All four active items shipped. Rule Synthesis was not in the original spec but e
 
 Improvements to the Docker image and deployment ergonomics discovered during operations.
 
-| Item | Target | Status |
-|------|--------|--------|
-| Externalise embedding model from image | `v2.7.1` | Planned |
+| Item | Target | Status | Spec |
+|------|--------|--------|------|
+| Externalise embedding model from image | `v2.7.1` | Done | [docs/image-optimization.md](docs/image-optimization.md) |
 
 **Externalise embedding model from image** removes the `SentenceTransformer('all-MiniLM-L6-v2')` pre-download step from the Dockerfile, reducing the image from ~3 GB to ~80 MB. The model is instead downloaded on first startup to a path on the existing `/data` PVC (`SENTENCE_TRANSFORMERS_HOME=/data/models`), where it persists across pod restarts and upgrades. This eliminates the multi-hour first-pull penalty when the scheduler places a pod on a node that has never run JFYI, and makes base-image upgrades (e.g. Python 3.12 → 3.14) fast again since no large layer content changes.
 
@@ -129,3 +129,30 @@ Major version bump: ACP and A2A introduce new communication protocols that chang
 **A2A (Agent2Agent)** enables profile negotiation across AI frameworks (LangChain, CrewAI), allowing agents built on different stacks to share and apply JFYI-managed developer context without manual configuration.
 
 Phase 5 has no concrete demand signal and is blocked on protocol spec stability. It stays on the shelf until there is a specific integration target.
+
+---
+
+## Phase 6 — Vibe Coder Optimization `v3.1.0`
+
+High-level alignment features designed to maximize the "flow" between developer and AI.
+
+| Item | Target | Status | Spec |
+|------|--------|--------|------|
+| [Semantic Rule Inference](docs/semantic-rule-inference.md) | `v3.1.0` | Proposed | [docs/semantic-rule-inference.md](docs/semantic-rule-inference.md) |
+| [Tiered Profiling](docs/tiered-profiling.md) | `v3.1.0` | Proposed | [docs/tiered-profiling.md](docs/tiered-profiling.md) |
+| [Vibe Telemetry](docs/vibe-telemetry.md) | `v3.1.0` | Proposed | [docs/vibe-telemetry.md](docs/vibe-telemetry.md) |
+| [Friction Clustering](docs/friction-clustering.md) | `v3.1.0` | Proposed | [docs/friction-clustering.md](docs/friction-clustering.md) |
+| [Agent Warming](docs/agent-warming.md) | `v3.1.0` | Proposed | [docs/agent-warming.md](docs/agent-warming.md) |
+| [Positive Reinforcement](docs/positive-reinforcement.md) | `v3.1.0` | Proposed | [docs/positive-reinforcement.md](docs/positive-reinforcement.md) |
+
+**Semantic Rule Inference** upgrades the current frequency-based heuristics with LLM-powered analysis. It learns from corrections by identifying the underlying principle violated, turning one-off edits into durable "Coding DNA" rules.
+
+**Tiered Profiling** separates global preferences from project-specific "flavors." This prevents context pollution and ensures the AI's behavior matches the specific technical environment (e.g., enterprise vs. prototype).
+
+**Vibe Telemetry** introduces a real-time MCP resource that allows agents to monitor their own alignment score mid-session. This enables proactive self-correction and reduces the need for developer intervention.
+
+**Friction Clustering** uses vector embeddings to group similar friction events into semantic clusters. This surfaces specific technical "Vibe Gaps" (e.g., async patterns, boilerplate handling) that are invisible in broad category charts.
+
+**Agent Warming** provides a "Fast Start" mechanism for new AI models. It uses few-shot examples from the developer's best past interactions to instantly align a new agent with the established project vibe.
+
+**Positive Reinforcement** balances JFYI's "negative-first" feedback loop by tracking "Vibe Matches" — high-impact interactions that were accepted with zero edits. It doubles down on the patterns that delight the developer.
