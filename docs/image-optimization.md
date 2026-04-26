@@ -17,8 +17,8 @@ Move the embedding model from a "build-time" dependency to a **"first-run" depen
 ## Implementation
 
 1.  **Dockerfile Update:** Remove the Python snippet that pre-downloads the model.
-2.  **Environment Configuration:** Set `SENTENCE_TRANSFORMERS_HOME=/data/models` in the Dockerfile/environment.
-3.  **Initialization Logic:** In `src/jfyi/vector.py`, ensure the `VectorStore` checks for the model's existence on disk before attempting to load it. The `sentence-transformers` library handles this automatically if `SENTENCE_TRANSFORMERS_HOME` is set.
+2.  **Environment Configuration:** Set `JFYI_SENTENCE_TRANSFORMERS_HOME=/data/models` in the Dockerfile/environment.
+3.  **Initialization Logic:** In `src/jfyi/vector.py`, ensure the `VectorStore` checks for the model's existence on disk before attempting to load it. The `sentence-transformers` library handles this automatically if `JFYI_SENTENCE_TRANSFORMERS_HOME` is set (or explicitly passed via `cache_folder`).
 4.  **Persistent Storage:** Ensure the Helm chart and `docker-compose.yml` map a persistent volume to `/data` so the model persists across container restarts and upgrades.
 
 ## CI/CD Workflow Implications
@@ -28,7 +28,7 @@ The build becomes significantly faster. The workflow will only involve installin
 
 ### 2. Test Phase
 For CI tests that require the vector store (e.g., `test_vector.py` or `test_retrieval.py`):
-- **Caching:** Use `actions/cache` in GitHub Actions to cache the `~/.cache/torch` or `/data/models` directory.
+- **Caching:** Use `actions/cache` in GitHub Actions to cache the `~/.cache/torch` or the configured `JFYI_SENTENCE_TRANSFORMERS_HOME` directory.
 - **Speed:** Once cached, subsequent CI runs will skip the download, making the "Test" step as fast as it is now, but without the "Build" step's bloat.
 
 ### 3. Deployment Phase

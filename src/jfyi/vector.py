@@ -32,7 +32,24 @@ class VectorStore:
                 "chromadb and sentence-transformers are required. "
                 "pip install 'jfyi-mcp-server[vector]'"
             )
-        self._model = SentenceTransformer(model_name)
+
+        from .config import settings
+
+        # Ensure the home directory exists
+        settings.sentence_transformers_home.mkdir(parents=True, exist_ok=True)
+
+        # Log a warning if the model directory seems empty (will trigger download)
+        model_path = settings.sentence_transformers_home / model_name.replace("/", "_")
+        if not model_path.exists():
+            logger.info(
+                "Model %s not found in %s; downloading on first use...",
+                model_name,
+                settings.sentence_transformers_home,
+            )
+
+        self._model = SentenceTransformer(
+            model_name, cache_folder=str(settings.sentence_transformers_home)
+        )
         self._client = chromadb.PersistentClient(path=str(path))
         self._cols: dict[str, Any] = {}
 

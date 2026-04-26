@@ -37,7 +37,7 @@ ENV JFYI_DATA_DIR=/data \
     JFYI_DB_PATH=/data/jfyi.db \
     JFYI_MCP_HOST=0.0.0.0 \
     JFYI_MCP_PORT=8080 \
-    SENTENCE_TRANSFORMERS_HOME=/data/models \
+    JFYI_SENTENCE_TRANSFORMERS_HOME=/data/models \
     HOME=/home/jfyi
 
 CMD ["jfyi", "serve", "--host", "0.0.0.0", "--port", "8080"]
