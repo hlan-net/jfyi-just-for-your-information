@@ -16,12 +16,12 @@ from jfyi.vector import VectorStore, create_vector_store
 
 @pytest.fixture
 def vs(tmp_path):
-    return VectorStore(tmp_path / "chromadb")
+    return VectorStore(tmp_path / "chromadb", cache_folder=tmp_path / "models")
 
 
 @pytest.fixture
 def db_vs(tmp_path):
-    vs = VectorStore(tmp_path / "chromadb")
+    vs = VectorStore(tmp_path / "chromadb", cache_folder=tmp_path / "models")
     db = Database(tmp_path / "test.db", vector_store=vs)
     db.create_user("user@example.com")
     return db, vs
@@ -113,7 +113,7 @@ def test_two_collections_are_independent(vs):
 
 
 def test_create_vector_store_returns_instance(tmp_path):
-    store = create_vector_store(tmp_path)
+    store = create_vector_store(tmp_path, cache_folder=tmp_path / "models")
     assert store is not None
     assert isinstance(store, VectorStore)
 

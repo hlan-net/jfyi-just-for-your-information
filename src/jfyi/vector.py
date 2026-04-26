@@ -26,7 +26,12 @@ class VectorStore:
     (session summaries). Both share one model instance to avoid redundant loading.
     """
 
-    def __init__(self, path: Path, model_name: str = "all-MiniLM-L6-v2") -> None:
+    def __init__(
+        self,
+        path: Path,
+        model_name: str = "all-MiniLM-L6-v2",
+        cache_folder: Path | None = None,
+    ) -> None:
         if not _AVAILABLE:
             raise RuntimeError(
                 "chromadb and sentence-transformers are required. "
@@ -35,21 +40,22 @@ class VectorStore:
 
         from .config import settings
 
+        # Use explicitly provided cache_folder or fall back to settings
+        effective_cache = cache_folder or settings.sentence_transformers_home
+
         # Ensure the home directory exists
-        settings.sentence_transformers_home.mkdir(parents=True, exist_ok=True)
+        effective_cache.mkdir(parents=True, exist_ok=True)
 
         # Log a warning if the model directory seems empty (will trigger download)
-        model_path = settings.sentence_transformers_home / model_name.replace("/", "_")
+        model_path = effective_cache / model_name.replace("/", "_")
         if not model_path.exists():
             logger.info(
                 "Model %s not found in %s; downloading on first use...",
                 model_name,
-                settings.sentence_transformers_home,
+                effective_cache,
             )
 
-        self._model = SentenceTransformer(
-            model_name, cache_folder=str(settings.sentence_transformers_home)
-        )
+        self._model = SentenceTransformer(model_name, cache_folder=str(effective_cache))
         self._client = chromadb.PersistentClient(path=str(path))
         self._cols: dict[str, Any] = {}
 
@@ -112,13 +118,19 @@ class VectorStore:
             logger.exception("Failed to delete from vector collection %r", collection)
 
 
-def create_vector_store(data_dir: Path, model_name: str = "all-MiniLM-L6-v2") -> VectorStore | None:
+def create_vector_store(
+    data_dir: Path,
+    model_name: str = "all-MiniLM-L6-v2",
+    cache_folder: Path | None = None,
+) -> VectorStore | None:
     """Return a VectorStore rooted at data_dir/chromadb, or None if unavailable."""
     if not _AVAILABLE:
         logger.info("chromadb/sentence-transformers not installed; vector search disabled.")
         return None
     try:
-        return VectorStore(data_dir / "chromadb", model_name=model_name)
+        return VectorStore(
+            data_dir / "chromadb", model_name=model_name, cache_folder=cache_folder
+        )
     except Exception:
         logger.exception("VectorStore init failed; continuing without semantic search.")
         return None
