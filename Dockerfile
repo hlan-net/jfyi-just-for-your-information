@@ -11,7 +11,9 @@ RUN addgroup --system --gid 1000 jfyi && \
 
 WORKDIR /app
 
-# 1. Cache dependencies by installing them before copying the full source code
+# 1. Cache dependencies by installing them before copying the full source code.
+# pyproject.toml is the unmodified repo file here, so this layer stays cached
+# across releases. The version is injected later, after this layer.
 COPY pyproject.toml README.md ./
 RUN mkdir -p src/jfyi && touch src/jfyi/__init__.py && \
     pip install --upgrade pip && \
@@ -21,8 +23,10 @@ RUN mkdir -p src/jfyi && touch src/jfyi/__init__.py && \
 # 3. Copy the actual source code
 COPY src/ ./src/
 
-# 4. Install the app itself (dependencies are already installed). Force reinstall to overwrite the dummy package.
-RUN pip install --no-cache-dir --no-deps --force-reinstall .
+# 4. Inject the release version, then reinstall the app (deps stay cached).
+ARG VERSION=0.0.0-dev
+RUN sed -i "s/0.0.0-dev/${VERSION}/g" pyproject.toml && \
+    pip install --no-cache-dir --no-deps --force-reinstall .
 
 RUN mkdir -p /data/models && chown -R jfyi:jfyi /data /app /home/jfyi
 
