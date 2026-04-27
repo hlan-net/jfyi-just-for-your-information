@@ -83,4 +83,4 @@ Releases are automated via GitHub Actions and triggered by pushing a version tag
 The CI will automatically:
 - Detect the tag.
 - Inject the tag version into the metadata.
-- Build and publish Docker images and the Helm chart to GHCR.
+- Build and publish multi-arch Docker images (using native ARM runners for 10x faster builds) and the Helm chart to GHCR.
