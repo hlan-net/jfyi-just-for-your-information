@@ -76,13 +76,11 @@ JFYI exposes several high-value tools to AI agents:
 
 Releases are automated via GitHub Actions and triggered by pushing a version tag.
 
-1.  **Update Version:** Increment the version in the following files:
-    - `pyproject.toml` (`version` field)
-    - `src/jfyi/__init__.py` (`__version__` fallback)
-    - `helm/jfyi-mcp-server/Chart.yaml` (`version` and `appVersion`)
-    - `.github/workflows/release.yml` and `helm-package.yml` (update the `sed` replacement string if it has changed from the previous version)
-2.  **Commit changes:** `git add . && git commit -m "release: vX.Y.Z"`
-3.  **Tag the release:** `git tag vX.Y.Z`
-4.  **Push:** `git push origin main --tags`
+1.  **Ensure Placeholder:** The string `0.0.0-dev` must be present in `pyproject.toml`, `src/jfyi/__init__.py`, and `helm/jfyi-mcp-server/Chart.yaml`. This placeholder is dynamically replaced by the CI during the release build.
+2.  **Tag the release:** `git tag vX.Y.Z` (e.g., `git tag v2.7.2`)
+3.  **Push:** `git push origin main --tags`
 
-The CI will automatically build the Docker images and publish the Helm chart to GHCR.
+The CI will automatically:
+- Detect the tag.
+- Inject the tag version into the metadata.
+- Build and publish Docker images and the Helm chart to GHCR.

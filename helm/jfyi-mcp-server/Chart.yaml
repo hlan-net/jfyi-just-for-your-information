@@ -2,8 +2,8 @@ apiVersion: v2
 name: jfyi-mcp-server
 description: JFYI — Just For Your Information MCP Server & Analytics Hub
 type: application
-version: 2.7.2
-appVersion: "2.7.2"
+version: 0.0.0-dev
+appVersion: "0.0.0-dev"
 keywords:
   - mcp
   - ai
