@@ -134,11 +134,10 @@ chromadb:
     repository: chromadb/chroma
     tag: "0.5.23"
     pullPolicy: IfNotPresent
-  podSecurityContext:
-    runAsNonRoot: true
-    runAsUser: 1000
-    runAsGroup: 1000
-    fsGroup: 1000
+  # The upstream chromadb/chroma image runs its log writer against
+  # /chroma/chroma.log inside the image filesystem (not the PVC), so it must
+  # run as root. Override per-deployment if you fork to a non-root variant.
+  podSecurityContext: {}
   persistence:
     enabled: true
     storageClass: ""

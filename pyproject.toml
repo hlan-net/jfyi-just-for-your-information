@@ -29,6 +29,10 @@ dependencies = [
 harness = [
     "anthropic>=0.40.0",
 ]
+# Production runtime: thin HTTP client. Conflicts with the full chromadb
+# package (shared `chromadb` import path), so the two extras are mutually
+# exclusive. The Dockerfile installs `.[vector]`. Tests install `.[dev]`
+# which pulls in full chromadb (provides EphemeralClient/PersistentClient).
 vector = [
     "chromadb-client>=0.5.0",
 ]
