@@ -35,9 +35,11 @@ harness = [
 # which pulls in full chromadb (provides EphemeralClient/PersistentClient).
 vector = [
     "chromadb-client>=1.5,<2",
-    # ChromaDB 1.x clients compute embeddings client-side via onnxruntime
-    # (the default ONNXMiniLM_L6_V2 EF). ~80 MB, vs ~2 GB for torch.
+    # ChromaDB 1.x clients compute embeddings client-side via the default
+    # ONNXMiniLM_L6_V2 EF. Needs both onnxruntime and HF tokenizers.
+    # ~80 MB combined, vs ~2 GB for torch.
     "onnxruntime>=1.16",
+    "tokenizers>=0.20",
 ]
 dev = [
     "pytest>=8.0.0",
