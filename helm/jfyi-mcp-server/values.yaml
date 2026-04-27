@@ -132,7 +132,7 @@ chromadb:
   enabled: false
   image:
     repository: chromadb/chroma
-    tag: "0.5.23"
+    tag: "1.5.8"
     pullPolicy: IfNotPresent
   # The upstream chromadb/chroma image runs its log writer against
   # /chroma/chroma.log inside the image filesystem (not the PVC), so it must
