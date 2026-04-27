@@ -103,15 +103,18 @@ All four active items shipped. Rule Synthesis was not in the original spec but e
 
 ---
 
-## Operational — Image & Deployment `v2.7.1`
+## Operational — Image & Deployment
 
 Improvements to the Docker image and deployment ergonomics discovered during operations.
 
 | Item | Target | Status | Spec |
 |------|--------|--------|------|
-| Externalise embedding model from image | `v2.7.1` | Done | [docs/image-optimization.md](docs/image-optimization.md) |
+| Externalise embedding model from image | `v2.7.1` | Superseded | [docs/image-optimization.md](docs/image-optimization.md) |
+| Extract ChromaDB to its own pod | `v2.8.0` | Planned | [docs/chromadb-extraction.md](docs/chromadb-extraction.md) |
 
-**Externalise embedding model from image** removes the `SentenceTransformer('all-MiniLM-L6-v2')` pre-download step from the Dockerfile, reducing the image from ~3 GB to ~80 MB. The model is instead downloaded on first startup to a path on the existing `/data` PVC (`SENTENCE_TRANSFORMERS_HOME=/data/models`), where it persists across pod restarts and upgrades. This eliminates the multi-hour first-pull penalty when the scheduler places a pod on a node that has never run JFYI, and makes base-image upgrades (e.g. Python 3.12 → 3.14) fast again since no large layer content changes.
+**Externalise embedding model from image** *(v2.7.1)* removed the model file from the Dockerfile. Insufficient on its own: `chromadb` and `sentence-transformers` remained in core deps, so the image is still ~3.1 GB on `v2.7.9` (verified during the v2.7.9 deploy: 17-minute first-pull on Pi nodes). Superseded by the v2.8.0 extraction work.
+
+**Extract ChromaDB to its own pod** *(v2.8.0)* moves the vector store to the upstream `chromadb/chroma` image as a sibling deployment, drops `chromadb` and `sentence-transformers` from JFYI's core deps, and uses ChromaDB's built-in ONNX embedding function (no torch). Lifecycle separation: the lean JFYI image (~200 MB) updates per release; the chromadb image (~500 MB) updates per chroma release. Pi first-pull drops from ~17 min to under 1 min. The dashboard stays in the JFYI image — a separate split is reserved for a future security-boundary trigger.
 
 ---
 
