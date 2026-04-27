@@ -24,7 +24,7 @@ def _get_db_and_analytics(data_dir: Path):
 
     vs = None
     if settings.enable_vector_db:
-        vs = create_vector_store(data_dir, settings.embedding_model)
+        vs = create_vector_store(settings.chromadb_host, settings.chromadb_port)
     db = Database(data_dir / "jfyi.db", vector_store=vs)
     analytics = AnalyticsEngine(db)
     retriever = None

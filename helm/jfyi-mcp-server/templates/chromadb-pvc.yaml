@@ -1,0 +1,22 @@
+{{- if and .Values.chromadb.enabled .Values.chromadb.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "jfyi-mcp-server.fullname" . }}-chromadb-data
+  labels:
+    {{- include "jfyi-mcp-server.labels" . | nindent 4 }}
+    app.kubernetes.io/component: chromadb
+  {{- with .Values.chromadb.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.chromadb.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.chromadb.persistence.size }}
+  {{- with .Values.chromadb.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+{{- end }}

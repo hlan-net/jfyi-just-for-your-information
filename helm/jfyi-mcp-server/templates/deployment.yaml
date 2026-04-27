@@ -46,6 +46,14 @@ spec:
             - name: {{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            {{- if .Values.chromadb.enabled }}
+            - name: JFYI_ENABLE_VECTOR_DB
+              value: "true"
+            - name: JFYI_CHROMADB_HOST
+              value: {{ include "jfyi-mcp-server.fullname" . }}-chromadb
+            - name: JFYI_CHROMADB_PORT
+              value: "8000"
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ .Values.jwtSecret.existingSecret | default (printf "%s-jwt" (include "jfyi-mcp-server.fullname" .)) }}

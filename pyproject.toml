@@ -23,13 +23,14 @@ dependencies = [
     "itsdangerous>=2.1.0",
     "pyjwt>=2.8.0",
     "rich>=13.0.0",
-    "chromadb>=0.5.0",
-    "sentence-transformers>=3.0.0",
 ]
 
 [project.optional-dependencies]
 harness = [
     "anthropic>=0.40.0",
+]
+vector = [
+    "chromadb-client>=0.5.0",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -37,6 +38,7 @@ dev = [
     "pytest-cov>=5.0.0",
     "httpx>=0.27.0",
     "ruff>=0.6.0",
+    "chromadb>=0.5.0",
 ]
 
 [project.scripts]

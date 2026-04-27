@@ -1,0 +1,19 @@
+{{- if .Values.chromadb.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "jfyi-mcp-server.fullname" . }}-chromadb
+  labels:
+    {{- include "jfyi-mcp-server.labels" . | nindent 4 }}
+    app.kubernetes.io/component: chromadb
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "jfyi-mcp-server.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: chromadb
+{{- end }}

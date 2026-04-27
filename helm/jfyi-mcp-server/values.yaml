@@ -123,7 +123,35 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# Install the [vector] extra to enable ChromaDB + sentence-transformers.
-# Requires a larger memory limit (~2Gi).
-vector:
+# ChromaDB sibling pod for semantic search. Disabled by default — when enabled,
+# the chart deploys an upstream chromadb/chroma container with its own PVC and
+# wires JFYI_ENABLE_VECTOR_DB=true plus JFYI_CHROMADB_HOST/PORT into the main
+# jfyi container. Embeddings are computed server-side using ChromaDB's default
+# ONNX-based all-MiniLM-L6-v2 EF (no torch in the JFYI image).
+chromadb:
   enabled: false
+  image:
+    repository: chromadb/chroma
+    tag: "0.5.23"
+    pullPolicy: IfNotPresent
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  nodeSelector: {}
+  tolerations: []
+  extraEnv: {}

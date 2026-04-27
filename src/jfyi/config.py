@@ -19,8 +19,6 @@ class Settings(BaseSettings):
     # Storage
     data_dir: Path = Path("/data")
     db_path: Path = Path("/data/jfyi.db")
-    vector_db_path: Path = Path("/data/chromadb")
-    sentence_transformers_home: Path = Path("/data/models")
 
     # Server
     mcp_host: str = "0.0.0.0"
@@ -29,13 +27,16 @@ class Settings(BaseSettings):
     dashboard_port: int = 3000
     transport: str = "sse"  # "stdio" or "sse"
 
+    # ChromaDB (sibling pod; embeddings computed server-side via default ONNX EF)
+    chromadb_host: str = "localhost"
+    chromadb_port: int = 8000
+
     # Analytics
     correction_window_minutes: int = 5
     friction_threshold: float = 0.7
 
     # Feature flags
-    enable_vector_db: bool = False  # Enable semantic search via ChromaDB + sentence-transformers
-    embedding_model: str = "all-MiniLM-L6-v2"  # Sentence-transformer model for embeddings
+    enable_vector_db: bool = False  # Enable semantic search via ChromaDB sibling pod
     single_user_mode: bool = False  # Optional; bypass OAuth and use a predefined local admin
     base_url: str | None = (
         None  # Optional; forces the base URL for OAuth redirects (e.g. https://jfyi.k3s.hlan.net)

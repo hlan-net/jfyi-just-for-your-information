@@ -4,24 +4,23 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("chromadb")
-pytest.importorskip("sentence_transformers")
+chromadb = pytest.importorskip("chromadb")
 
-from jfyi.database import Database
-from jfyi.memory import MemoryFacade
-from jfyi.vector import VectorStore, create_vector_store
+from jfyi.database import Database  # noqa: E402
+from jfyi.memory import MemoryFacade  # noqa: E402
+from jfyi.vector import VectorStore, create_vector_store  # noqa: E402
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
 def vs(tmp_path):
-    return VectorStore(tmp_path / "chromadb", cache_folder=tmp_path / "models")
+    return VectorStore(chromadb.PersistentClient(path=str(tmp_path / "chroma")))
 
 
 @pytest.fixture
 def db_vs(tmp_path):
-    vs = VectorStore(tmp_path / "chromadb", cache_folder=tmp_path / "models")
+    vs = VectorStore(chromadb.PersistentClient(path=str(tmp_path / "chroma")))
     db = Database(tmp_path / "test.db", vector_store=vs)
     db.create_user("user@example.com")
     return db, vs
@@ -30,7 +29,7 @@ def db_vs(tmp_path):
 # ── VectorStore unit tests ─────────────────────────────────────────────────────
 
 
-def test_add_and_query_returns_id(vs, tmp_path):
+def test_add_and_query_returns_id(vs):
     vs.add("rules", "r1", "always write tests before shipping")
     ids = vs.query("rules", "testing best practices")
     assert "r1" in ids
@@ -112,10 +111,9 @@ def test_two_collections_are_independent(vs):
 # ── create_vector_store factory ───────────────────────────────────────────────
 
 
-def test_create_vector_store_returns_instance(tmp_path):
-    store = create_vector_store(tmp_path, cache_folder=tmp_path / "models")
-    assert store is not None
-    assert isinstance(store, VectorStore)
+def test_create_vector_store_returns_none_when_server_unreachable():
+    # Connecting to a port that nothing is listening on returns None, not raise.
+    assert create_vector_store("127.0.0.1", 1) is None
 
 
 # ── Database integration ───────────────────────────────────────────────────────
