@@ -71,3 +71,18 @@ JFYI exposes several high-value tools to AI agents:
 - **Configuration:** Managed via `pydantic-settings` in `src/jfyi/config.py`. Environment variables prefixed with `JFYI_` override defaults.
 - **Linting:** [Ruff](https://github.com/astral-sh/ruff) is used for linting and import sorting.
 - **Async:** The codebase heavily utilizes `asyncio` for non-blocking I/O (database, web, and MCP transport).
+
+## 📦 Release Process
+
+Releases are automated via GitHub Actions and triggered by pushing a version tag.
+
+1.  **Update Version:** Increment the version in the following files:
+    - `pyproject.toml` (`version` field)
+    - `src/jfyi/__init__.py` (`__version__` fallback)
+    - `helm/jfyi-mcp-server/Chart.yaml` (`version` and `appVersion`)
+    - `.github/workflows/release.yml` and `helm-package.yml` (update the `sed` replacement string if it has changed from the previous version)
+2.  **Commit changes:** `git add . && git commit -m "release: vX.Y.Z"`
+3.  **Tag the release:** `git tag vX.Y.Z`
+4.  **Push:** `git push origin main --tags`
+
+The CI will automatically build the Docker images and publish the Helm chart to GHCR.
