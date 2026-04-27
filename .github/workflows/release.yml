@@ -50,8 +50,8 @@ jobs:
       - name: Inject Version
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          sed -i "s/0.0.0-dev/$VERSION/g" pyproject.toml
-          sed -i "s/0.0.0-dev/$VERSION/g" helm/jfyi-mcp-server/Chart.yaml
+          sed -i "s/2.7.2/$VERSION/g" pyproject.toml
+          sed -i "s/2.7.2/$VERSION/g" helm/jfyi-mcp-server/Chart.yaml
 
       - name: Extract metadata
         id: meta
