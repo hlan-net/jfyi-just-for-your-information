@@ -209,3 +209,10 @@ __marimo__/
 # Local Kubernetes / Helm overrides
 *-values.yaml
 *.local.yaml
+
+# AI tool local settings
+.gemini/
+.claude/
+
+# Local data and databases
+data/

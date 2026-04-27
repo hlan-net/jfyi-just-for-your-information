@@ -75,3 +75,9 @@ Kubernetes-native via Helm chart in `helm/jfyi-mcp-server/`. Published as OCI ar
 ## Infrastructure Rules
 
 - **ML models are data, not code.** Never bake embedding models (e.g. `all-MiniLM-L6-v2`) into the Docker image. They inflate the image from ~80 MB to ~3 GB, making node-to-node scheduling and base-image upgrades extremely slow. Download models at runtime to a persisted volume path (`SENTENCE_TRANSFORMERS_HOME=/data/models`) so they survive restarts without being re-downloaded.
+
+## Interaction Rules
+
+- **Distinguish between Inquiries and Directives.**
+  - **Inquiry:** A request for information, analysis, advice, or observation (e.g., "how does this work?", "what about X?"). Respond with information only. **Do not modify files or execute state-changing commands.**
+  - **Directive:** An unambiguous request for action or implementation (e.g., "implement X", "fix Y", "deploy Z"). Perform the full lifecycle: strategy, implementation, and verification.

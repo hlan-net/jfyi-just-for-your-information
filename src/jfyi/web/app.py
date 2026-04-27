@@ -390,16 +390,22 @@ def _register_auth_api(app: FastAPI) -> None:
 
         user = db.get_user_by_identity(provider, sub)
         if not user:
-            init_status = db.is_initialized()
-            # Always allow the very first user through so an admin can be created.
-            # After that, respect the registration_open setting.
-            if init_status["has_admin"]:
-                reg_open = db.get_setting(SETTING_REGISTRATION_OPEN, "true") == "true"
-                if not reg_open:
-                    return RedirectResponse(url="/login?error=registration_closed")
-            is_admin = not init_status["has_admin"]
-            user_id = db.create_user(email=email, name=name, is_admin=is_admin)
-            db.link_identity(user_id, provider, sub)
+            # Check if a user with this email already exists to map the new identity
+            existing_user = db.get_user_by_email(email)
+            if existing_user:
+                db.link_identity(existing_user["id"], provider, sub)
+                user_id = existing_user["id"]
+            else:
+                init_status = db.is_initialized()
+                # Always allow the very first user through so an admin can be created.
+                # After that, respect the registration_open setting.
+                if init_status["has_admin"]:
+                    reg_open = db.get_setting(SETTING_REGISTRATION_OPEN, "true") == "true"
+                    if not reg_open:
+                        return RedirectResponse(url="/login?error=registration_closed")
+                is_admin = not init_status["has_admin"]
+                user_id = db.create_user(email=email, name=name, is_admin=is_admin)
+                db.link_identity(user_id, provider, sub)
         else:
             user_id = user["id"]
 
