@@ -110,11 +110,33 @@ Improvements to the Docker image and deployment ergonomics discovered during ope
 | Item | Target | Status | Spec |
 |------|--------|--------|------|
 | Externalise embedding model from image | `v2.7.1` | Superseded | [docs/image-optimization.md](docs/image-optimization.md) |
-| Extract ChromaDB to its own pod | `v2.8.0` | Planned | [docs/chromadb-extraction.md](docs/chromadb-extraction.md) |
+| Extract ChromaDB to its own pod | `v2.8.0` | Released | [docs/chromadb-extraction.md](docs/chromadb-extraction.md) |
+| ONNX cache on PVC under `readOnlyRootFilesystem` | `v2.8.6` | Released | inline |
+| Keep JWT Secret on `helm uninstall` | `v2.9.0` | In progress | inline |
+| `scripts/rotate-jwt.sh` for explicit key rotation | `v2.9.0` | Planned | inline |
+| Configurable dashboard session TTL | `v2.9.0` | Planned | inline |
+| Admin "About" page with version copy | `v2.9.0` | Planned | inline |
+| Code cleanup: duplicate `model_config` in `config.py` | `v2.9.0` | Planned | inline |
 
 **Externalise embedding model from image** *(v2.7.1)* removed the model file from the Dockerfile. Insufficient on its own: `chromadb` and `sentence-transformers` remained in core deps, so the image is still ~3.1 GB on `v2.7.9` (verified during the v2.7.9 deploy: 17-minute first-pull on Pi nodes). Superseded by the v2.8.0 extraction work.
 
 **Extract ChromaDB to its own pod** *(v2.8.0)* moves the vector store to the upstream `chromadb/chroma` image as a sibling deployment, drops `chromadb` and `sentence-transformers` from JFYI's core deps, and uses ChromaDB's built-in ONNX embedding function (no torch). Lifecycle separation: the lean JFYI image (~200 MB) updates per release; the chromadb image (~500 MB) updates per chroma release. Pi first-pull drops from ~17 min to under 1 min. The dashboard stays in the JFYI image — a separate split is reserved for a future security-boundary trigger.
+
+**ONNX cache on PVC** *(v2.8.6)* sets `HOME=/data/home` for the JFYI container when `chromadb.enabled=true`, so the chromadb client's first-use ONNX model download (~80 MB to `~/.cache/chroma/onnx_models/`) lands on the data PVC instead of the read-only root filesystem. Conditional on the `chromadb.enabled` flag so the public-default chart is unchanged.
+
+### `v2.9.0` cluster — operational hardening & UX polish
+
+Themed around making the deployment more durable across release lifecycle events and tightening developer/admin ergonomics.
+
+**Keep JWT Secret on `helm uninstall`** annotates the chart-managed JWT Secret with `helm.sh/resource-policy: keep`. Combined with the existing `lookup`-based reuse, the signing key is generated exactly once per namespace and survives uninstall+install — outstanding MCP tokens (365-day TTL) and dashboard sessions stay valid through release lifecycle changes. Already committed to `main` (`06f232c`).
+
+**JWT rotation script** is the deliberate counterpart: a `scripts/rotate-jwt.sh` that mints a new key, patches the Secret, rolls the deployment, and records the action — separate from the release pipeline because key rotation is a security/incident operation, not a code-ship operation.
+
+**Configurable dashboard session TTL** exposes the Starlette `SessionMiddleware` `max_age` (currently hardcoded to 86400s in `web/app.py:835`) as a setting (`JFYI_SESSION_TTL_SECONDS`). 24h is short for a personal admin tool; allowing 7–30 day sessions matches the long-lived MCP token feel.
+
+**Admin "About" page** adds a section under the dashboard admin view that surfaces JFYI version, chromadb version, image digest, and deploy time, with a single-click "copy versions" button for support/issue reports.
+
+**Code cleanup** removes the duplicate `model_config` declaration in `src/jfyi/config.py` (lines 13 and 17 are identical — harmless, but cruft).
 
 ---
 
