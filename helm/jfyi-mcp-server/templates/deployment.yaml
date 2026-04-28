@@ -53,6 +53,12 @@ spec:
               value: {{ include "jfyi-mcp-server.fullname" . }}-chromadb
             - name: JFYI_CHROMADB_PORT
               value: "8000"
+            # chromadb-client downloads the ONNX embedding model (~80 MB) to
+            # $HOME/.cache/chroma/onnx_models/ on first use. With
+            # readOnlyRootFilesystem: true the default $HOME is unwritable, so
+            # point it at a subdir of the data PVC.
+            - name: HOME
+              value: /data/home
             {{- end }}
           envFrom:
             - secretRef:
