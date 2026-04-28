@@ -140,6 +140,18 @@ Themed around making the deployment more durable across release lifecycle events
 
 ---
 
+## Profile Architecture — `v2.9.0`
+
+Structural piece of v2.9.0, separate from the operational items above.
+
+| Item | Target | Status | Spec |
+|------|--------|--------|------|
+| Notes vs Rules — two-tier developer profile | `v2.9.0` | Planned | [docs/notes-vs-rules.md](docs/notes-vs-rules.md) |
+
+**Notes vs Rules** *(v2.9.0)* splits the current single `profile_rules` table into a raw **notes** tier (cheap, frequent, agent-captured) and a curated **rules** tier (few, deliberate, composed in the dashboard from one or more notes). Agents write notes via a renamed `add_profile_note` MCP tool; `get_developer_profile` returns only curated rules so the agent's "constitution" stays small and high-signal. Existing rows migrate to the notes tier; the new rules tier starts empty. Schema migration #8 adds `profile_notes` (rename), a new `profile_rules` table, and a `rule_note_links` join table. Ships in three staged PRs (DB → MCP/REST → SPA) — see the spec doc for the full implementation breakdown.
+
+---
+
 ## Phase 5 — Protocol Expansion `v3.0.0`
 
 Major version bump: ACP and A2A introduce new communication protocols that change how external agents interact with JFYI, constituting breaking surface additions relative to the MCP-only v2.x baseline.
