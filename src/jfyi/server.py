@@ -73,14 +73,16 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
     },
     "get_developer_profile": {
         "description": (
-            "Returns the developer's shared constitution — cross-project, cross-agent rules "
-            "that describe how this developer thinks and works. These are not project-specific "
-            "notes; they apply regardless of what codebase or agent is in use. "
-            "Use them to align your behaviour with the developer's established preferences "
-            "before the session begins. "
-            "When you add rules via add_profile_rule, write them at the same level: "
-            "developer patterns and principles, not implementation details specific to the "
-            "current project (those belong in CLAUDE.md / GEMINI.md / etc.)."
+            "Returns the developer's curated constitution — cross-project, cross-agent "
+            "rules that the developer has explicitly authored to describe how they think "
+            "and work. These are not project-specific notes; they apply regardless of "
+            "what codebase or agent is in use. Use them to align your behaviour with the "
+            "developer's established preferences before the session begins. "
+            "When you observe a candidate pattern worth recording, call add_profile_note "
+            "to file it as a raw observation — the developer will review and (optionally) "
+            "promote it into a rule. Write notes at the same level of generality as "
+            "rules: developer patterns and principles, not implementation details "
+            "specific to the current project (those belong in CLAUDE.md / GEMINI.md / etc.)."
         ),
         "token_cost": 40,
         "always_on": True,
@@ -105,18 +107,23 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
         "inputSchema": {"type": "object", "properties": {}},
         "example": "discover_tools(tool_name='get_agent_analytics', arguments={})",
     },
-    "add_profile_rule": {
-        "description": "Manually add a rule to the developer profile.",
+    "add_profile_note": {
+        "description": (
+            "File a raw observation about the developer's coding habits or preferences "
+            "as a note in the long-term tier. The developer will review notes and may "
+            "promote them into the curated rule constitution. Write notes at the same "
+            "level of generality as rules — developer patterns, not project specifics."
+        ),
         "token_cost": 60,
         "always_on": False,
         "inputSchema": {
             "type": "object",
-            "required": ["rule"],
+            "required": ["text"],
             "properties": {
-                "rule": {"type": "string", "description": "The rule text."},
+                "text": {"type": "string", "description": "The observation text."},
                 "category": {
                     "type": "string",
-                    "description": "Rule category (e.g. 'style', 'architecture', 'testing').",
+                    "description": "Note category (e.g. 'style', 'architecture', 'testing').",
                 },
                 "confidence": {
                     "type": "number",
@@ -124,13 +131,13 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
                 },
                 "agent_name": {
                     "type": "string",
-                    "description": "Identifier of the agent authoring this rule (e.g. 'claude-sonnet-4-6').",  # noqa: E501
+                    "description": "Identifier of the agent authoring this note (e.g. 'claude-sonnet-4-6').",  # noqa: E501
                 },
             },
         },
         "example": (
-            "discover_tools(tool_name='add_profile_rule',"
-            " arguments={'rule': '...', 'category': 'style'})"
+            "discover_tools(tool_name='add_profile_note',"
+            " arguments={'text': '...', 'category': 'style'})"
         ),
     },
     "remember_short_term": {
@@ -350,12 +357,17 @@ async def dispatch_tool(
 
     if name == "get_developer_profile":
         category = arguments.get("category")
-        rules = db.get_notes(user_id=user_id, category=category)
+        rules = db.get_rules(user_id=user_id, category=category)
         if not rules:
             return [
                 TextContent(
                     type="text",
-                    text="No profile rules found yet. JFYI is still learning.",
+                    text=(
+                        "No curated profile rules yet. JFYI is still learning — "
+                        "agents have been filing observations as notes; the developer "
+                        "can review them in the dashboard and promote useful ones into "
+                        "the constitution."
+                    ),
                 )
             ]
         block = render_read_only_block(rules)
@@ -412,22 +424,22 @@ async def dispatch_tool(
         ]
         return [TextContent(type="text", text=f"Agent analytics:\n{_serializer.dumps(payload)}")]
 
-    if name == "add_profile_rule":
+    if name == "add_profile_note":
         from .config import settings
         from .dlp import redact
 
-        rule_text = arguments["rule"]
+        note_text = arguments["text"]
         if settings.dlp_enabled:
-            rule_text, _ = redact(rule_text)
-        rule_id = db.add_note(
+            note_text, _ = redact(note_text)
+        note_id = db.add_note(
             user_id=user_id,
-            text=rule_text,
+            text=note_text,
             category=arguments.get("category", "general"),
             confidence=arguments.get("confidence", 1.0),
             source="manual",
             agent_name=arguments.get("agent_name"),
         )
-        return [TextContent(type="text", text=f"Rule added (id={rule_id}).")]
+        return [TextContent(type="text", text=f"Note added (id={note_id}).")]
 
     if name == "remember_short_term":
         memory = MemoryFacade(db)

@@ -18,18 +18,18 @@ _SYSTEM_PROMPT = (
     "broadly applicable — not a project-specific note.\n\n"
     "Given a list of rules with priority scores (1=low, 5=high), synthesize a smaller, "
     "more effective ruleset by:\n"
-    "1. Merging rules that express the same underlying preference into one clear rule.\n"
-    "2. Generalising over-specific rules into broader developer patterns.\n"
-    "3. Preserving high-priority rules faithfully; lower-priority rules may be merged or "
+    "1. Merging notes that express the same underlying preference into one clear note.\n"
+    "2. Generalising over-specific notes into broader developer patterns.\n"
+    "3. Preserving high-priority notes faithfully; lower-priority notes may be merged or "
     "dropped if they are redundant.\n"
-    "4. Keeping each rule actionable and agent-friendly — one clear instruction per rule.\n\n"
+    "4. Keeping each note actionable and agent-friendly — one clear instruction per note.\n\n"
     "Output ONLY a JSON array with no preamble, explanation, or markdown fences. "
     "Each element must have exactly three fields:\n"
-    '{"rule": "...", "category": "...", "confidence": 0.0}\n'
+    '{"text": "...", "category": "...", "confidence": 0.0}\n'
     "category must be one of: style, architecture, testing, workflow, general\n"
-    "confidence (0.0–1.0) reflects how faithfully the synthesized rule represents the source "
-    "rules — use 0.8–1.0 for faithful merges, lower for generalisations.\n"
-    "Aim for 30–60% fewer rules than the input while preserving the key semantics."
+    "confidence (0.0–1.0) reflects how faithfully the synthesized note represents the source "
+    "notes — use 0.8–1.0 for faithful merges, lower for generalisations.\n"
+    "Aim for 30–60% fewer notes than the input while preserving the key semantics."
 )
 
 
@@ -50,14 +50,19 @@ def _parse_response(text: str) -> list[dict]:
         raise ValueError("Expected a JSON array from the model")
     result = []
     for item in data:
-        if isinstance(item, dict) and "rule" in item:
-            result.append(
-                {
-                    "rule": str(item["rule"]),
-                    "category": str(item.get("category", "general")),
-                    "confidence": float(item.get("confidence", 0.9)),
-                }
-            )
+        if not isinstance(item, dict):
+            continue
+        # Accept either 'text' (new) or 'rule' (legacy) from the model.
+        body = item.get("text", item.get("rule"))
+        if not body:
+            continue
+        result.append(
+            {
+                "text": str(body),
+                "category": str(item.get("category", "general")),
+                "confidence": float(item.get("confidence", 0.9)),
+            }
+        )
     return result
 
 
