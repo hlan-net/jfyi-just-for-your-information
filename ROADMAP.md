@@ -2,9 +2,13 @@
 
 This roadmap describes planned improvements across context efficiency, memory architecture, security, and protocol support. The foundational motivation is **Context Rot** — the degradation in reasoning quality as an agent's context window fills — but the scope extends beyond that to hardening, multi-user capability, and cross-framework interoperability.
 
+The user-centric mission and the core architectural pattern (write raw / curate / read curated) are documented in [`docs/architecture.md`](docs/architecture.md). New roadmap items should be evaluated against the test laid out there: *does this serve the agent reading better-curated info about the user?* — answers map to **Core**, **Supplementary**, or **Infrastructure** tags.
+
 Each item links to a detailed specification in [`docs/`](docs/).
 
 > **Versioning convention:** phases 1–4 target minor releases (`2.n.0`). Patch versions (`2.n.m`, m > 0) are reserved for bug fixes within that phase. Phase 5 is a major version bump (`3.0.0`) because ACP and A2A introduce new communication protocols that change how external agents interact with JFYI. Exact scope of each release is evaluated at implementation time against the specs in `docs/`.
+
+> **Tagging convention (v2.11.0 onward):** new items in this roadmap declare a tag — **Core** (serves the agent reading better-curated info), **Supplementary** (emergent analysis; opportunistic), or **Infrastructure** (deployment, security, build pipeline). Existing items are not retrofitted; they predate the convention.
 
 ---
 
