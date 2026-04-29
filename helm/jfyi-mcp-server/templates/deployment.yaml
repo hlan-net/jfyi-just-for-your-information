@@ -46,6 +46,10 @@ spec:
             - name: {{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            - name: JFYI_IMAGE_DIGEST
+              value: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+            - name: JFYI_DEPLOY_TIME
+              value: {{ now | date "2006-01-02T15:04:05Z" | quote }}
             {{- if .Values.chromadb.enabled }}
             - name: JFYI_ENABLE_VECTOR_DB
               value: "true"

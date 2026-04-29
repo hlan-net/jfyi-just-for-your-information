@@ -266,6 +266,32 @@ def _register_admin_settings_api(app: FastAPI) -> None:
         db.set_setting(SETTING_REGISTRATION_OPEN, "true" if body.registration_open else "false")
         return {"registration_open": body.registration_open}
 
+    @app.get("/api/admin/about")
+    async def get_about(admin: AdminUser) -> dict[str, Any]:
+        """Surface deploy / runtime metadata for the admin About page.
+
+        Values come from environment variables baked in at deploy time
+        (`JFYI_IMAGE_DIGEST`, `JFYI_DEPLOY_TIME`) plus runtime introspection
+        of the chromadb client library version.
+        """
+        import os
+
+        try:
+            import chromadb  # type: ignore
+
+            chromadb_version = getattr(chromadb, "__version__", "unknown")
+        except ImportError:
+            chromadb_version = None
+        return {
+            "jfyi_version": __version__,
+            "chromadb_version": chromadb_version,
+            "image_digest": os.environ.get("JFYI_IMAGE_DIGEST"),
+            "deploy_time": os.environ.get("JFYI_DEPLOY_TIME"),
+            "session_ttl_seconds": settings.session_ttl_seconds,
+            "vector_db_enabled": settings.enable_vector_db,
+            "summarizer_enabled": settings.summarizer_enabled,
+        }
+
 
 def _register_admin_api(app: FastAPI) -> None:
     @app.get("/api/admin/users")
@@ -427,7 +453,12 @@ def _register_auth_api(app: FastAPI) -> None:
         response = RedirectResponse(url="/")
         cookie_val = create_session_cookie(user_id)
         response.set_cookie(
-            "jfyi_session", cookie_val, httponly=True, secure=True, max_age=86400, samesite="Lax"
+            "jfyi_session",
+            cookie_val,
+            httponly=True,
+            secure=True,
+            max_age=settings.session_ttl_seconds,
+            samesite="Lax",
         )
         next_url = request.cookies.get("oauth_next")
         if next_url:
@@ -889,7 +920,9 @@ def create_app(
     app.state.analytics = analytics
 
     app.add_middleware(
-        SessionMiddleware, secret_key=settings.jwt_secret.get_secret_value(), max_age=86400
+        SessionMiddleware,
+        secret_key=settings.jwt_secret.get_secret_value(),
+        max_age=settings.session_ttl_seconds,
     )
 
     app.add_middleware(

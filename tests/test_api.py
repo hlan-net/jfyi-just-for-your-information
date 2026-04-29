@@ -183,3 +183,55 @@ def test_create_note_without_agent_name(client):
     assert resp.status_code == 201
     notes = client.get("/api/profile/notes").json()
     assert notes[0]["agent_name"] is None
+
+
+# ── Admin About endpoint ──────────────────────────────────────────────────────
+
+
+def test_admin_about_returns_metadata(client):
+    resp = client.get("/api/admin/about")
+    assert resp.status_code == 200
+    data = resp.json()
+    for key in (
+        "jfyi_version",
+        "chromadb_version",
+        "image_digest",
+        "deploy_time",
+        "session_ttl_seconds",
+        "vector_db_enabled",
+        "summarizer_enabled",
+    ):
+        assert key in data
+    assert isinstance(data["session_ttl_seconds"], int)
+
+
+def test_admin_about_requires_admin(tmp_path, monkeypatch):
+    monkeypatch.setattr("jfyi.web.app.settings.single_user_mode", False)
+    db = Database(tmp_path / "test.db")
+    db.create_user("admin@example.com")  # first user → admin
+    db.create_user("plain@example.com")  # second user → non-admin
+    analytics = AnalyticsEngine(db)
+    app = create_app(db, analytics)
+    c = TestClient(app)
+    c.cookies.set("jfyi_session", create_session_cookie(2))
+    resp = c.get("/api/admin/about")
+    assert resp.status_code == 403
+
+
+def test_admin_about_reports_env_overrides(client, monkeypatch):
+    monkeypatch.setenv("JFYI_IMAGE_DIGEST", "sha256:deadbeef")
+    monkeypatch.setenv("JFYI_DEPLOY_TIME", "2025-01-15T12:00:00Z")
+    resp = client.get("/api/admin/about")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["image_digest"] == "sha256:deadbeef"
+    assert data["deploy_time"] == "2025-01-15T12:00:00Z"
+
+
+# ── Configurable session TTL ──────────────────────────────────────────────────
+
+
+def test_session_ttl_setting_default():
+    from jfyi.config import settings as live_settings
+
+    assert live_settings.session_ttl_seconds >= 60
