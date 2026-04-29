@@ -23,7 +23,7 @@ async def test_get_developer_profile_empty(ctx):
 
 async def test_get_developer_profile_lists_rules(ctx):
     db, analytics = ctx
-    db.add_rule(1, "Prefers early returns", category="style", confidence=0.9)
+    db.add_note(1, "Prefers early returns", category="style", confidence=0.9)
     result = await dispatch_tool("get_developer_profile", {}, db, analytics)
     assert "Prefers early returns" in result[0].text
     assert "[style]" in result[0].text
@@ -38,7 +38,7 @@ async def test_add_profile_rule(ctx):
         analytics,
     )
     assert "Rule added" in result[0].text
-    assert len(db.get_rules(1)) == 1
+    assert len(db.get_notes(1)) == 1
 
 
 async def test_record_interaction(ctx):

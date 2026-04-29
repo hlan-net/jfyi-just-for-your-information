@@ -25,6 +25,54 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
         self._run_migrations()
+        self._reconcile_vector_indexes()
+
+    def _reconcile_vector_indexes(self) -> None:
+        """Idempotent post-migration vector reindex.
+
+        Re-indexes every existing note into the `notes` collection and removes
+        stale `rules` entries whose IDs match notes (those came from the
+        pre-v2.9 single `profile_rules` table). Curated rules are re-indexed
+        from `profile_rules` separately.
+
+        Safe to run on every startup: ChromaDB upsert is idempotent, and any
+        IDs without a backing row are quietly ignored.
+        """
+        if not self._vs:
+            return
+        try:
+            with self._conn() as conn:
+                note_rows = conn.execute(
+                    "SELECT id, user_id, text, category, agent_name FROM profile_notes"
+                ).fetchall()
+                rule_rows = conn.execute(
+                    "SELECT id, user_id, text, category FROM profile_rules"
+                ).fetchall()
+        except sqlite3.OperationalError:
+            # Tables not present (pre-migration call path); nothing to reconcile.
+            return
+        for r in note_rows:
+            self._vs.add(
+                "notes",
+                str(r["id"]),
+                r["text"] or "",
+                {
+                    "user_id": r["user_id"],
+                    "category": r["category"] or "general",
+                    "agent_name": r["agent_name"] or "",
+                },
+            )
+            # Drop any stale entry in the old "rules" collection that came from
+            # the pre-v2.9 schema (note IDs and old rule IDs share the same key
+            # space because the table was renamed in place).
+            self._vs.delete("rules", ids=str(r["id"]))
+        for r in rule_rows:
+            self._vs.add(
+                "rules",
+                str(r["id"]),
+                r["text"] or "",
+                {"user_id": r["user_id"], "category": r["category"] or "general"},
+            )
 
     @contextmanager
     def _conn(self):
@@ -275,6 +323,36 @@ class Database:
 
                     PRAGMA user_version = 7;
                 """)
+            if version < 8:
+                # Notes vs Rules split: the existing profile_rules table becomes
+                # profile_notes (raw, agent-captured); a new, leaner profile_rules
+                # table holds curated rules composed from one or more notes.
+                conn.executescript("""
+                    ALTER TABLE profile_rules RENAME TO profile_notes;
+                    ALTER TABLE profile_notes RENAME COLUMN rule TO text;
+                    ALTER TABLE profile_notes ADD COLUMN promoted_to_rule_id INTEGER;
+
+                    CREATE TABLE profile_rules (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        text TEXT NOT NULL,
+                        category TEXT DEFAULT 'general',
+                        archived INTEGER NOT NULL DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+
+                    CREATE TABLE rule_note_links (
+                        rule_id INTEGER NOT NULL REFERENCES profile_rules(id) ON DELETE CASCADE,
+                        note_id INTEGER NOT NULL REFERENCES profile_notes(id) ON DELETE CASCADE,
+                        PRIMARY KEY (rule_id, note_id)
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_rule_note_links_note
+                        ON rule_note_links(note_id);
+
+                    PRAGMA user_version = 8;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -311,8 +389,7 @@ class Database:
                 ).fetchone()
                 idp_id = row[0] + 1
                 conn.execute(
-                    f"INSERT INTO identity_providers {cols}"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    f"INSERT INTO identity_providers {cols} VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (idp_id, *vals),
                 )
         return idp_id
@@ -421,61 +498,61 @@ class Database:
             )
             return cur.rowcount > 0
 
-    # ── Profile Rules ──────────────────────────────────────────────────────
+    # ── Profile Notes (raw, agent-captured) ────────────────────────────────
 
-    def add_rule(
+    def add_note(
         self,
         user_id: int,
-        rule: str,
+        text: str,
         category: str = "general",
         confidence: float = 1.0,
         source: str = "auto",
         agent_name: str | None = None,
     ) -> int:
         now = datetime.now(UTC).isoformat()
-        clean = sanitize_rule(rule)
+        clean = sanitize_rule(text)
         with self._conn() as conn:
             cur = conn.execute(
-                "INSERT INTO profile_rules"
-                " (user_id, rule, category, confidence, source, agent_name, created_at, updated_at)"
+                "INSERT INTO profile_notes"
+                " (user_id, text, category, confidence, source, agent_name, created_at, updated_at)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (user_id, clean, category, confidence, source, agent_name, now, now),
             )
-            rule_id = cur.lastrowid
+            note_id = cur.lastrowid
         if self._vs:
             self._vs.add(
-                "rules",
-                str(rule_id),
+                "notes",
+                str(note_id),
                 clean,
                 {"user_id": user_id, "category": category, "agent_name": agent_name or ""},
             )
-        return rule_id
+        return note_id
 
-    def get_rules(self, user_id: int, category: str | None = None) -> list[dict[str, Any]]:
+    def get_notes(self, user_id: int, category: str | None = None) -> list[dict[str, Any]]:
         with self._conn() as conn:
             if category:
                 rows = conn.execute(
-                    "SELECT * FROM profile_rules WHERE user_id = ? AND category = ? "
+                    "SELECT * FROM profile_notes WHERE user_id = ? AND category = ? "
                     "AND archived = 0 ORDER BY confidence DESC",
                     (user_id, category),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM profile_rules WHERE user_id = ? AND archived = 0 "
+                    "SELECT * FROM profile_notes WHERE user_id = ? AND archived = 0 "
                     "ORDER BY confidence DESC",
                     (user_id,),
                 ).fetchall()
             return [dict(r) for r in rows]
 
-    def archive_rules(self, user_id: int, rule_ids: list[int]) -> int:
-        """Soft-delete rules by marking them archived. Returns count archived."""
-        if not rule_ids:
+    def archive_notes(self, user_id: int, note_ids: list[int]) -> int:
+        """Soft-delete notes by marking them archived. Returns count archived."""
+        if not note_ids:
             return 0
-        placeholders = ",".join("?" * len(rule_ids))
+        placeholders = ",".join("?" * len(note_ids))
         with self._conn() as conn:
             cur = conn.execute(
-                f"UPDATE profile_rules SET archived=1 WHERE user_id=? AND id IN ({placeholders})",
-                (user_id, *rule_ids),
+                f"UPDATE profile_notes SET archived=1 WHERE user_id=? AND id IN ({placeholders})",
+                (user_id, *note_ids),
             )
             return cur.rowcount
 
@@ -501,37 +578,213 @@ class Database:
                 (user_id, provider, model, api_key, base_url),
             )
 
-    def update_rule(
+    def update_note(
         self,
         user_id: int,
-        rule_id: int,
-        rule: str,
+        note_id: int,
+        text: str,
         category: str,
         confidence: float,
         agent_name: str | None = None,
     ) -> bool:
         now = datetime.now(UTC).isoformat()
+        clean = sanitize_rule(text)
         with self._conn() as conn:
             cur = conn.execute(
-                "UPDATE profile_rules"
-                " SET rule=?, category=?, confidence=?, agent_name=?, updated_at=?"
+                "UPDATE profile_notes"
+                " SET text=?, category=?, confidence=?, agent_name=?, updated_at=?"
                 " WHERE id=? AND user_id=?",
-                (rule, category, confidence, agent_name, now, rule_id, user_id),
+                (clean, category, confidence, agent_name, now, note_id, user_id),
             )
-            return cur.rowcount > 0
+            ok = cur.rowcount > 0
+        if ok and self._vs:
+            self._vs.add(
+                "notes",
+                str(note_id),
+                clean,
+                {"user_id": user_id, "category": category, "agent_name": agent_name or ""},
+            )
+        return ok
+
+    def delete_note(self, user_id: int, note_id: int) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM profile_notes WHERE id=? AND user_id=?", (note_id, user_id)
+            )
+            deleted = cur.rowcount > 0
+        if deleted and self._vs:
+            self._vs.delete("notes", ids=str(note_id))
+        return deleted
+
+    def get_notes_semantic(self, user_id: int, query: str, k: int = 5) -> list[dict[str, Any]]:
+        """Return notes ranked by semantic similarity. Falls back to recency order."""
+        if not self._vs:
+            return self.get_notes(user_id)
+        ids = self._vs.query("notes", query, k=k, where={"user_id": user_id})
+        if not ids:
+            return self.get_notes(user_id)
+        placeholders = ",".join("?" * len(ids))
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM profile_notes WHERE id IN ({placeholders}) "
+                "AND user_id=? AND archived = 0",
+                (*ids, user_id),
+            ).fetchall()
+        id_order = {id_: i for i, id_ in enumerate(ids)}
+        return sorted([dict(r) for r in rows], key=lambda r: id_order.get(str(r["id"]), 999))
+
+    # ── Profile Rules (curated, composed from notes) ───────────────────────
+
+    def add_rule(
+        self,
+        user_id: int,
+        text: str,
+        category: str = "general",
+        source_note_ids: list[int] | None = None,
+    ) -> int:
+        """Insert a curated rule and link it to its source notes.
+
+        Each linked note has its `promoted_to_rule_id` set to the new rule id
+        when it was previously NULL. Source note ids are validated to belong
+        to the same user — foreign or unknown ids are silently dropped.
+        """
+        now = datetime.now(UTC).isoformat()
+        clean = sanitize_rule(text)
+        requested = list(dict.fromkeys(source_note_ids or []))
+        with self._conn() as conn:
+            valid_note_ids: list[int] = []
+            if requested:
+                placeholders = ",".join("?" * len(requested))
+                rows = conn.execute(
+                    f"SELECT id FROM profile_notes WHERE user_id = ? AND id IN ({placeholders})",
+                    (user_id, *requested),
+                ).fetchall()
+                valid_note_ids = [r["id"] for r in rows]
+            cur = conn.execute(
+                "INSERT INTO profile_rules"
+                " (user_id, text, category, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (user_id, clean, category, now, now),
+            )
+            rule_id = cur.lastrowid
+            for note_id in valid_note_ids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO rule_note_links (rule_id, note_id) VALUES (?, ?)",
+                    (rule_id, note_id),
+                )
+                conn.execute(
+                    "UPDATE profile_notes SET promoted_to_rule_id = ? "
+                    "WHERE id = ? AND user_id = ? AND promoted_to_rule_id IS NULL",
+                    (rule_id, note_id, user_id),
+                )
+        if self._vs:
+            self._vs.add(
+                "rules",
+                str(rule_id),
+                clean,
+                {"user_id": user_id, "category": category},
+            )
+        return rule_id
+
+    def get_rules(self, user_id: int, category: str | None = None) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            if category:
+                rows = conn.execute(
+                    "SELECT * FROM profile_rules WHERE user_id = ? AND category = ? "
+                    "AND archived = 0 ORDER BY id DESC",
+                    (user_id, category),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM profile_rules WHERE user_id = ? AND archived = 0 "
+                    "ORDER BY id DESC",
+                    (user_id,),
+                ).fetchall()
+            results: list[dict[str, Any]] = []
+            for row in rows:
+                d = dict(row)
+                links = conn.execute(
+                    "SELECT note_id FROM rule_note_links WHERE rule_id = ? ORDER BY note_id",
+                    (d["id"],),
+                ).fetchall()
+                d["source_note_ids"] = [r["note_id"] for r in links]
+                results.append(d)
+            return results
+
+    def update_rule(
+        self,
+        user_id: int,
+        rule_id: int,
+        text: str,
+        category: str,
+    ) -> bool:
+        now = datetime.now(UTC).isoformat()
+        clean = sanitize_rule(text)
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE profile_rules SET text=?, category=?, updated_at=? "
+                "WHERE id=? AND user_id=?",
+                (clean, category, now, rule_id, user_id),
+            )
+            ok = cur.rowcount > 0
+        if ok and self._vs:
+            self._vs.add(
+                "rules",
+                str(rule_id),
+                clean,
+                {"user_id": user_id, "category": category},
+            )
+        return ok
 
     def delete_rule(self, user_id: int, rule_id: int) -> bool:
+        """Hard-delete a curated rule.
+
+        After deletion (the FK cascade clears rule_note_links), reconcile
+        `profile_notes.promoted_to_rule_id` for this user: any note whose
+        `promoted_to_rule_id` no longer points at a surviving rule is
+        reassigned to the smallest still-linked rule_id, or NULL if no
+        link survives.
+        """
         with self._conn() as conn:
             cur = conn.execute(
                 "DELETE FROM profile_rules WHERE id=? AND user_id=?", (rule_id, user_id)
             )
             deleted = cur.rowcount > 0
+            if deleted:
+                conn.execute(
+                    """
+                    UPDATE profile_notes
+                    SET promoted_to_rule_id = (
+                        SELECT MIN(rnl.rule_id)
+                        FROM rule_note_links rnl
+                        JOIN profile_rules pr ON pr.id = rnl.rule_id
+                        WHERE rnl.note_id = profile_notes.id
+                          AND pr.user_id = profile_notes.user_id
+                    )
+                    WHERE user_id = ?
+                      AND promoted_to_rule_id IS NOT NULL
+                      AND promoted_to_rule_id NOT IN (
+                          SELECT id FROM profile_rules WHERE user_id = ?
+                      )
+                    """,
+                    (user_id, user_id),
+                )
         if deleted and self._vs:
             self._vs.delete("rules", ids=str(rule_id))
         return deleted
 
+    def archive_rule(self, user_id: int, rule_id: int) -> bool:
+        """Soft-delete a curated rule."""
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE profile_rules SET archived=1, updated_at=? WHERE id=? AND user_id=?",
+                (now, rule_id, user_id),
+            )
+            return cur.rowcount > 0
+
     def get_rules_semantic(self, user_id: int, query: str, k: int = 5) -> list[dict[str, Any]]:
-        """Return rules ranked by semantic similarity. Falls back to recency order."""
+        """Return curated rules ranked by semantic similarity. Falls back to recency."""
         if not self._vs:
             return self.get_rules(user_id)
         ids = self._vs.query("rules", query, k=k, where={"user_id": user_id})
@@ -540,11 +793,21 @@ class Database:
         placeholders = ",".join("?" * len(ids))
         with self._conn() as conn:
             rows = conn.execute(
-                f"SELECT * FROM profile_rules WHERE id IN ({placeholders}) AND user_id=?",
+                f"SELECT * FROM profile_rules WHERE id IN ({placeholders}) AND user_id=? "
+                "AND archived = 0",
                 (*ids, user_id),
             ).fetchall()
+            results: list[dict[str, Any]] = []
+            for row in rows:
+                d = dict(row)
+                links = conn.execute(
+                    "SELECT note_id FROM rule_note_links WHERE rule_id = ? ORDER BY note_id",
+                    (d["id"],),
+                ).fetchall()
+                d["source_note_ids"] = [r["note_id"] for r in links]
+                results.append(d)
         id_order = {id_: i for i, id_ in enumerate(ids)}
-        return sorted([dict(r) for r in rows], key=lambda r: id_order.get(str(r["id"]), 999))
+        return sorted(results, key=lambda r: id_order.get(str(r["id"]), 999))
 
     # ── Agents ─────────────────────────────────────────────────────────────
 
@@ -759,7 +1022,7 @@ class Database:
                 (user_id,),
             ).fetchone()
             total_rules = conn.execute(
-                "SELECT COUNT(*) FROM profile_rules WHERE user_id=? AND archived=0", (user_id,)
+                "SELECT COUNT(*) FROM profile_notes WHERE user_id=? AND archived=0", (user_id,)
             ).fetchone()[0]
         d = dict(row)
         d["total_rules"] = total_rules
@@ -810,7 +1073,7 @@ class Database:
                     strftime('%Y-W%W', created_at) as week,
                     category,
                     COUNT(*) as count
-                FROM profile_rules
+                FROM profile_notes
                 WHERE user_id = ? AND created_at >= datetime('now', ? || ' days')
                 GROUP BY week, category
                 ORDER BY week ASC, category ASC
@@ -855,7 +1118,7 @@ class Database:
                     SUM(CASE WHEN confidence >= 0.4 AND confidence < 0.75
                              THEN 1 ELSE 0 END) as medium,
                     SUM(CASE WHEN confidence >= 0.75 THEN 1 ELSE 0 END) as high
-                FROM profile_rules
+                FROM profile_notes
                 WHERE user_id = ? AND archived = 0
                 GROUP BY category
                 ORDER BY rules DESC

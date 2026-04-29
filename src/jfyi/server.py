@@ -350,7 +350,7 @@ async def dispatch_tool(
 
     if name == "get_developer_profile":
         category = arguments.get("category")
-        rules = db.get_rules(user_id=user_id, category=category)
+        rules = db.get_notes(user_id=user_id, category=category)
         if not rules:
             return [
                 TextContent(
@@ -419,9 +419,9 @@ async def dispatch_tool(
         rule_text = arguments["rule"]
         if settings.dlp_enabled:
             rule_text, _ = redact(rule_text)
-        rule_id = db.add_rule(
+        rule_id = db.add_note(
             user_id=user_id,
-            rule=rule_text,
+            text=rule_text,
             category=arguments.get("category", "general"),
             confidence=arguments.get("confidence", 1.0),
             source="manual",

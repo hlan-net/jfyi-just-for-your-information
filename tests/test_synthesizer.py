@@ -142,21 +142,21 @@ async def test_synthesize_openai_provider():
 # ── Database synthesis methods ─────────────────────────────────────────────────
 
 
-def test_archive_rules(db):
+def test_archive_notes(db):
     user_id = 1
-    r1 = db.add_rule(user_id, "Rule A", "general")
-    r2 = db.add_rule(user_id, "Rule B", "style")
-    assert len(db.get_rules(user_id)) == 2
+    n1 = db.add_note(user_id, "Note A", "general")
+    n2 = db.add_note(user_id, "Note B", "style")
+    assert len(db.get_notes(user_id)) == 2
 
-    count = db.archive_rules(user_id, [r1])
+    count = db.archive_notes(user_id, [n1])
     assert count == 1
-    rules = db.get_rules(user_id)
-    assert len(rules) == 1
-    assert rules[0]["id"] == r2
+    notes = db.get_notes(user_id)
+    assert len(notes) == 1
+    assert notes[0]["id"] == n2
 
 
-def test_archive_rules_empty_list(db):
-    assert db.archive_rules(1, []) == 0
+def test_archive_notes_empty_list(db):
+    assert db.archive_notes(1, []) == 0
 
 
 def test_synthesis_config_roundtrip(db):

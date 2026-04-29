@@ -184,9 +184,21 @@ def test_facade_short_term_roundtrip(memory):
 
 
 def test_facade_long_term_roundtrip(memory):
-    memory.remember("long_term", user_id=1, rule="Use snake_case", category="style")
-    rules = memory.recall("long_term", user_id=1)
-    assert any(r["rule"] == "Use snake_case" for r in rules)
+    memory.remember("long_term", user_id=1, text="Use snake_case", category="style")
+    notes = memory.recall("long_term", user_id=1)
+    assert any(n["text"] == "Use snake_case" for n in notes)
+
+
+def test_facade_curated_roundtrip(memory):
+    n_id = memory.remember("long_term", user_id=1, text="raw obs", category="style")
+    rule_id = memory.remember(
+        "curated", user_id=1, text="Curated", category="style", source_note_ids=[n_id]
+    )
+    rules = memory.recall("curated", user_id=1)
+    assert any(r["id"] == rule_id and r["text"] == "Curated" for r in rules)
+    # forget curated
+    assert memory.forget("curated", user_id=1, rule_id=rule_id) is True
+    assert memory.recall("curated", user_id=1) == []
 
 
 def test_facade_episodic_roundtrip(memory):

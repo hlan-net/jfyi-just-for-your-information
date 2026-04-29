@@ -119,19 +119,19 @@ def test_create_vector_store_returns_none_when_server_unreachable():
 # ── Database integration ───────────────────────────────────────────────────────
 
 
-def test_add_rule_indexes_in_vector_store(db_vs):
+def test_add_note_indexes_in_vector_store(db_vs):
     db, vs = db_vs
-    db.add_rule(1, "use type hints on all public APIs", category="style")
-    ids = vs.query("rules", "type annotations")
+    db.add_note(1, "use type hints on all public APIs", category="style")
+    ids = vs.query("notes", "type annotations")
     assert len(ids) == 1
 
 
-def test_delete_rule_removes_from_vector_store(db_vs):
+def test_delete_note_removes_from_vector_store(db_vs):
     db, vs = db_vs
-    rule_id = db.add_rule(1, "prefer f-strings over format()", category="style")
-    db.delete_rule(1, rule_id)
-    ids = vs.query("rules", "string formatting")
-    assert str(rule_id) not in ids
+    note_id = db.add_note(1, "prefer f-strings over format()", category="style")
+    db.delete_note(1, note_id)
+    ids = vs.query("notes", "string formatting")
+    assert str(note_id) not in ids
 
 
 def test_episodic_add_indexes_in_vector_store(db_vs):
@@ -156,21 +156,68 @@ def test_episodic_delete_session_removes_from_vector(db_vs):
     assert vs.query("episodic", "deployment") == []
 
 
-def test_get_rules_semantic_returns_relevant_first(db_vs):
+def test_get_notes_semantic_returns_relevant_first(db_vs):
     db, vs = db_vs
+    db.add_note(1, "always use black for code formatting", category="style")
+    db.add_note(1, "prefer pytest over unittest", category="testing")
+    db.add_note(1, "run docker build before pushing", category="deploy")
+    results = db.get_notes_semantic(1, "code formatting style")
+    assert results[0]["category"] == "style"
+
+
+def test_get_notes_semantic_falls_back_without_vs(tmp_path):
+    db = Database(tmp_path / "test.db")
+    db.create_user("user@example.com")
+    db.add_note(1, "use type hints")
+    results = db.get_notes_semantic(1, "typing")
+    assert len(results) == 1
+
+
+def test_get_rules_semantic_returns_relevant_first(db_vs):
+    db, _ = db_vs
     db.add_rule(1, "always use black for code formatting", category="style")
     db.add_rule(1, "prefer pytest over unittest", category="testing")
-    db.add_rule(1, "run docker build before pushing", category="deploy")
     results = db.get_rules_semantic(1, "code formatting style")
     assert results[0]["category"] == "style"
 
 
-def test_get_rules_semantic_falls_back_without_vs(tmp_path):
-    db = Database(tmp_path / "test.db")
+def test_update_note_reindexes_vector(db_vs):
+    db, vs = db_vs
+    note_id = db.add_note(1, "original text about deployment")
+    db.update_note(1, note_id, "updated text about kubernetes", "deploy", 0.9)
+    ids = vs.query("notes", "kubernetes orchestration")
+    assert str(note_id) in ids
+
+
+def test_get_notes_semantic_excludes_archived(db_vs):
+    db, vs = db_vs
+    n1 = db.add_note(1, "live note about formatting", category="style")
+    n2 = db.add_note(1, "archived note about formatting", category="style")
+    db.archive_notes(1, [n2])
+    results = db.get_notes_semantic(1, "formatting style")
+    ids = [r["id"] for r in results]
+    assert n1 in ids
+    assert n2 not in ids
+
+
+def test_reconcile_vector_indexes_strands_old_rule_entries(tmp_path):
+    """After v2.9 upgrade, IDs that used to be in the 'rules' collection are
+    notes — the reconcile should have moved them to 'notes' and cleared the
+    stale 'rules' entries."""
+    vs = VectorStore(chromadb.PersistentClient(path=str(tmp_path / "chroma")))
+    db = Database(tmp_path / "test.db", vector_store=vs)
     db.create_user("user@example.com")
-    db.add_rule(1, "use type hints")
-    results = db.get_rules_semantic(1, "typing")
-    assert len(results) == 1
+    note_id = db.add_note(1, "use type hints everywhere")
+
+    # Simulate a stale entry that pre-v2.9 would have been written here.
+    vs.add("rules", str(note_id), "stale text", {"user_id": 1, "category": "general"})
+    # Re-instantiate the database to trigger startup reconcile.
+    db2 = Database(tmp_path / "test.db", vector_store=vs)  # noqa: F841
+
+    # The note should still be queryable in 'notes' …
+    assert str(note_id) in vs.query("notes", "type hints")
+    # … and the stale 'rules' entry should be gone (reconciled at startup).
+    assert str(note_id) not in vs.query("rules", "stale text")
 
 
 def test_episodic_get_semantic_returns_relevant_first(db_vs):
@@ -195,8 +242,8 @@ def test_episodic_get_semantic_falls_back_without_vs(tmp_path):
 def test_memory_recall_long_term_semantic(db_vs):
     db, _ = db_vs
     mem = MemoryFacade(db)
-    mem.remember("long_term", user_id=1, rule="write docstrings for all modules", category="docs")
-    mem.remember("long_term", user_id=1, rule="tag every release", category="deploy")
+    mem.remember("long_term", user_id=1, text="write docstrings for all modules", category="docs")
+    mem.remember("long_term", user_id=1, text="tag every release", category="deploy")
     results = mem.recall("long_term", user_id=1, semantic_query="documentation")
     assert results[0]["category"] == "docs"
 
@@ -225,6 +272,6 @@ def test_memory_recall_episodic_semantic(db_vs):
 def test_memory_recall_without_semantic_query_uses_sql(db_vs):
     db, _ = db_vs
     mem = MemoryFacade(db)
-    mem.remember("long_term", user_id=1, rule="use snake_case", category="style")
+    mem.remember("long_term", user_id=1, text="use snake_case", category="style")
     results = mem.recall("long_term", user_id=1)
     assert len(results) == 1
