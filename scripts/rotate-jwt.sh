@@ -28,7 +28,7 @@ while getopts ":n:r:h" opt; do
     n) NAMESPACE="${OPTARG}" ;;
     r) RELEASE="${OPTARG}" ;;
     h)
-      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) echo "Unknown flag: -${OPTARG}" >&2; exit 2 ;;
@@ -46,12 +46,15 @@ echo "→ Verifying secret ${NAMESPACE}/${SECRET_NAME} exists…"
 kubectl -n "${NAMESPACE}" get secret "${SECRET_NAME}" >/dev/null
 
 NEW_SECRET="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 64)"
-NEW_SECRET_B64="$(printf '%s' "${NEW_SECRET}" | base64 -w0 2>/dev/null || printf '%s' "${NEW_SECRET}" | base64)"
+NEW_SECRET_B64="$(printf '%s' "${NEW_SECRET}" | base64 | tr -d '\n')"
 
 echo "→ Patching ${NAMESPACE}/${SECRET_NAME} with a new JFYI_JWT_SECRET…"
+# Pass the patch via stdin so the secret value never appears in process listings.
 kubectl -n "${NAMESPACE}" patch secret "${SECRET_NAME}" \
   --type=json \
-  -p="[{\"op\":\"replace\",\"path\":\"/data/JFYI_JWT_SECRET\",\"value\":\"${NEW_SECRET_B64}\"}]"
+  -p- <<EOF
+[{"op":"replace","path":"/data/JFYI_JWT_SECRET","value":"${NEW_SECRET_B64}"}]
+EOF
 
 echo "→ Rolling deployment ${NAMESPACE}/${RELEASE}…"
 kubectl -n "${NAMESPACE}" rollout restart deployment "${RELEASE}"
