@@ -24,40 +24,88 @@ def client(tmp_path):
     return client
 
 
+def test_get_notes_empty(client):
+    resp = client.get("/api/profile/notes")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_create_note(client):
+    resp = client.post(
+        "/api/profile/notes",
+        json={"text": "Prefers early returns", "category": "style", "confidence": 0.9},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["text"] == "Prefers early returns"
+    assert "id" in data
+
+
+def test_delete_note(client):
+    create = client.post("/api/profile/notes", json={"text": "temp note", "category": "general"})
+    note_id = create.json()["id"]
+    resp = client.delete(f"/api/profile/notes/{note_id}")
+    assert resp.status_code == 204
+    assert client.get("/api/profile/notes").json() == []
+
+
+def test_update_note(client):
+    create = client.post("/api/profile/notes", json={"text": "Old", "category": "general"})
+    note_id = create.json()["id"]
+    resp = client.put(
+        f"/api/profile/notes/{note_id}",
+        json={"text": "New", "category": "style", "confidence": 0.8},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["text"] == "New"
+
+
+# ── Curated rules ─────────────────────────────────────────────────────────────
+
+
 def test_get_rules_empty(client):
     resp = client.get("/api/profile/rules")
     assert resp.status_code == 200
     assert resp.json() == []
 
 
-def test_create_rule(client):
+def test_create_rule_with_source_notes(client):
+    n1 = client.post("/api/profile/notes", json={"text": "obs 1", "category": "style"}).json()["id"]
+    n2 = client.post("/api/profile/notes", json={"text": "obs 2", "category": "style"}).json()["id"]
     resp = client.post(
         "/api/profile/rules",
-        json={"rule": "Prefers early returns", "category": "style", "confidence": 0.9},
+        json={
+            "text": "Prefer composition over inheritance",
+            "category": "architecture",
+            "source_note_ids": [n1, n2],
+        },
     )
     assert resp.status_code == 201
-    data = resp.json()
-    assert data["rule"] == "Prefers early returns"
-    assert "id" in data
+    rule = resp.json()
+    assert rule["text"] == "Prefer composition over inheritance"
+    rules = client.get("/api/profile/rules").json()
+    assert sorted(rules[0]["source_note_ids"]) == sorted([n1, n2])
+
+
+def test_update_rule(client):
+    create = client.post(
+        "/api/profile/rules", json={"text": "Old", "category": "general", "source_note_ids": []}
+    )
+    rule_id = create.json()["id"]
+    resp = client.put(f"/api/profile/rules/{rule_id}", json={"text": "New", "category": "style"})
+    assert resp.status_code == 200
+    assert resp.json()["text"] == "New"
 
 
 def test_delete_rule(client):
-    create = client.post("/api/profile/rules", json={"rule": "temp rule", "category": "general"})
+    create = client.post(
+        "/api/profile/rules",
+        json={"text": "temp", "category": "general", "source_note_ids": []},
+    )
     rule_id = create.json()["id"]
     resp = client.delete(f"/api/profile/rules/{rule_id}")
     assert resp.status_code == 204
     assert client.get("/api/profile/rules").json() == []
-
-
-def test_update_rule(client):
-    create = client.post("/api/profile/rules", json={"rule": "Old", "category": "general"})
-    rule_id = create.json()["id"]
-    resp = client.put(
-        f"/api/profile/rules/{rule_id}",
-        json={"rule": "New", "category": "style", "confidence": 0.8},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["rule"] == "New"
 
 
 def test_get_agent_analytics_empty(client):
@@ -116,22 +164,22 @@ def test_get_friction_events(client):
 # ── Agent Provenance ───────────────────────────────────────────────────────────
 
 
-def test_create_rule_with_agent_name(client):
+def test_create_note_with_agent_name(client):
     resp = client.post(
-        "/api/profile/rules",
+        "/api/profile/notes",
         json={
-            "rule": "Prefer composition",
+            "text": "Prefer composition",
             "category": "architecture",
             "agent_name": "claude-sonnet-4-6",
         },
     )
     assert resp.status_code == 201
-    rules = client.get("/api/profile/rules").json()
-    assert rules[0]["agent_name"] == "claude-sonnet-4-6"
+    notes = client.get("/api/profile/notes").json()
+    assert notes[0]["agent_name"] == "claude-sonnet-4-6"
 
 
-def test_create_rule_without_agent_name(client):
-    resp = client.post("/api/profile/rules", json={"rule": "No agent"})
+def test_create_note_without_agent_name(client):
+    resp = client.post("/api/profile/notes", json={"text": "No agent"})
     assert resp.status_code == 201
-    rules = client.get("/api/profile/rules").json()
-    assert rules[0]["agent_name"] is None
+    notes = client.get("/api/profile/notes").json()
+    assert notes[0]["agent_name"] is None

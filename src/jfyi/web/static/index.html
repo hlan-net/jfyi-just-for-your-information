@@ -314,7 +314,7 @@
           <tbody>
             <tr v-for="r in rules" :key="r.id">
               <td><span :class="'pill pill-' + categoryColor(r.category)">{{ r.category }}</span></td>
-              <td>{{ r.rule }}</td>
+              <td>{{ r.text }}</td>
               <td>{{ (r.confidence * 100).toFixed(0) }}%</td>
               <td><span :class="r.source === 'synthesized' ? 'pill pill-orange' : r.source === 'manual' ? 'pill pill-purple' : 'pill pill-green'">{{ r.source }}</span></td>
               <td style="color: var(--muted); font-size: 0.8rem;">{{ r.agent_name || '—' }}</td>
@@ -353,7 +353,7 @@
         <div v-for="r in rules" :key="r.id" style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border);">
           <input type="checkbox" :id="'sr'+r.id" v-model="selected[r.id]" style="flex-shrink:0;width:1rem;height:1rem;cursor:pointer;" />
           <label :for="'sr'+r.id" style="flex:1;cursor:pointer;font-size:0.9rem;line-height:1.4;">
-            <span :class="'pill pill-' + catColor(r.category)" style="margin-right:0.35rem;">{{ r.category }}</span>{{ r.rule }}
+            <span :class="'pill pill-' + catColor(r.category)" style="margin-right:0.35rem;">{{ r.category }}</span>{{ r.text }}
           </label>
           <div style="flex-shrink:0;font-size:1.15rem;letter-spacing:1px;">
             <span v-for="s in 5" :key="s" @click="setPriority(r.id, s)"
@@ -429,7 +429,7 @@
           <tbody>
             <tr v-for="(r, i) in synthesized" :key="i">
               <td><span :class="'pill pill-' + catColor(r.category)">{{ r.category }}</span></td>
-              <td style="line-height:1.5; font-size:0.95rem; padding:0.75rem 0;">{{ r.rule }}</td>
+              <td style="line-height:1.5; font-size:0.95rem; padding:0.75rem 0;">{{ r.text }}</td>
               <td style="vertical-align:middle;">
                 <div style="display:flex; flex-direction:column; gap:2px;">
                   <div style="height:6px; width:100%; background:var(--border); border-radius:3px; overflow:hidden;">
@@ -1029,10 +1029,10 @@ const RuleSynthesis = {
 
         const prioritiesObj = {};
         props.rules.forEach(r => { prioritiesObj[r.id] = priorities[r.id] || 3; });
-        const synthRes = await fetch(API + '/api/profile/rules/synthesize', {
+        const synthRes = await fetch(API + '/api/profile/notes/synthesize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rule_ids: selectedIds.value, priorities: prioritiesObj }),
+          body: JSON.stringify({ note_ids: selectedIds.value, priorities: prioritiesObj }),
         });
         if (!synthRes.ok) { const d = await synthRes.json(); throw new Error(d.detail || 'Synthesis failed'); }
         const data = await synthRes.json();
@@ -1049,7 +1049,7 @@ const RuleSynthesis = {
       applying.value = true;
       error.value = '';
       try {
-        const res = await fetch(API + '/api/profile/rules/synthesize/apply', {
+        const res = await fetch(API + '/api/profile/notes/synthesize/apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ synthesized: synthesized.value, archive_ids: archiveIds }),
@@ -1096,14 +1096,14 @@ const Profile = {
     const loadRules = async () => {
       loading.value = true;
       try {
-        const res = await fetch(API + '/api/profile/rules');
+        const res = await fetch(API + '/api/profile/notes');
         if (res.ok) rules.value = await res.json();
       } finally { loading.value = false; }
     };
 
     const deleteRule = async (id) => {
       if (!confirm('Delete this rule?')) return;
-      const res = await fetch(API + `/api/profile/rules/${id}`, { method: 'DELETE' });
+      const res = await fetch(API + `/api/profile/notes/${id}`, { method: 'DELETE' });
       if (res.ok) loadRules();
     };
 
@@ -1115,7 +1115,7 @@ const Profile = {
     const copyRules = () => {
       const header = 'Category\tRule\tConfidence\tSource';
       const rows = rules.value.map(r =>
-        `${r.category}\t${r.rule}\t${(r.confidence * 100).toFixed(0)}%\t${r.source}`
+        `${r.category}\t${r.text}\t${(r.confidence * 100).toFixed(0)}%\t${r.source}`
       );
       const text = [header, ...rows].join('\n');
       navigator.clipboard.writeText(text).then(() => {

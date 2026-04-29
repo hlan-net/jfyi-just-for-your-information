@@ -49,33 +49,44 @@ class SynthesisConfigBody(BaseModel):
 
 
 class SynthesizeRequest(BaseModel):
-    rule_ids: list[int]
+    note_ids: list[int]
     priorities: dict[str, int]  # JSON object keys are always strings
 
 
-class SynthesizedRuleItem(BaseModel):
-    rule: str
+class SynthesizedNoteItem(BaseModel):
+    text: str
     category: str = "general"
     confidence: float = 0.9
 
 
 class SynthesizeApplyRequest(BaseModel):
-    synthesized: list[SynthesizedRuleItem]
+    synthesized: list[SynthesizedNoteItem]
     archive_ids: list[int]
 
 
-class RuleCreate(BaseModel):
-    rule: str
+class NoteCreate(BaseModel):
+    text: str
     category: str = "general"
     confidence: float = 1.0
     agent_name: str | None = None
 
 
-class RuleUpdate(BaseModel):
-    rule: str
+class NoteUpdate(BaseModel):
+    text: str
     category: str
     confidence: float
     agent_name: str | None = None
+
+
+class RuleCreate(BaseModel):
+    text: str
+    category: str = "general"
+    source_note_ids: list[int] = []
+
+
+class RuleUpdate(BaseModel):
+    text: str
+    category: str
 
 
 class InteractionCreate(BaseModel):
@@ -441,42 +452,84 @@ def _register_auth_api(app: FastAPI) -> None:
 
 
 def _register_profile_api(app: FastAPI) -> None:
-    @app.get("/api/profile/rules")
-    async def get_rules(
+    # ── Notes (raw observation tier) ──────────────────────────────────────────
+    @app.get("/api/profile/notes")
+    async def get_notes(
         current_user: CurrentUser, db: DBDep, category: str | None = None
     ) -> list[dict[str, Any]]:
         return db.get_notes(user_id=current_user["id"], category=category)
 
-    @app.post("/api/profile/rules", status_code=201)
-    async def create_rule(body: RuleCreate, current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
-        rule_id = db.add_note(
+    @app.post("/api/profile/notes", status_code=201)
+    async def create_note(body: NoteCreate, current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
+        note_id = db.add_note(
             user_id=current_user["id"],
-            text=body.rule,
+            text=body.text,
             category=body.category,
             confidence=body.confidence,
             source="manual",
             agent_name=body.agent_name,
         )
         return {
-            "id": rule_id,
-            "rule": body.rule,
+            "id": note_id,
+            "text": body.text,
             "category": body.category,
             "confidence": body.confidence,
             "agent_name": body.agent_name,
+        }
+
+    @app.put("/api/profile/notes/{note_id}", responses={404: {"description": "Note not found"}})
+    async def update_note(
+        note_id: int, body: NoteUpdate, current_user: CurrentUser, db: DBDep
+    ) -> dict[str, Any]:
+        ok = db.update_note(
+            current_user["id"],
+            note_id,
+            body.text,
+            body.category,
+            body.confidence,
+            body.agent_name,
+        )
+        if not ok:
+            raise HTTPException(status_code=404, detail="Note not found")
+        return {"id": note_id, **body.model_dump()}
+
+    @app.delete(
+        "/api/profile/notes/{note_id}",
+        status_code=204,
+        responses={404: {"description": "Note not found"}},
+    )
+    async def delete_note(note_id: int, current_user: CurrentUser, db: DBDep) -> None:
+        ok = db.delete_note(current_user["id"], note_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Note not found")
+
+    # ── Rules (curated constitution tier) ─────────────────────────────────────
+    @app.get("/api/profile/rules")
+    async def get_rules(
+        current_user: CurrentUser, db: DBDep, category: str | None = None
+    ) -> list[dict[str, Any]]:
+        return db.get_rules(user_id=current_user["id"], category=category)
+
+    @app.post("/api/profile/rules", status_code=201)
+    async def create_rule(body: RuleCreate, current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
+        rule_id = db.add_rule(
+            user_id=current_user["id"],
+            text=body.text,
+            category=body.category,
+            source_note_ids=body.source_note_ids,
+        )
+        return {
+            "id": rule_id,
+            "text": body.text,
+            "category": body.category,
+            "source_note_ids": body.source_note_ids,
         }
 
     @app.put("/api/profile/rules/{rule_id}", responses={404: {"description": "Rule not found"}})
     async def update_rule(
         rule_id: int, body: RuleUpdate, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
-        ok = db.update_note(
-            current_user["id"],
-            rule_id,
-            body.rule,
-            body.category,
-            body.confidence,
-            body.agent_name,
-        )
+        ok = db.update_rule(current_user["id"], rule_id, body.text, body.category)
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
         return {"id": rule_id, **body.model_dump()}
@@ -487,7 +540,7 @@ def _register_profile_api(app: FastAPI) -> None:
         responses={404: {"description": "Rule not found"}},
     )
     async def delete_rule(rule_id: int, current_user: CurrentUser, db: DBDep) -> None:
-        ok = db.delete_note(current_user["id"], rule_id)
+        ok = db.delete_rule(current_user["id"], rule_id)
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
 
@@ -525,13 +578,13 @@ def _register_synthesis_api(app: FastAPI) -> None:
         return {"status": "saved"}
 
     @app.post(
-        "/api/profile/rules/synthesize",
+        "/api/profile/notes/synthesize",
         responses={
-            400: {"description": "No config or insufficient rules"},
+            400: {"description": "No config or insufficient notes"},
             502: {"description": "LLM synthesis failed"},
         },
     )
-    async def synthesize_rules(
+    async def synthesize_notes(
         body: SynthesizeRequest, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
         from ..synthesizer import RuleSynthesizer
@@ -543,10 +596,10 @@ def _register_synthesis_api(app: FastAPI) -> None:
                 detail="No synthesis model configured. Save a model config first.",
             )
 
-        all_rules = db.get_notes(current_user["id"])
-        rules = [r for r in all_rules if r["id"] in body.rule_ids]
-        if len(rules) < 2:
-            raise HTTPException(status_code=400, detail="Select at least 2 rules to synthesize.")
+        all_notes = db.get_notes(current_user["id"])
+        notes = [n for n in all_notes if n["id"] in body.note_ids]
+        if len(notes) < 2:
+            raise HTTPException(status_code=400, detail="Select at least 2 notes to synthesize.")
 
         priorities = {int(k): v for k, v in body.priorities.items()}
         synthesizer = RuleSynthesizer(
@@ -556,26 +609,26 @@ def _register_synthesis_api(app: FastAPI) -> None:
             base_url=cfg["base_url"],
         )
         try:
-            synthesized = await synthesizer.synthesize(rules, priorities)
+            synthesized = await synthesizer.synthesize(notes, priorities)
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Synthesis failed: {exc}") from exc
 
-        return {"synthesized": synthesized, "source_count": len(rules)}
+        return {"synthesized": synthesized, "source_count": len(notes)}
 
-    @app.post("/api/profile/rules/synthesize/apply", status_code=201)
-    async def apply_synthesized_rules(
+    @app.post("/api/profile/notes/synthesize/apply", status_code=201)
+    async def apply_synthesized_notes(
         body: SynthesizeApplyRequest, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
         def _sync_apply() -> tuple[int, int]:
             archived_count = db.archive_notes(current_user["id"], body.archive_ids)
             added_count = 0
             for item in body.synthesized:
-                rule_text = item.rule
+                note_text = item.text
                 if settings.dlp_enabled:
-                    rule_text, _ = redact(rule_text)
+                    note_text, _ = redact(note_text)
                 db.add_note(
                     user_id=current_user["id"],
-                    text=rule_text,
+                    text=note_text,
                     category=item.category,
                     confidence=item.confidence,
                     source="synthesized",

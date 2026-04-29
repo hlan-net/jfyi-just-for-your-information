@@ -14,8 +14,8 @@ from jfyi.synthesizer import RuleSynthesizer, _format_rules, _parse_response
 
 def test_format_rules_sorts_by_priority_desc():
     rules = [
-        {"id": 1, "rule": "Low importance", "category": "style"},
-        {"id": 2, "rule": "High importance", "category": "architecture"},
+        {"id": 1, "text": "Low importance", "category": "style"},
+        {"id": 2, "text": "High importance", "category": "architecture"},
     ]
     result = _format_rules(rules, {1: 1, 2: 5})
     lines = result.splitlines()
@@ -25,36 +25,36 @@ def test_format_rules_sorts_by_priority_desc():
 
 
 def test_format_rules_defaults_missing_priority_to_3():
-    rules = [{"id": 1, "rule": "No priority set", "category": "general"}]
+    rules = [{"id": 1, "text": "No priority set", "category": "general"}]
     result = _format_rules(rules, {})
     assert "[Priority 3]" in result
 
 
 def test_format_rules_includes_category():
-    rules = [{"id": 1, "rule": "Use DI", "category": "architecture"}]
+    rules = [{"id": 1, "text": "Use DI", "category": "architecture"}]
     result = _format_rules(rules, {1: 4})
     assert "(architecture)" in result
 
 
 def test_parse_response_clean_json():
-    raw = json.dumps([{"rule": "Use snake_case", "category": "style", "confidence": 0.95}])
+    raw = json.dumps([{"text": "Use snake_case", "category": "style", "confidence": 0.95}])
     result = _parse_response(raw)
     assert len(result) == 1
-    assert result[0]["rule"] == "Use snake_case"
+    assert result[0]["text"] == "Use snake_case"
     assert result[0]["category"] == "style"
     assert result[0]["confidence"] == pytest.approx(0.95)
 
 
 def test_parse_response_strips_markdown_fences():
-    payload = json.dumps([{"rule": "Test", "category": "general", "confidence": 0.9}])
+    payload = json.dumps([{"text": "Test", "category": "general", "confidence": 0.9}])
     raw = f"```json\n{payload}\n```"
     result = _parse_response(raw)
     assert len(result) == 1
-    assert result[0]["rule"] == "Test"
+    assert result[0]["text"] == "Test"
 
 
 def test_parse_response_defaults_missing_fields():
-    raw = json.dumps([{"rule": "Minimal rule"}])
+    raw = json.dumps([{"text": "Minimal rule"}])
     result = _parse_response(raw)
     assert result[0]["category"] == "general"
     assert result[0]["confidence"] == pytest.approx(0.9)
@@ -67,7 +67,7 @@ def test_parse_response_invalid_json_raises():
 
 def test_parse_response_non_array_raises():
     with pytest.raises(ValueError, match="JSON array"):
-        _parse_response('{"rule": "oops"}')
+        _parse_response('{"text": "oops"}')
 
 
 # ── RuleSynthesizer init ───────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ def test_synthesizer_rejects_unknown_provider():
 async def test_synthesizer_too_few_rules_raises():
     synth = RuleSynthesizer("anthropic", "claude-haiku", "sk-ant-test")
     with pytest.raises(ValueError, match="At least 2"):
-        await synth.synthesize([{"id": 1, "rule": "Only rule", "category": "general"}], {1: 3})
+        await synth.synthesize([{"id": 1, "text": "Only rule", "category": "general"}], {1: 3})
 
 
 # ── RuleSynthesizer HTTP calls (mocked) ───────────────────────────────────────
@@ -96,7 +96,7 @@ def _make_mock_response(body: dict) -> MagicMock:
 
 async def test_synthesize_anthropic_provider():
     synth_output = [
-        {"rule": "Prefer DI over globals", "category": "architecture", "confidence": 0.9}
+        {"text": "Prefer DI over globals", "category": "architecture", "confidence": 0.9}
     ]  # noqa: E501
     anthropic_response = {"content": [{"text": json.dumps(synth_output)}]}
 
@@ -108,18 +108,18 @@ async def test_synthesize_anthropic_provider():
     with patch("jfyi.synthesizer.httpx.AsyncClient", return_value=mock_ctx):
         synth = RuleSynthesizer("anthropic", "claude-haiku-4-5-20251001", "sk-ant-test")
         rules = [
-            {"id": 1, "rule": "Use dependency injection", "category": "architecture"},
-            {"id": 2, "rule": "Avoid global state", "category": "architecture"},
+            {"id": 1, "text": "Use dependency injection", "category": "architecture"},
+            {"id": 2, "text": "Avoid global state", "category": "architecture"},
         ]
         result = await synth.synthesize(rules, {1: 5, 2: 4})
 
     assert len(result) == 1
-    assert result[0]["rule"] == "Prefer DI over globals"
+    assert result[0]["text"] == "Prefer DI over globals"
     assert result[0]["category"] == "architecture"
 
 
 async def test_synthesize_openai_provider():
-    synth_output = [{"rule": "Write tests first", "category": "testing", "confidence": 0.88}]
+    synth_output = [{"text": "Write tests first", "category": "testing", "confidence": 0.88}]
     openai_response = {"choices": [{"message": {"content": json.dumps(synth_output)}}]}
 
     mock_ctx = AsyncMock()
@@ -130,13 +130,13 @@ async def test_synthesize_openai_provider():
     with patch("jfyi.synthesizer.httpx.AsyncClient", return_value=mock_ctx):
         synth = RuleSynthesizer("openai", "gpt-4o-mini", "sk-test")
         rules = [
-            {"id": 1, "rule": "Write unit tests", "category": "testing"},
-            {"id": 2, "rule": "Follow TDD", "category": "testing"},
+            {"id": 1, "text": "Write unit tests", "category": "testing"},
+            {"id": 2, "text": "Follow TDD", "category": "testing"},
         ]
         result = await synth.synthesize(rules, {1: 4, 2: 5})
 
     assert len(result) == 1
-    assert result[0]["rule"] == "Write tests first"
+    assert result[0]["text"] == "Write tests first"
 
 
 # ── Database synthesis methods ─────────────────────────────────────────────────
