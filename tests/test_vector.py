@@ -189,17 +189,6 @@ def test_update_note_reindexes_vector(db_vs):
     assert str(note_id) in ids
 
 
-def test_get_notes_semantic_excludes_archived(db_vs):
-    db, vs = db_vs
-    n1 = db.add_note(1, "live note about formatting", category="style")
-    n2 = db.add_note(1, "archived note about formatting", category="style")
-    db.archive_notes(1, [n2])
-    results = db.get_notes_semantic(1, "formatting style")
-    ids = [r["id"] for r in results]
-    assert n1 in ids
-    assert n2 not in ids
-
-
 def test_reconcile_vector_indexes_strands_old_rule_entries(tmp_path):
     """After v2.9 upgrade, IDs that used to be in the 'rules' collection are
     notes — the reconcile should have moved them to 'notes' and cleared the

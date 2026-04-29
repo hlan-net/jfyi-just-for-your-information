@@ -363,6 +363,17 @@ class Database:
 
                     PRAGMA user_version = 9;
                 """)
+            if version < 10:
+                # The `archived` column on profile_notes was carried over from
+                # the pre-split schema as forward-compat for a bulk-archive
+                # flow that never materialised — no REST route, no UI,
+                # no production write path. Prune it. profile_rules.archived
+                # is unaffected (still used for soft-delete on curated rules).
+                conn.executescript("""
+                    ALTER TABLE profile_notes DROP COLUMN archived;
+
+                    PRAGMA user_version = 10;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -543,28 +554,15 @@ class Database:
             if category:
                 rows = conn.execute(
                     "SELECT * FROM profile_notes WHERE user_id = ? AND category = ? "
-                    "AND archived = 0 ORDER BY confidence DESC",
+                    "ORDER BY confidence DESC",
                     (user_id, category),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM profile_notes WHERE user_id = ? AND archived = 0 "
-                    "ORDER BY confidence DESC",
+                    "SELECT * FROM profile_notes WHERE user_id = ? ORDER BY confidence DESC",
                     (user_id,),
                 ).fetchall()
             return [dict(r) for r in rows]
-
-    def archive_notes(self, user_id: int, note_ids: list[int]) -> int:
-        """Soft-delete notes by marking them archived. Returns count archived."""
-        if not note_ids:
-            return 0
-        placeholders = ",".join("?" * len(note_ids))
-        with self._conn() as conn:
-            cur = conn.execute(
-                f"UPDATE profile_notes SET archived=1 WHERE user_id=? AND id IN ({placeholders})",
-                (user_id, *note_ids),
-            )
-            return cur.rowcount
 
     def get_synthesis_config(self, user_id: int) -> dict[str, Any] | None:
         with self._conn() as conn:
@@ -636,8 +634,7 @@ class Database:
         placeholders = ",".join("?" * len(ids))
         with self._conn() as conn:
             rows = conn.execute(
-                f"SELECT * FROM profile_notes WHERE id IN ({placeholders}) "
-                "AND user_id=? AND archived = 0",
+                f"SELECT * FROM profile_notes WHERE id IN ({placeholders}) AND user_id=?",
                 (*ids, user_id),
             ).fetchall()
         id_order = {id_: i for i, id_ in enumerate(ids)}
@@ -1006,7 +1003,7 @@ class Database:
                 (user_id,),
             ).fetchone()
             total_rules = conn.execute(
-                "SELECT COUNT(*) FROM profile_notes WHERE user_id=? AND archived=0", (user_id,)
+                "SELECT COUNT(*) FROM profile_notes WHERE user_id=?", (user_id,)
             ).fetchone()[0]
         d = dict(row)
         d["total_rules"] = total_rules
@@ -1103,7 +1100,7 @@ class Database:
                              THEN 1 ELSE 0 END) as medium,
                     SUM(CASE WHEN confidence >= 0.75 THEN 1 ELSE 0 END) as high
                 FROM profile_notes
-                WHERE user_id = ? AND archived = 0
+                WHERE user_id = ?
                 GROUP BY category
                 ORDER BY rules DESC
                 """,

@@ -1,6 +1,6 @@
 # Notes vs Rules — two-tier developer profile
 
-Target: `v2.9.0` (initial split) + `v2.10.0` (semantic correction). Status: **Shipped**.
+Target: `v2.9.0` (initial split) + `v2.10.0` (semantic correction) + `v2.10.1` (archived prune). Status: **Shipped**.
 
 > **v2.10.0 note (2026-04-29):** the v2.9.0 plan retained two artifacts from the
 > pre-split mental model that turned out to be wrong once the layers existed:
@@ -13,8 +13,10 @@ Target: `v2.9.0` (initial split) + `v2.10.0` (semantic correction). Status: **Sh
 >    with the many-to-many semantics. v2.10.0 drops it (migration #9);
 >    `rule_note_links` is the sole source of truth for citations.
 >
-> The `archived` column on notes remains (forward-compat) but is not surfaced
-> or written by any user-facing flow.
+> **v2.10.1 follow-up:** the `archived` column on `profile_notes` was carried
+> over from the pre-split schema as forward-compat for a bulk-archive flow that
+> never had a REST route or UI. Pruned in migration #10.
+> `profile_rules.archived` is unaffected.
 
 ## Context
 

@@ -142,23 +142,6 @@ async def test_synthesize_openai_provider():
 # ── Database synthesis methods ─────────────────────────────────────────────────
 
 
-def test_archive_notes(db):
-    user_id = 1
-    n1 = db.add_note(user_id, "Note A", "general")
-    n2 = db.add_note(user_id, "Note B", "style")
-    assert len(db.get_notes(user_id)) == 2
-
-    count = db.archive_notes(user_id, [n1])
-    assert count == 1
-    notes = db.get_notes(user_id)
-    assert len(notes) == 1
-    assert notes[0]["id"] == n2
-
-
-def test_archive_notes_empty_list(db):
-    assert db.archive_notes(1, []) == 0
-
-
 def test_synthesis_config_roundtrip(db):
     assert db.get_synthesis_config(1) is None
     db.save_synthesis_config(1, "anthropic", "claude-haiku", "sk-ant-test", None)
