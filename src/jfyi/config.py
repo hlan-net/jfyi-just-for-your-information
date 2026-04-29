@@ -14,8 +14,6 @@ class Settings(BaseSettings):
 
     jwt_secret: SecretStr = SecretStr(secrets.token_hex(32))
 
-    model_config = SettingsConfigDict(env_prefix="JFYI_", env_file=".env", extra="ignore")
-
     # Storage
     data_dir: Path = Path("/data")
     db_path: Path = Path("/data/jfyi.db")
@@ -26,6 +24,9 @@ class Settings(BaseSettings):
     dashboard_host: str = "0.0.0.0"
     dashboard_port: int = 3000
     transport: str = "sse"  # "stdio" or "sse"
+
+    # Session lifetime for the dashboard cookie (seconds). Default = 24h.
+    session_ttl_seconds: int = 86400
 
     # ChromaDB (sibling pod; embeddings computed server-side via default ONNX EF)
     chromadb_host: str = "localhost"

@@ -892,6 +892,25 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>About</h2>
+      <p class="desc">Build, deployment, and runtime details for this JFYI instance.</p>
+      <table>
+        <tbody>
+          <tr><td style="color:var(--muted);width:200px;">JFYI version</td><td style="font-family:monospace;">{{ about.jfyi_version || '—' }}</td></tr>
+          <tr><td style="color:var(--muted);">ChromaDB version</td><td style="font-family:monospace;">{{ about.chromadb_version || '—' }}</td></tr>
+          <tr><td style="color:var(--muted);">Image digest</td><td style="font-family:monospace;word-break:break-all;">{{ about.image_digest || '—' }}</td></tr>
+          <tr><td style="color:var(--muted);">Deploy time</td><td style="font-family:monospace;">{{ about.deploy_time || '—' }}</td></tr>
+          <tr><td style="color:var(--muted);">Session TTL (s)</td><td style="font-family:monospace;">{{ about.session_ttl_seconds ?? '—' }}</td></tr>
+          <tr><td style="color:var(--muted);">Vector DB</td><td style="font-family:monospace;">{{ about.vector_db_enabled ? 'enabled' : 'disabled' }}</td></tr>
+          <tr><td style="color:var(--muted);">Summarizer</td><td style="font-family:monospace;">{{ about.summarizer_enabled ? 'enabled' : 'disabled' }}</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:1rem;">
+        <button class="btn btn-outline" @click="copyAbout">{{ copiedAbout ? '✓ Copied' : 'Copy versions' }}</button>
+      </div>
+    </div>
+
     <!-- IdP Wizard Modal -->
     <div v-if="showWizard" class="modal-overlay" @click.self="showWizard = false">
       <div class="modal-box">
@@ -1356,7 +1375,20 @@ const Admin = {
     const expandedIdp = ref(null);
     const settings = reactive({ registration_open: true });
     const showWizard = ref(false);
+    const about = ref({});
+    const copiedAbout = ref(false);
     const currentUser = computed(() => globalState.user || {});
+
+    const loadAbout = async () => {
+      const res = await fetch(API + '/api/admin/about');
+      if (res.ok) about.value = await res.json();
+    };
+
+    const copyAbout = async () => {
+      const txt = Object.entries(about.value).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n');
+      try { await navigator.clipboard.writeText(txt); copiedAbout.value = true; setTimeout(() => copiedAbout.value = false, 2000); }
+      catch { alert(txt); }
+    };
 
     const loadUsers = async () => {
       const res = await fetch(API + '/api/admin/users');
@@ -1417,9 +1449,9 @@ const Admin = {
       await loadIdps();
     };
 
-    onMounted(() => { loadUsers(); loadIdps(); loadSettings(); });
+    onMounted(() => { loadUsers(); loadIdps(); loadSettings(); loadAbout(); });
 
-    return { users, idps, expandedIdp, showWizard, currentUser, settings, toggleAdmin, deleteUser, unlink, removeIdp, onWizardSaved };
+    return { users, idps, expandedIdp, showWizard, currentUser, settings, about, copiedAbout, copyAbout, toggleAdmin, deleteUser, unlink, removeIdp, onWizardSaved, toggleRegistration };
   }
 };
 
