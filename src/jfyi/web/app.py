@@ -61,7 +61,7 @@ class SynthesizedNoteItem(BaseModel):
 
 class SynthesizeApplyRequest(BaseModel):
     synthesized: list[SynthesizedNoteItem]
-    archive_ids: list[int]
+    source_note_ids: list[int]
 
 
 class NoteCreate(BaseModel):
@@ -650,25 +650,30 @@ def _register_synthesis_api(app: FastAPI) -> None:
     async def apply_synthesized_notes(
         body: SynthesizeApplyRequest, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
-        def _sync_apply() -> tuple[int, int]:
-            archived_count = db.archive_notes(current_user["id"], body.archive_ids)
+        """Persist LLM-drawn rules from a set of source notes.
+
+        Notes are sources, rules are conclusions — applying does not touch
+        the source notes. Each synthesized item becomes a row in
+        `profile_rules` with rule_note_links populated from `source_note_ids`.
+        """
+
+        def _sync_apply() -> int:
             added_count = 0
             for item in body.synthesized:
-                note_text = item.text
+                rule_text = item.text
                 if settings.dlp_enabled:
-                    note_text, _ = redact(note_text)
-                db.add_note(
+                    rule_text, _ = redact(rule_text)
+                db.add_rule(
                     user_id=current_user["id"],
-                    text=note_text,
+                    text=rule_text,
                     category=item.category,
-                    confidence=item.confidence,
-                    source="synthesized",
+                    source_note_ids=body.source_note_ids,
                 )
                 added_count += 1
-            return added_count, archived_count
+            return added_count
 
-        added, archived = await asyncio.to_thread(_sync_apply)
-        return {"added": added, "archived": archived}
+        added = await asyncio.to_thread(_sync_apply)
+        return {"added": added, "source_count": len(body.source_note_ids)}
 
 
 def _register_analytics_api(app: FastAPI) -> None:

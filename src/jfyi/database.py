@@ -353,6 +353,16 @@ class Database:
 
                     PRAGMA user_version = 8;
                 """)
+            if version < 9:
+                # Notes are sources, rules are conclusions, and a note can be
+                # cited by many rules. The denormalized promoted_to_rule_id
+                # field on profile_notes contradicts that model and is no
+                # longer used. rule_note_links is the sole source of truth.
+                conn.executescript("""
+                    ALTER TABLE profile_notes DROP COLUMN promoted_to_rule_id;
+
+                    PRAGMA user_version = 9;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -644,9 +654,9 @@ class Database:
     ) -> int:
         """Insert a curated rule and link it to its source notes.
 
-        Each linked note has its `promoted_to_rule_id` set to the new rule id
-        when it was previously NULL. Source note ids are validated to belong
-        to the same user — foreign or unknown ids are silently dropped.
+        Source note ids are validated to belong to the same user — foreign or
+        unknown ids are silently dropped. A note may be cited by multiple
+        rules; rule_note_links is the sole source of truth for citations.
         """
         now = datetime.now(UTC).isoformat()
         clean = sanitize_rule(text)
@@ -671,11 +681,6 @@ class Database:
                 conn.execute(
                     "INSERT OR IGNORE INTO rule_note_links (rule_id, note_id) VALUES (?, ?)",
                     (rule_id, note_id),
-                )
-                conn.execute(
-                    "UPDATE profile_notes SET promoted_to_rule_id = ? "
-                    "WHERE id = ? AND user_id = ? AND promoted_to_rule_id IS NULL",
-                    (rule_id, note_id, user_id),
                 )
         if self._vs:
             self._vs.add(
@@ -739,36 +744,15 @@ class Database:
     def delete_rule(self, user_id: int, rule_id: int) -> bool:
         """Hard-delete a curated rule.
 
-        After deletion (the FK cascade clears rule_note_links), reconcile
-        `profile_notes.promoted_to_rule_id` for this user: any note whose
-        `promoted_to_rule_id` no longer points at a surviving rule is
-        reassigned to the smallest still-linked rule_id, or NULL if no
-        link survives.
+        rule_note_links rows referencing this rule cascade away via FK; the
+        underlying notes remain untouched (notes are evidence, rules are
+        conclusions — deleting a conclusion does not invalidate the source).
         """
         with self._conn() as conn:
             cur = conn.execute(
                 "DELETE FROM profile_rules WHERE id=? AND user_id=?", (rule_id, user_id)
             )
             deleted = cur.rowcount > 0
-            if deleted:
-                conn.execute(
-                    """
-                    UPDATE profile_notes
-                    SET promoted_to_rule_id = (
-                        SELECT MIN(rnl.rule_id)
-                        FROM rule_note_links rnl
-                        JOIN profile_rules pr ON pr.id = rnl.rule_id
-                        WHERE rnl.note_id = profile_notes.id
-                          AND pr.user_id = profile_notes.user_id
-                    )
-                    WHERE user_id = ?
-                      AND promoted_to_rule_id IS NOT NULL
-                      AND promoted_to_rule_id NOT IN (
-                          SELECT id FROM profile_rules WHERE user_id = ?
-                      )
-                    """,
-                    (user_id, user_id),
-                )
         if deleted and self._vs:
             self._vs.delete("rules", ids=str(rule_id))
         return deleted

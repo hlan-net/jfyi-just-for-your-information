@@ -1,6 +1,20 @@
 # Notes vs Rules — two-tier developer profile
 
-Target: `v2.9.0`. Status: **Planned**.
+Target: `v2.9.0` (initial split) + `v2.10.0` (semantic correction). Status: **Shipped**.
+
+> **v2.10.0 note (2026-04-29):** the v2.9.0 plan retained two artifacts from the
+> pre-split mental model that turned out to be wrong once the layers existed:
+>
+> 1. The `synthesize` flow wrote *new notes* (not rules), then archived the
+>    sources. v2.10.0 retargets it: synthesize draws **rules from notes** and
+>    leaves the source notes in place. Notes are evidence; rules are
+>    conclusions; one note may support many rules.
+> 2. The denormalized `profile_notes.promoted_to_rule_id` column conflicted
+>    with the many-to-many semantics. v2.10.0 drops it (migration #9);
+>    `rule_note_links` is the sole source of truth for citations.
+>
+> The `archived` column on notes remains (forward-compat) but is not surfaced
+> or written by any user-facing flow.
 
 ## Context
 
