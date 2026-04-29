@@ -117,6 +117,7 @@
     
     <nav v-if="!isSetupOrLogin">
       <router-link to="/connect">🔌 How to Connect</router-link>
+      <router-link to="/notes">📝 Notes</router-link>
       <router-link to="/profile">👤 Developer Profile</router-link>
       <router-link to="/analytics">📊 Agent Analytics</router-link>
       <router-link to="/developer">📈 My Analytics</router-link>
@@ -281,23 +282,109 @@
   </div>
 </script>
 
+<script type="text/x-template" id="notes-template">
+  <div>
+    <div class="card">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:0.5rem;">
+        <h2 style="margin:0;">Notes — raw observations</h2>
+        <div style="display:flex;gap:0.5rem;">
+          <button v-if="selectedCount >= 1" @click="showCompose = true" class="btn" style="padding:0.25rem 0.65rem;font-size:0.8rem;">Compose into rule ({{ selectedCount }})</button>
+          <button v-if="notes.length >= 2" @click="showSynthesis = true" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">Synthesize</button>
+        </div>
+      </div>
+      <p class="desc">Observations agents have filed about how you work. Review them, then promote useful patterns into your <router-link to="/profile">Developer Profile</router-link> (the curated constitution agents see).</p>
+
+      <div v-if="loading" class="loading-screen" style="height: 100px;">Loading notes...</div>
+      <div v-else-if="notes.length === 0" class="empty">
+        <div class="icon">📝</div>No notes yet — agents will file observations here as you work.
+      </div>
+      <div v-else>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;">
+          <button @click="selectAll" class="btn btn-outline" style="font-size:0.75rem;padding:0.2rem 0.55rem;">Select all</button>
+          <button @click="clearSelection" class="btn btn-outline" style="font-size:0.75rem;padding:0.2rem 0.55rem;">Clear</button>
+        </div>
+        <table style="margin-bottom: 1rem;">
+          <thead>
+            <tr>
+              <th style="width:24px;"></th>
+              <th>Category</th>
+              <th>Note</th>
+              <th>Confidence</th>
+              <th>Source</th>
+              <th>Agent</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="n in notes" :key="n.id">
+              <td><input type="checkbox" :checked="selected[n.id]" @change="toggle(n.id)" style="cursor:pointer;" /></td>
+              <td><span :class="'pill pill-' + categoryColor(n.category)">{{ n.category }}</span></td>
+              <td>{{ n.text }}</td>
+              <td>{{ (n.confidence * 100).toFixed(0) }}%</td>
+              <td><span :class="n.source === 'synthesized' ? 'pill pill-orange' : n.source === 'manual' ? 'pill pill-purple' : 'pill pill-green'">{{ n.source }}</span></td>
+              <td style="color: var(--muted); font-size: 0.8rem;">{{ n.agent_name || '—' }}</td>
+              <td><span v-if="n.promoted_to_rule_id" class="pill pill-green" :title="'Promoted to rule #' + n.promoted_to_rule_id">promoted</span></td>
+              <td style="text-align: right;"><button class="btn-danger" style="border:none; cursor:pointer;" @click="deleteNote(n.id)">×</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Compose-into-rule modal -->
+    <div v-if="showCompose" class="modal-overlay" @click.self="showCompose = false">
+      <div class="modal-box" style="max-width:640px;width:100%;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <h2 style="margin:0;font-size:1.1rem;">Compose into rule</h2>
+          <button @click="showCompose = false" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">×</button>
+        </div>
+        <p class="desc" style="font-size:0.85rem;">Promoting {{ selectedCount }} note{{ selectedCount !== 1 ? 's' : '' }} into a curated rule. Write the rule text the way you want agents to see it.</p>
+        <div style="margin-bottom:0.5rem;">
+          <label style="font-size:0.8rem;color:var(--muted);">Source notes</label>
+          <ul style="font-size:0.85rem;margin:0.25rem 0 0.75rem 1rem;padding:0;">
+            <li v-for="id in selectedIds" :key="id" style="margin-bottom:0.15rem;">{{ noteById(id)?.text }}</li>
+          </ul>
+        </div>
+        <label style="display:block;font-size:0.8rem;color:var(--muted);">Rule text</label>
+        <textarea v-model="composeText" rows="3" style="width:100%;margin-bottom:0.75rem;padding:0.5rem;border:1px solid var(--border);border-radius:4px;font:inherit;"></textarea>
+        <label style="display:block;font-size:0.8rem;color:var(--muted);">Category</label>
+        <select v-model="composeCategory" style="width:100%;margin-bottom:1rem;padding:0.5rem;border:1px solid var(--border);border-radius:4px;font:inherit;">
+          <option value="general">general</option>
+          <option value="style">style</option>
+          <option value="architecture">architecture</option>
+          <option value="testing">testing</option>
+          <option value="workflow">workflow</option>
+        </select>
+        <div v-if="composeError" style="color:var(--red);font-size:0.85rem;margin-bottom:0.5rem;">{{ composeError }}</div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;">
+          <button @click="showCompose = false" class="btn btn-outline">Cancel</button>
+          <button @click="composeRule" class="btn" :disabled="!composeText.trim() || composing">{{ composing ? 'Promoting…' : 'Promote' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <rule-synthesis :show="showSynthesis" :rules="notes" @close="showSynthesis = false" @applied="onApplied" />
+  </div>
+</script>
+
 <script type="text/x-template" id="profile-template">
   <div>
     <div class="card">
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:0.5rem;">
         <h2 style="margin:0;">Your Developer Constitution</h2>
         <div style="display:flex;gap:0.5rem;">
-          <button v-if="rules.length >= 2" @click="showSynthesis = true" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">Synthesize</button>
+          <button @click="showAdd = true" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">Add rule</button>
           <button v-if="rules.length > 0" @click="copyRules" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">
             {{ copied ? 'Copied!' : 'Copy all' }}
           </button>
         </div>
       </div>
-      <p class="desc">Cross-project, cross-agent rules describing how you work. Injected into every AI assistant's context at session start — not project-specific notes, but your developer DNA.</p>
+      <p class="desc">Curated cross-project, cross-agent rules that describe how you work. This is what agents see at session start. Build it by promoting <router-link to="/notes">notes</router-link> agents have filed about you, or add rules directly.</p>
 
       <div v-if="loading" class="loading-screen" style="height: 100px;">Loading rules...</div>
       <div v-else-if="rules.length === 0" class="empty">
-        <div class="icon">🧬</div>No profile rules yet.
+        <div class="icon">🧬</div>No curated rules yet — promote some notes or add a rule directly.
       </div>
       <div v-else>
         <table style="margin-bottom: 1rem;">
@@ -305,9 +392,7 @@
             <tr>
               <th>Category</th>
               <th>Rule</th>
-              <th>Confidence</th>
-              <th>Source</th>
-              <th>Agent</th>
+              <th>Source notes</th>
               <th></th>
             </tr>
           </thead>
@@ -315,16 +400,38 @@
             <tr v-for="r in rules" :key="r.id">
               <td><span :class="'pill pill-' + categoryColor(r.category)">{{ r.category }}</span></td>
               <td>{{ r.text }}</td>
-              <td>{{ (r.confidence * 100).toFixed(0) }}%</td>
-              <td><span :class="r.source === 'synthesized' ? 'pill pill-orange' : r.source === 'manual' ? 'pill pill-purple' : 'pill pill-green'">{{ r.source }}</span></td>
-              <td style="color: var(--muted); font-size: 0.8rem;">{{ r.agent_name || '—' }}</td>
+              <td style="color:var(--muted);font-size:0.85rem;">{{ (r.source_note_ids || []).length }} note{{ (r.source_note_ids || []).length === 1 ? '' : 's' }}</td>
               <td style="text-align: right;"><button class="btn-danger" style="border:none; cursor:pointer;" @click="deleteRule(r.id)">×</button></td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
-    <rule-synthesis :show="showSynthesis" :rules="rules" @close="showSynthesis = false" @applied="onApplied" />
+
+    <!-- Add-rule modal -->
+    <div v-if="showAdd" class="modal-overlay" @click.self="showAdd = false">
+      <div class="modal-box" style="max-width:560px;width:100%;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <h2 style="margin:0;font-size:1.1rem;">Add rule</h2>
+          <button @click="showAdd = false" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">×</button>
+        </div>
+        <label style="display:block;font-size:0.8rem;color:var(--muted);">Rule text</label>
+        <textarea v-model="newText" rows="3" style="width:100%;margin-bottom:0.75rem;padding:0.5rem;border:1px solid var(--border);border-radius:4px;font:inherit;"></textarea>
+        <label style="display:block;font-size:0.8rem;color:var(--muted);">Category</label>
+        <select v-model="newCategory" style="width:100%;margin-bottom:1rem;padding:0.5rem;border:1px solid var(--border);border-radius:4px;font:inherit;">
+          <option value="general">general</option>
+          <option value="style">style</option>
+          <option value="architecture">architecture</option>
+          <option value="testing">testing</option>
+          <option value="workflow">workflow</option>
+        </select>
+        <div v-if="addError" style="color:var(--red);font-size:0.85rem;margin-bottom:0.5rem;">{{ addError }}</div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;">
+          <button @click="showAdd = false" class="btn btn-outline">Cancel</button>
+          <button @click="createRule" class="btn" :disabled="!newText.trim() || adding">{{ adding ? 'Adding…' : 'Add' }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </script>
 
@@ -1085,26 +1192,31 @@ const RuleSynthesis = {
   }
 };
 
-const Profile = {
-  template: '#profile-template',
+const Notes = {
+  template: '#notes-template',
   setup() {
-    const rules = ref([]);
+    const notes = ref([]);
     const loading = ref(true);
-    const copied = ref(false);
     const showSynthesis = ref(false);
+    const showCompose = ref(false);
+    const selected = reactive({});
+    const composeText = ref('');
+    const composeCategory = ref('general');
+    const composeError = ref('');
+    const composing = ref(false);
 
-    const loadRules = async () => {
+    const loadNotes = async () => {
       loading.value = true;
       try {
         const res = await fetch(API + '/api/profile/notes');
-        if (res.ok) rules.value = await res.json();
+        if (res.ok) notes.value = await res.json();
       } finally { loading.value = false; }
     };
 
-    const deleteRule = async (id) => {
-      if (!confirm('Delete this rule?')) return;
+    const deleteNote = async (id) => {
+      if (!confirm('Delete this note?')) return;
       const res = await fetch(API + `/api/profile/notes/${id}`, { method: 'DELETE' });
-      if (res.ok) loadRules();
+      if (res.ok) { delete selected[id]; loadNotes(); }
     };
 
     const categoryColor = (c) => {
@@ -1112,10 +1224,113 @@ const Profile = {
       return map[c] || 'blue';
     };
 
+    const toggle = (id) => { selected[id] = !selected[id]; };
+    const selectedIds = computed(() => Object.entries(selected).filter(([, v]) => v).map(([k]) => parseInt(k, 10)));
+    const selectedCount = computed(() => selectedIds.value.length);
+    const selectAll = () => { notes.value.forEach(n => { selected[n.id] = true; }); };
+    const clearSelection = () => { Object.keys(selected).forEach(k => { selected[k] = false; }); };
+    const noteById = (id) => notes.value.find(n => n.id === id);
+
+    const composeRule = async () => {
+      composing.value = true;
+      composeError.value = '';
+      try {
+        const res = await fetch(API + '/api/profile/rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: composeText.value.trim(),
+            category: composeCategory.value,
+            source_note_ids: selectedIds.value,
+          }),
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Failed to create rule'); }
+        showCompose.value = false;
+        composeText.value = '';
+        composeCategory.value = 'general';
+        clearSelection();
+        loadNotes();
+      } catch (e) {
+        composeError.value = e.message || 'Failed to create rule';
+      } finally {
+        composing.value = false;
+      }
+    };
+
+    const onApplied = () => { showSynthesis.value = false; loadNotes(); };
+
+    onMounted(loadNotes);
+
+    return {
+      notes, loading, showSynthesis, showCompose, selected,
+      composeText, composeCategory, composeError, composing,
+      selectedIds, selectedCount, categoryColor,
+      toggle, selectAll, clearSelection, noteById,
+      deleteNote, composeRule, onApplied,
+    };
+  }
+};
+
+const Profile = {
+  template: '#profile-template',
+  setup() {
+    const rules = ref([]);
+    const loading = ref(true);
+    const copied = ref(false);
+    const showAdd = ref(false);
+    const newText = ref('');
+    const newCategory = ref('general');
+    const addError = ref('');
+    const adding = ref(false);
+
+    const loadRules = async () => {
+      loading.value = true;
+      try {
+        const res = await fetch(API + '/api/profile/rules');
+        if (res.ok) rules.value = await res.json();
+      } finally { loading.value = false; }
+    };
+
+    const deleteRule = async (id) => {
+      if (!confirm('Delete this rule?')) return;
+      const res = await fetch(API + `/api/profile/rules/${id}`, { method: 'DELETE' });
+      if (res.ok) loadRules();
+    };
+
+    const createRule = async () => {
+      adding.value = true;
+      addError.value = '';
+      try {
+        const res = await fetch(API + '/api/profile/rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: newText.value.trim(),
+            category: newCategory.value,
+            source_note_ids: [],
+          }),
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Failed to add rule'); }
+        showAdd.value = false;
+        newText.value = '';
+        newCategory.value = 'general';
+        loadRules();
+      } catch (e) {
+        addError.value = e.message || 'Failed to add rule';
+      } finally {
+        adding.value = false;
+      }
+    };
+
+    const categoryColor = (c) => {
+      const map = { style: 'orange', architecture: 'purple', testing: 'green', docs: 'blue', workflow: 'blue' };
+      return map[c] || 'blue';
+    };
+
     const copyRules = () => {
-      const header = 'Category\tRule\tConfidence\tSource';
+      const header = 'Category\tRule\tSource notes';
       const rows = rules.value.map(r =>
-        `${r.category}\t${r.text}\t${(r.confidence * 100).toFixed(0)}%\t${r.source}`
+        `${r.category}\t${r.text}\t${(r.source_note_ids || []).length}`
       );
       const text = [header, ...rows].join('\n');
       navigator.clipboard.writeText(text).then(() => {
@@ -1124,11 +1339,12 @@ const Profile = {
       }).catch(() => alert('Failed to copy to clipboard.'));
     };
 
-    const onApplied = () => { showSynthesis.value = false; loadRules(); };
-
     onMounted(loadRules);
 
-    return { rules, loading, copied, showSynthesis, categoryColor, deleteRule, copyRules, onApplied };
+    return {
+      rules, loading, copied, showAdd, newText, newCategory, addError, adding,
+      categoryColor, deleteRule, createRule, copyRules,
+    };
   }
 };
 
@@ -1321,6 +1537,7 @@ const routes = [
   { path: '/setup', component: SetupWizard },
   { path: '/login', component: Login },
   { path: '/connect', component: Connect },
+  { path: '/notes', component: Notes },
   { path: '/profile', component: Profile },
   { path: '/analytics', component: Analytics },
   { path: '/developer', component: DeveloperAnalytics },
