@@ -6,6 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 JFYI (Just For Your Information) is a passive MCP server and analytics platform that profiles developer coding habits and AI agent performance. It runs as a background service, observes workflows, and injects optimization rules into AI agents. v2.0 adds bidirectional profiling — it profiles both the developer and the agents.
 
+## Mission & Architecture
+
+**Mission.** JFYI gives an AI agent useful information about the human user — their behaviour, expectations, and preferences — at the start of every interaction, so the agent can act usefully on the first try and reduce the volume of corrections, errors, and rework. The system is one-purpose: profile the human; serve the profile back to the agent at session start.
+
+**Core asymmetry: write raw, read curated.** Every MCP tier follows the same shape — agent writes raw observations, a curation step distills them into low-volume high-signal artifacts, agent reads only the curated artifacts.
+
+| Tier | Agent writes (raw) | Curator | Agent reads (curated) |
+|------|---------------------|---------|------------------------|
+| Profile | `add_profile_note` | Human in `/notes` UX | `get_developer_profile` (rules only) |
+| Analytics | `record_interaction` | `AnalyticsEngine` | `get_agent_analytics` |
+| Episodic | (background summarizer writes) | Background summarizer | `recall_episodic` |
+
+**Test for new features.** *Does this serve the agent reading better-curated info about the user?* Yes → core. Maybe / opportunistic → supplementary. No → out of scope. Tools that let agents author curated artifacts directly invert the asymmetry and should be rejected.
+
+Full framing, anti-patterns, and worked examples in [`docs/architecture.md`](docs/architecture.md).
+
 ## Common Commands
 
 ```bash
@@ -48,7 +64,7 @@ docker-compose up
 
 The application is a single Python package (`src/jfyi/`) serving three roles from one container on port 8080:
 
-- **MCP Server** (`server.py`): Exposes 4 tools over stdio or SSE — `get_developer_profile`, `record_interaction`, `get_agent_analytics`, `add_profile_rule`. Tool dispatch logic lives in `dispatch_tool()`, shared by both the MCP handler and tests.
+- **MCP Server** (`server.py`): Exposes a tool catalogue over stdio or SSE. Always-on tools include `record_interaction`, `get_developer_profile`, `get_agent_analytics`, `add_profile_note`. Additional tools (`remember_short_term`, `recall_episodic`, `store_artifact`, `run_local_script`) are discoverable via `discover_tools`. Tool dispatch logic lives in `dispatch_tool()`, shared by both the MCP handler and tests.
 - **Web Dashboard** (`web/app.py`): FastAPI REST API mirroring the MCP tools, plus a vanilla HTML/JS/CSS SPA (`web/static/index.html`) — no Node.js build step.
 - **Analytics Engine** (`analytics.py`): Computes friction scores from interaction signals (correction rate, latency, edit volume) using a weighted formula. `AnalyticsEngine` is the core domain object.
 
