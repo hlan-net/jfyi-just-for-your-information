@@ -235,3 +235,42 @@ def test_session_ttl_setting_default():
     from jfyi.config import settings as live_settings
 
     assert live_settings.session_ttl_seconds >= 60
+
+
+# ── Synthesize apply (note → curated rules) ───────────────────────────────────
+
+
+def test_synthesize_apply_creates_curated_rules(client):
+    n1 = client.post(
+        "/api/profile/notes", json={"text": "uses dict comprehensions", "category": "style"}
+    ).json()["id"]
+    n2 = client.post(
+        "/api/profile/notes", json={"text": "prefers list comp over loops", "category": "style"}
+    ).json()["id"]
+
+    resp = client.post(
+        "/api/profile/notes/synthesize/apply",
+        json={
+            "synthesized": [
+                {
+                    "text": "Prefer comprehensions over loops",
+                    "category": "style",
+                    "confidence": 0.95,
+                }
+            ],
+            "source_note_ids": [n1, n2],
+        },
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["added"] == 1
+    assert body["source_count"] == 2
+
+    rules = client.get("/api/profile/rules").json()
+    assert len(rules) == 1
+    assert rules[0]["text"] == "Prefer comprehensions over loops"
+    assert sorted(rules[0]["source_note_ids"]) == sorted([n1, n2])
+
+    # Notes are evidence — they remain after synthesis.
+    notes = client.get("/api/profile/notes").json()
+    assert len(notes) == 2

@@ -312,7 +312,6 @@
               <th>Confidence</th>
               <th>Source</th>
               <th>Agent</th>
-              <th>Status</th>
               <th></th>
             </tr>
           </thead>
@@ -324,7 +323,6 @@
               <td>{{ (n.confidence * 100).toFixed(0) }}%</td>
               <td><span :class="n.source === 'synthesized' ? 'pill pill-orange' : n.source === 'manual' ? 'pill pill-purple' : 'pill pill-green'">{{ n.source }}</span></td>
               <td style="color: var(--muted); font-size: 0.8rem;">{{ n.agent_name || '—' }}</td>
-              <td><span v-if="n.promoted_to_rule_id" class="pill pill-green" :title="'Promoted to rule #' + n.promoted_to_rule_id">promoted</span></td>
               <td style="text-align: right;"><button class="btn-danger" style="border:none; cursor:pointer;" @click="deleteNote(n.id)">×</button></td>
             </tr>
           </tbody>
@@ -439,7 +437,7 @@
   <div v-if="show" class="modal-overlay" @click.self="close">
     <div class="modal-box" style="max-width:680px;width:100%;max-height:85vh;overflow-y:auto;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
-        <h2 style="margin:0;font-size:1.1rem;">Rule Synthesis</h2>
+        <h2 style="margin:0;font-size:1.1rem;">Synthesize rules from notes</h2>
         <button @click="close" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">×</button>
       </div>
 
@@ -450,9 +448,9 @@
         <span :class="['pill', step >= 3 ? 'pill-purple' : '']">3. Preview</span>
       </div>
 
-      <!-- Step 1: Rule selection -->
+      <!-- Step 1: Note selection -->
       <div v-if="step === 1">
-        <p class="desc" style="margin-bottom:0.75rem;">Select rules to include and rate their importance. High-priority rules will be preserved most faithfully.</p>
+        <p class="desc" style="margin-bottom:0.75rem;">Select source notes and rate how strongly each should influence the drawn rules. The LLM produces curated rules in <router-link to="/profile">your profile</router-link>; the source notes remain as evidence.</p>
         <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;">
           <button @click="selectAll" class="btn btn-outline" style="font-size:0.8rem;padding:0.2rem 0.6rem;">Select all</button>
           <button @click="deselectAll" class="btn btn-outline" style="font-size:0.8rem;padding:0.2rem 0.6rem;">Clear</button>
@@ -469,14 +467,14 @@
         </div>
         <div style="margin-top:1rem;display:flex;justify-content:flex-end;">
           <button @click="step = 2" class="btn" :disabled="selectedCount < 2">
-            Next — {{ selectedCount }} rule{{ selectedCount !== 1 ? 's' : '' }} selected
+            Next — {{ selectedCount }} note{{ selectedCount !== 1 ? 's' : '' }} selected
           </button>
         </div>
       </div>
 
       <!-- Step 2: Model configuration -->
       <div v-if="step === 2">
-        <p class="desc" style="margin-bottom:1rem;">Configure the model that will synthesize your rules. The API key is stored on your JFYI instance only.</p>
+        <p class="desc" style="margin-bottom:1rem;">Configure the model that will draw rules from the selected notes. The API key is stored on your JFYI instance only.</p>
         
         <div style="margin-bottom:1.25rem; padding:0.75rem; background:rgba(var(--purple-rgb), 0.05); border:1px dashed var(--purple); border-radius:4px; display:flex; flex-direction:column; gap:0.5rem;">
           <div style="font-size:0.85rem; color:var(--purple); font-weight:500;">Quick setup for local models:</div>
@@ -524,15 +522,15 @@
       <!-- Step 3: Preview & apply -->
       <div v-if="step === 3">
         <div style="background:rgba(var(--orange-rgb), 0.1); border-radius:6px; padding:1rem; margin-bottom:1.25rem; border-left:4px solid var(--orange);">
-          <div style="font-weight:600; font-size:1rem; margin-bottom:0.25rem;">Synthesis Complete!</div>
+          <div style="font-weight:600; font-size:1rem; margin-bottom:0.25rem;">Rules drawn</div>
           <div style="font-size:0.9rem; color:var(--fg);">
-            Merged <strong>{{ selectedCount }}</strong> original rules into <strong>{{ synthesized.length }}</strong> concise principles.
-            ({{ Math.round((1 - synthesized.length/selectedCount) * 100) }}% reduction)
+            <strong>{{ synthesized.length }}</strong> rule{{ synthesized.length !== 1 ? 's' : '' }} drawn from <strong>{{ selectedCount }}</strong> source note{{ selectedCount !== 1 ? 's' : '' }}.
+            Source notes remain as evidence and can support additional rules later.
           </div>
         </div>
 
         <table style="margin-bottom:1rem;">
-          <thead><tr><th>Category</th><th>Synthesized Rule</th><th style="width:100px;">Confidence</th></tr></thead>
+          <thead><tr><th>Category</th><th>Drawn rule</th><th style="width:100px;">Confidence</th></tr></thead>
           <tbody>
             <tr v-for="(r, i) in synthesized" :key="i">
               <td><span :class="'pill pill-' + catColor(r.category)">{{ r.category }}</span></td>
@@ -551,12 +549,9 @@
         <div v-if="error" style="color:var(--red);font-size:0.85rem;margin-bottom:0.75rem;">{{ error }}</div>
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
           <button @click="step = 2" class="btn btn-outline" :disabled="applying">Back</button>
-          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-            <button @click="applyOnly" class="btn btn-outline" :disabled="applying">Add only (keep originals)</button>
-            <button @click="applyAndArchive" class="btn" :disabled="applying">
-              {{ applying ? 'Applying…' : 'Apply & archive originals' }}
-            </button>
-          </div>
+          <button @click="applyRules" class="btn" :disabled="applying">
+            {{ applying ? 'Saving…' : 'Save rules' }}
+          </button>
         </div>
       </div>
     </div>
@@ -1171,27 +1166,24 @@ const RuleSynthesis = {
       }
     };
 
-    const _apply = async (archiveIds) => {
+    const applyRules = async () => {
       applying.value = true;
       error.value = '';
       try {
         const res = await fetch(API + '/api/profile/notes/synthesize/apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ synthesized: synthesized.value, archive_ids: archiveIds }),
+          body: JSON.stringify({ synthesized: synthesized.value, source_note_ids: selectedIds.value }),
         });
-        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Apply failed'); }
+        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Save failed'); }
         emit('applied');
         close();
       } catch (e) {
-        error.value = e.message || 'Apply failed';
+        error.value = e.message || 'Save failed';
       } finally {
         applying.value = false;
       }
     };
-
-    const applyAndArchive = () => _apply(selectedIds.value);
-    const applyOnly = () => _apply([]);
 
     const close = () => {
       step.value = 1;
@@ -1206,7 +1198,7 @@ const RuleSynthesis = {
       selectedCount, catColor,
       selectAll, deselectAll, setPriority, runSynthesis,
       useLocalHailo, useLocalOllama, resolvedUrl,
-      applyAndArchive, applyOnly, close,
+      applyRules, close,
     };
   }
 };
