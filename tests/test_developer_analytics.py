@@ -122,9 +122,9 @@ def test_developer_rule_confidence_empty(db):
 
 
 def test_developer_rule_confidence_buckets(db):
-    db.add_rule(1, "High conf rule", "style", confidence=0.9)
-    db.add_rule(1, "Mid conf rule", "style", confidence=0.6)
-    db.add_rule(1, "Low conf rule", "style", confidence=0.2)
+    db.add_note(1, "High conf rule", "style", confidence=0.9)
+    db.add_note(1, "Mid conf rule", "style", confidence=0.6)
+    db.add_note(1, "Low conf rule", "style", confidence=0.2)
     rows = db.developer_rule_confidence(1)
     assert len(rows) == 1
     r = rows[0]
@@ -140,9 +140,9 @@ def test_developer_rule_accumulation_empty(db):
 
 
 def test_developer_rule_accumulation_groups_by_category(db):
-    db.add_rule(1, "A style rule", "style")
-    db.add_rule(1, "Another style rule", "style")
-    db.add_rule(1, "An arch rule", "architecture")
+    db.add_note(1, "A style rule", "style")
+    db.add_note(1, "Another style rule", "style")
+    db.add_note(1, "An arch rule", "architecture")
     rows = db.developer_rule_accumulation(1, weeks=12)
     categories = {r["category"] for r in rows}
     assert "style" in categories
@@ -196,7 +196,7 @@ def test_api_rule_accumulation_empty(client):
 
 def test_api_all_endpoints_with_data(client, db, analytics):
     _seed(db, analytics)
-    db.add_rule(1, "Use snake_case", "style", confidence=0.9)
+    db.add_note(1, "Use snake_case", "style", confidence=0.9)
 
     assert client.get("/api/developer/summary").status_code == 200
     assert client.get("/api/developer/trend").status_code == 200

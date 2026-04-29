@@ -2,8 +2,9 @@
 
 Tiers:
   short_term — session-scoped, TTL-evicted scratchpad values
-  long_term  — persistent developer profile rules (existing profile_rules table)
+  long_term  — persistent developer profile notes (raw, agent-captured)
   episodic   — persistent session summaries and interaction records
+  curated    — persistent curated rules composed from notes (the developer's constitution)
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from .database import Database
 
 
 class MemoryFacade:
-    """Unified interface over all three memory tiers.
+    """Unified interface over all memory tiers.
 
     Each method accepts the tier name as the first positional argument,
     followed by tier-specific keyword arguments.
@@ -34,12 +35,19 @@ class MemoryFacade:
                 ttl_seconds=int(kwargs.get("ttl_seconds", 3600)),
             )
         if tier == "long_term":
-            return self._db.add_rule(
+            return self._db.add_note(
                 user_id=kwargs["user_id"],
-                rule=kwargs["rule"],
+                text=kwargs.get("text") or kwargs["rule"],
                 category=kwargs.get("category", "general"),
                 confidence=float(kwargs.get("confidence", 1.0)),
                 source=kwargs.get("source", "auto"),
+            )
+        if tier == "curated":
+            return self._db.add_rule(
+                user_id=kwargs["user_id"],
+                text=kwargs["text"],
+                category=kwargs.get("category", "general"),
+                source_note_ids=kwargs.get("source_note_ids") or [],
             )
         if tier == "episodic":
             return self._db.episodic_add(
@@ -54,8 +62,8 @@ class MemoryFacade:
     def recall(self, tier: str, **kwargs: Any) -> Any:
         """Read from the specified tier. Returns value/list or None.
 
-        Pass semantic_query=<str> on long_term or episodic tiers to use vector similarity
-        ranking instead of the default recency/confidence ordering.
+        Pass semantic_query=<str> on long_term, curated, or episodic tiers to use
+        vector similarity ranking instead of the default recency/confidence ordering.
         """
         if tier == "short_term":
             return self._db.stm_get(
@@ -64,6 +72,17 @@ class MemoryFacade:
                 key=kwargs["key"],
             )
         if tier == "long_term":
+            if kwargs.get("semantic_query"):
+                return self._db.get_notes_semantic(
+                    user_id=kwargs["user_id"],
+                    query=kwargs["semantic_query"],
+                    k=int(kwargs.get("k", 5)),
+                )
+            return self._db.get_notes(
+                user_id=kwargs["user_id"],
+                category=kwargs.get("category"),
+            )
+        if tier == "curated":
             if kwargs.get("semantic_query"):
                 return self._db.get_rules_semantic(
                     user_id=kwargs["user_id"],
@@ -98,6 +117,11 @@ class MemoryFacade:
                 key=kwargs["key"],
             )
         if tier == "long_term":
+            return self._db.delete_note(
+                user_id=kwargs["user_id"],
+                note_id=int(kwargs.get("note_id") or kwargs["rule_id"]),
+            )
+        if tier == "curated":
             return self._db.delete_rule(
                 user_id=kwargs["user_id"],
                 rule_id=int(kwargs["rule_id"]),

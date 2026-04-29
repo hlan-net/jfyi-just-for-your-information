@@ -36,7 +36,8 @@ _SYSTEM_PROMPT = (
 def _format_rules(rules: list[dict], priorities: dict[int, int]) -> str:
     sorted_rules = sorted(rules, key=lambda r: priorities.get(r["id"], 3), reverse=True)
     lines = [
-        f"[Priority {priorities.get(r['id'], 3)}] ({r['category']}) {r['rule']}"
+        f"[Priority {priorities.get(r['id'], 3)}] ({r['category']}) "
+        f"{r.get('text', r.get('rule', ''))}"
         for r in sorted_rules
     ]
     return "\n".join(lines)

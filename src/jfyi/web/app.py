@@ -174,7 +174,11 @@ def _validate_and_save_idp(body: IdpCreate, db: Database) -> int:
         raise HTTPException(status_code=400, detail="discovery_url is required for custom_oidc")
 
     idp_id = db.add_identity_provider(
-        body.name, body.provider, body.client_id, body.client_secret, body.discovery_url,
+        body.name,
+        body.provider,
+        body.client_id,
+        body.client_secret,
+        body.discovery_url,
         body.client_secret_id,
     )
     client_name = get_oauth_client_name({"provider": body.provider, "id": idp_id})
@@ -441,13 +445,13 @@ def _register_profile_api(app: FastAPI) -> None:
     async def get_rules(
         current_user: CurrentUser, db: DBDep, category: str | None = None
     ) -> list[dict[str, Any]]:
-        return db.get_rules(user_id=current_user["id"], category=category)
+        return db.get_notes(user_id=current_user["id"], category=category)
 
     @app.post("/api/profile/rules", status_code=201)
     async def create_rule(body: RuleCreate, current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
-        rule_id = db.add_rule(
+        rule_id = db.add_note(
             user_id=current_user["id"],
-            rule=body.rule,
+            text=body.rule,
             category=body.category,
             confidence=body.confidence,
             source="manual",
@@ -465,7 +469,7 @@ def _register_profile_api(app: FastAPI) -> None:
     async def update_rule(
         rule_id: int, body: RuleUpdate, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
-        ok = db.update_rule(
+        ok = db.update_note(
             current_user["id"],
             rule_id,
             body.rule,
@@ -483,7 +487,7 @@ def _register_profile_api(app: FastAPI) -> None:
         responses={404: {"description": "Rule not found"}},
     )
     async def delete_rule(rule_id: int, current_user: CurrentUser, db: DBDep) -> None:
-        ok = db.delete_rule(current_user["id"], rule_id)
+        ok = db.delete_note(current_user["id"], rule_id)
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
 
@@ -539,7 +543,7 @@ def _register_synthesis_api(app: FastAPI) -> None:
                 detail="No synthesis model configured. Save a model config first.",
             )
 
-        all_rules = db.get_rules(current_user["id"])
+        all_rules = db.get_notes(current_user["id"])
         rules = [r for r in all_rules if r["id"] in body.rule_ids]
         if len(rules) < 2:
             raise HTTPException(status_code=400, detail="Select at least 2 rules to synthesize.")
@@ -563,15 +567,15 @@ def _register_synthesis_api(app: FastAPI) -> None:
         body: SynthesizeApplyRequest, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
         def _sync_apply() -> tuple[int, int]:
-            archived_count = db.archive_rules(current_user["id"], body.archive_ids)
+            archived_count = db.archive_notes(current_user["id"], body.archive_ids)
             added_count = 0
             for item in body.synthesized:
                 rule_text = item.rule
                 if settings.dlp_enabled:
                     rule_text, _ = redact(rule_text)
-                db.add_rule(
+                db.add_note(
                     user_id=current_user["id"],
-                    rule=rule_text,
+                    text=rule_text,
                     category=item.category,
                     confidence=item.confidence,
                     source="synthesized",
