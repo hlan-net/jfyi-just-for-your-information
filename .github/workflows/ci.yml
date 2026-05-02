@@ -23,7 +23,7 @@ jobs:
           cache: pip
 
       - name: Cache sentence-transformers models
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/torch/sentence_transformers
           key: sentence-transformers-v1-${{ runner.os }}
