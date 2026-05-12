@@ -19,15 +19,16 @@ def test_format_rules_sorts_by_priority_desc():
     ]
     result = _format_rules(rules, {1: 1, 2: 5})
     lines = result.splitlines()
-    assert lines[0].startswith("[Priority 5]")
+    assert lines[0].startswith("[ID:2, Priority 5]")
     assert "High importance" in lines[0]
-    assert lines[1].startswith("[Priority 1]")
+    assert lines[1].startswith("[ID:1, Priority 1]")
 
 
 def test_format_rules_defaults_missing_priority_to_3():
     rules = [{"id": 1, "text": "No priority set", "category": "general"}]
     result = _format_rules(rules, {})
-    assert "[Priority 3]" in result
+    assert "ID:1" in result
+    assert "Priority 3" in result
 
 
 def test_format_rules_includes_category():
@@ -37,12 +38,28 @@ def test_format_rules_includes_category():
 
 
 def test_parse_response_clean_json():
-    raw = json.dumps([{"text": "Use snake_case", "category": "style", "confidence": 0.95}])
+    raw = json.dumps(
+        [
+            {
+                "text": "Use snake_case",
+                "category": "style",
+                "confidence": 0.95,
+                "source_note_ids": [3, 7],
+            }
+        ]
+    )
     result = _parse_response(raw)
     assert len(result) == 1
     assert result[0]["text"] == "Use snake_case"
     assert result[0]["category"] == "style"
     assert result[0]["confidence"] == pytest.approx(0.95)
+    assert result[0]["source_note_ids"] == [3, 7]
+
+
+def test_parse_response_missing_source_note_ids_returns_empty():
+    raw = json.dumps([{"text": "Use snake_case", "category": "style", "confidence": 0.9}])
+    result = _parse_response(raw)
+    assert result[0]["source_note_ids"] == []
 
 
 def test_parse_response_strips_markdown_fences():
@@ -96,8 +113,13 @@ def _make_mock_response(body: dict) -> MagicMock:
 
 async def test_synthesize_anthropic_provider():
     synth_output = [
-        {"text": "Prefer DI over globals", "category": "architecture", "confidence": 0.9}
-    ]  # noqa: E501
+        {
+            "text": "Prefer DI over globals",
+            "category": "architecture",
+            "confidence": 0.9,
+            "source_note_ids": [1, 2],
+        }
+    ]
     anthropic_response = {"content": [{"text": json.dumps(synth_output)}]}
 
     mock_ctx = AsyncMock()
@@ -116,10 +138,18 @@ async def test_synthesize_anthropic_provider():
     assert len(result) == 1
     assert result[0]["text"] == "Prefer DI over globals"
     assert result[0]["category"] == "architecture"
+    assert result[0]["source_note_ids"] == [1, 2]
 
 
 async def test_synthesize_openai_provider():
-    synth_output = [{"text": "Write tests first", "category": "testing", "confidence": 0.88}]
+    synth_output = [
+        {
+            "text": "Write tests first",
+            "category": "testing",
+            "confidence": 0.88,
+            "source_note_ids": [2],
+        }
+    ]
     openai_response = {"choices": [{"message": {"content": json.dumps(synth_output)}}]}
 
     mock_ctx = AsyncMock()
@@ -137,6 +167,7 @@ async def test_synthesize_openai_provider():
 
     assert len(result) == 1
     assert result[0]["text"] == "Write tests first"
+    assert result[0]["source_note_ids"] == [2]
 
 
 # ── Database synthesis methods ─────────────────────────────────────────────────

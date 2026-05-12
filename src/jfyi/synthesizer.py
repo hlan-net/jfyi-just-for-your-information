@@ -18,8 +18,8 @@ _SYSTEM_PROMPT = (
     "Notes are evidence; they are noisy, sometimes redundant, and may be project-specific.\n"
     "  • RULES — the curated, cross-project, cross-agent constitution that all agents see "
     "at session start. Rules are conclusions drawn from notes.\n\n"
-    "You are given a set of NOTES with priority scores (1=low, 5=high). Draw a concise set "
-    "of RULES from them by:\n"
+    "You are given a set of NOTES, each tagged with a numeric ID, category, and priority "
+    "score (1=low, 5=high). Draw a concise set of RULES from them by:\n"
     "1. Identifying patterns across multiple notes and stating each pattern as one clear, "
     "broadly-applicable rule.\n"
     "2. Generalising project-specific or over-specific notes into developer-level rules.\n"
@@ -29,18 +29,21 @@ _SYSTEM_PROMPT = (
     "5. Producing fewer rules than the input notes — typically 30–60% the count. A single "
     "rule may be drawn from many notes.\n\n"
     "Output ONLY a JSON array with no preamble, explanation, or markdown fences. "
-    "Each element must have exactly three fields:\n"
-    '{"text": "...", "category": "...", "confidence": 0.0}\n'
+    "Each element must have exactly four fields:\n"
+    '{"text": "...", "category": "...", "confidence": 0.0, "source_note_ids": [1, 2]}\n'
     "category must be one of: style, architecture, testing, workflow, general\n"
     "confidence (0.0–1.0) reflects how strongly the source notes support the drawn rule — "
-    "use 0.8–1.0 when many notes converge, lower for tentative conclusions."
+    "use 0.8–1.0 when many notes converge, lower for tentative conclusions.\n"
+    "source_note_ids: list ONLY the IDs of input notes that actually informed this rule. "
+    "Do not include IDs of notes the rule does not draw from. "
+    'Example: if notes ID:3 and ID:7 support a rule, write "source_note_ids": [3, 7].'
 )
 
 
 def _format_rules(rules: list[dict], priorities: dict[int, int]) -> str:
     sorted_rules = sorted(rules, key=lambda r: priorities.get(r["id"], 3), reverse=True)
     lines = [
-        f"[Priority {priorities.get(r['id'], 3)}] ({r['category']}) "
+        f"[ID:{r['id']}, Priority {priorities.get(r['id'], 3)}] ({r['category']}) "
         f"{r.get('text', r.get('rule', ''))}"
         for r in sorted_rules
     ]
@@ -60,11 +63,14 @@ def _parse_response(text: str) -> list[dict]:
         body = item.get("text", item.get("rule"))
         if not body:
             continue
+        raw_ids = item.get("source_note_ids", [])
+        source_ids = [int(x) for x in raw_ids if isinstance(x, (int, float))]
         result.append(
             {
                 "text": str(body),
                 "category": str(item.get("category", "general")),
                 "confidence": float(item.get("confidence", 0.9)),
+                "source_note_ids": source_ids,
             }
         )
     return result

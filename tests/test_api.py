@@ -274,3 +274,90 @@ def test_synthesize_apply_creates_curated_rules(client):
     # Notes are evidence — they remain after synthesis.
     notes = client.get("/api/profile/notes").json()
     assert len(notes) == 2
+
+
+def test_synthesize_apply_per_rule_provenance(client):
+    n1 = client.post(
+        "/api/profile/notes", json={"text": "uses dict comprehensions", "category": "style"}
+    ).json()["id"]
+    n2 = client.post(
+        "/api/profile/notes", json={"text": "prefers asyncio over threads", "category": "workflow"}
+    ).json()["id"]
+
+    resp = client.post(
+        "/api/profile/notes/synthesize/apply",
+        json={
+            "synthesized": [
+                {
+                    "text": "Prefer comprehensions",
+                    "category": "style",
+                    "confidence": 0.95,
+                    "source_note_ids": [n1],
+                },
+                {
+                    "text": "Use asyncio",
+                    "category": "workflow",
+                    "confidence": 0.9,
+                    "source_note_ids": [n2],
+                },
+            ],
+            "source_note_ids": [n1, n2],
+        },
+    )
+    assert resp.status_code == 201
+    assert resp.json()["added"] == 2
+
+    rules = {r["text"]: r for r in client.get("/api/profile/rules").json()}
+    assert rules["Prefer comprehensions"]["source_note_ids"] == [n1]
+    assert rules["Use asyncio"]["source_note_ids"] == [n2]
+
+
+def test_synthesize_apply_fallback_to_batch_when_no_per_rule_ids(client):
+    n1 = client.post("/api/profile/notes", json={"text": "note one", "category": "style"}).json()[
+        "id"
+    ]
+    n2 = client.post("/api/profile/notes", json={"text": "note two", "category": "style"}).json()[
+        "id"
+    ]
+
+    resp = client.post(
+        "/api/profile/notes/synthesize/apply",
+        json={
+            "synthesized": [
+                {"text": "Combined rule", "category": "style", "confidence": 0.9},
+            ],
+            "source_note_ids": [n1, n2],
+        },
+    )
+    assert resp.status_code == 201
+    rules = client.get("/api/profile/rules").json()
+    assert sorted(rules[0]["source_note_ids"]) == sorted([n1, n2])
+
+
+def test_synthesize_apply_model_id_outside_batch_is_rejected(client):
+    n1 = client.post("/api/profile/notes", json={"text": "note one", "category": "style"}).json()[
+        "id"
+    ]
+    n2 = client.post("/api/profile/notes", json={"text": "note two", "category": "style"}).json()[
+        "id"
+    ]
+    rogue_id = 99999
+
+    resp = client.post(
+        "/api/profile/notes/synthesize/apply",
+        json={
+            "synthesized": [
+                {
+                    "text": "Rule citing rogue note",
+                    "category": "style",
+                    "confidence": 0.9,
+                    "source_note_ids": [n1, rogue_id],
+                },
+            ],
+            "source_note_ids": [n1, n2],
+        },
+    )
+    assert resp.status_code == 201
+    rules = client.get("/api/profile/rules").json()
+    assert rogue_id not in rules[0]["source_note_ids"]
+    assert n1 in rules[0]["source_note_ids"]

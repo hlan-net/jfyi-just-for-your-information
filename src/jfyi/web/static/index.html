@@ -534,7 +534,16 @@
           <tbody>
             <tr v-for="(r, i) in synthesized" :key="i">
               <td><span :class="'pill pill-' + catColor(r.category)">{{ r.category }}</span></td>
-              <td style="line-height:1.5; font-size:0.95rem; padding:0.75rem 0;">{{ r.text }}</td>
+              <td style="line-height:1.5; font-size:0.95rem; padding:0.75rem 0;">
+                {{ r.text }}
+                <div v-if="(r.source_note_ids || []).length" style="margin-top:0.35rem; display:flex; flex-wrap:wrap; gap:3px;">
+                  <span v-for="nid in r.source_note_ids" :key="nid"
+                    style="font-size:0.7rem; color:var(--muted); background:var(--surface); border:1px solid var(--border); border-radius:3px; padding:1px 6px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                    :title="noteById[nid] ? noteById[nid].text : '#' + nid">
+                    {{ noteById[nid] ? noteById[nid].text.slice(0, 35) + (noteById[nid].text.length > 35 ? '…' : '') : '#' + nid }}
+                  </span>
+                </div>
+              </td>
               <td style="vertical-align:middle;">
                 <div style="display:flex; flex-direction:column; gap:2px;">
                   <div style="height:6px; width:100%; background:var(--border); border-radius:3px; overflow:hidden;">
@@ -1096,6 +1105,11 @@ const RuleSynthesis = {
     );
 
     const catColor = (c) => ({ style:'orange', architecture:'purple', testing:'green', docs:'blue' }[c] || 'blue');
+    const noteById = computed(() => {
+      const m = {};
+      props.rules.forEach(r => { m[r.id] = r; });
+      return m;
+    });
     const selectAll = () => props.rules.forEach(r => { selected[r.id] = true; });
     const deselectAll = () => props.rules.forEach(r => { selected[r.id] = false; });
     const setPriority = (id, stars) => { priorities[id] = stars; };
@@ -1195,7 +1209,7 @@ const RuleSynthesis = {
     return {
       step, selected, priorities, cfg, savedCfg, showKey,
       synthesizing, applying, synthesized, error,
-      selectedCount, catColor,
+      selectedCount, catColor, noteById,
       selectAll, deselectAll, setPriority, runSynthesis,
       useLocalHailo, useLocalOllama, resolvedUrl,
       applyRules, close,

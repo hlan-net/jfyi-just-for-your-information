@@ -116,11 +116,11 @@ Improvements to the Docker image and deployment ergonomics discovered during ope
 | Externalise embedding model from image | `v2.7.1` | Superseded | [docs/image-optimization.md](docs/image-optimization.md) |
 | Extract ChromaDB to its own pod | `v2.8.0` | Released | [docs/chromadb-extraction.md](docs/chromadb-extraction.md) |
 | ONNX cache on PVC under `readOnlyRootFilesystem` | `v2.8.6` | Released | inline |
-| Keep JWT Secret on `helm uninstall` | `v2.9.0` | In progress | inline |
-| `scripts/rotate-jwt.sh` for explicit key rotation | `v2.9.0` | Planned | inline |
-| Configurable dashboard session TTL | `v2.9.0` | Planned | inline |
-| Admin "About" page with version copy | `v2.9.0` | Planned | inline |
-| Code cleanup: duplicate `model_config` in `config.py` | `v2.9.0` | Planned | inline |
+| Keep JWT Secret on `helm uninstall` | `v2.9.0` | Done | inline |
+| `scripts/rotate-jwt.sh` for explicit key rotation | `v2.9.0` | Done | inline |
+| Configurable dashboard session TTL | `v2.9.0` | Done | inline |
+| Admin "About" page with version copy | `v2.9.0` | Done | inline |
+| Code cleanup: duplicate `model_config` in `config.py` | `v2.9.0` | Done | inline |
 
 **Externalise embedding model from image** *(v2.7.1)* removed the model file from the Dockerfile. Insufficient on its own: `chromadb` and `sentence-transformers` remained in core deps, so the image is still ~3.1 GB on `v2.7.9` (verified during the v2.7.9 deploy: 17-minute first-pull on Pi nodes). Superseded by the v2.8.0 extraction work.
 
@@ -150,9 +150,25 @@ Structural piece of v2.9.0, separate from the operational items above.
 
 | Item | Target | Status | Spec |
 |------|--------|--------|------|
-| Notes vs Rules — two-tier developer profile | `v2.9.0` | Planned | [docs/notes-vs-rules.md](docs/notes-vs-rules.md) |
+| Notes vs Rules — two-tier developer profile | `v2.9.0` | Done | [docs/notes-vs-rules.md](docs/notes-vs-rules.md) |
 
 **Notes vs Rules** *(v2.9.0)* splits the current single `profile_rules` table into a raw **notes** tier (cheap, frequent, agent-captured) and a curated **rules** tier (few, deliberate, composed in the dashboard from one or more notes). Agents write notes via a renamed `add_profile_note` MCP tool; `get_developer_profile` returns only curated rules so the agent's "constitution" stays small and high-signal. Existing rows migrate to the notes tier; the new rules tier starts empty. Schema migration #8 adds `profile_notes` (rename), a new `profile_rules` table, and a `rule_note_links` join table. Ships in three staged PRs (DB → MCP/REST → SPA) — see the spec doc for the full implementation breakdown.
+
+---
+
+## v2.11.0 — Evidence traceability & documentation
+
+| Item | Tag | Status | Issue/Spec |
+|------|-----|--------|------------|
+| Per-rule provenance in synthesis | Core | Done | [#34](https://github.com/hlan-net/jfyi-just-for-your-information/issues/34) |
+| Synthesize preview shows source notes per rule (SPA) | Core | Done | — |
+| Durable architecture & mission doc | Infrastructure | Done | [`docs/architecture.md`](docs/architecture.md) |
+
+**Per-rule provenance** fixes the synthesis pipeline so each drawn rule cites only the notes that actually informed it, not the full input batch. The synthesizer prompt now tags input notes with their IDs; the JSON contract adds `source_note_ids` per rule; the apply endpoint intersects model-returned IDs against the supplied batch (safety guard) and falls back to the full batch when the model omits the field. No DB migration — `rule_note_links` already supports many-to-many.
+
+**Synthesize preview** surfaces per-rule source attribution in the step 3 review modal: each rule shows truncated note-text pills for its specific sources, so the developer can verify provenance before saving.
+
+**Architecture doc** codifies the write-raw / curate / read-curated asymmetry and the mission test (*does this serve the agent reading better-curated info about the user?*) as durable reference for evaluating future roadmap items.
 
 ---
 

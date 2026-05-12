@@ -57,6 +57,7 @@ class SynthesizedNoteItem(BaseModel):
     text: str
     category: str = "general"
     confidence: float = 0.9
+    source_note_ids: list[int] = []
 
 
 class SynthesizeApplyRequest(BaseModel):
@@ -658,16 +659,18 @@ def _register_synthesis_api(app: FastAPI) -> None:
         """
 
         def _sync_apply() -> int:
+            allowed = set(body.source_note_ids)
             added_count = 0
             for item in body.synthesized:
                 rule_text = item.text
                 if settings.dlp_enabled:
                     rule_text, _ = redact(rule_text)
+                per_rule_ids = [nid for nid in item.source_note_ids if nid in allowed]
                 db.add_rule(
                     user_id=current_user["id"],
                     text=rule_text,
                     category=item.category,
-                    source_note_ids=body.source_note_ids,
+                    source_note_ids=per_rule_ids if per_rule_ids else body.source_note_ids,
                 )
                 added_count += 1
             return added_count
