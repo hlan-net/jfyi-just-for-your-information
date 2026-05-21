@@ -170,6 +170,79 @@ def test_get_rules_by_category(db):
     assert style_rules[0]["text"] == "style rule"
 
 
+# ── Tiered Profiling (migration v11) ───────────────────────────────────────────
+
+
+def test_migration_v11_columns_exist(tmp_path):
+    import sqlite3
+
+    from jfyi.database import Database
+
+    Database(tmp_path / "v11.db")
+    conn = sqlite3.connect(tmp_path / "v11.db")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(profile_rules)").fetchall()}
+    conn.close()
+    assert "scope" in cols
+    assert "project_id" in cols
+    assert "confidence" in cols
+
+
+def test_add_rule_defaults_to_global_scope(db):
+    db.add_rule(1, "some rule")
+    rules = db.get_rules(1)
+    assert rules[0]["scope"] == "global"
+    assert rules[0]["project_id"] is None
+    assert rules[0]["confidence"] == pytest.approx(0.5)
+
+
+def test_add_rule_with_project_scope(db):
+    db.add_rule(
+        1, "project-specific rule", scope="project", project_id="jfyi", confidence=0.8
+    )
+    rules = db.get_rules(1)
+    assert rules[0]["scope"] == "project"
+    assert rules[0]["project_id"] == "jfyi"
+    assert rules[0]["confidence"] == pytest.approx(0.8)
+
+
+def test_get_rules_without_project_context_returns_all(db):
+    db.add_rule(1, "global rule", scope="global")
+    db.add_rule(1, "project rule", scope="project", project_id="jfyi")
+    rules = db.get_rules(1)
+    assert len(rules) == 2
+
+
+def test_get_rules_with_project_context_includes_global_and_matching_project(db):
+    db.add_rule(1, "global rule", scope="global")
+    db.add_rule(1, "jfyi rule", scope="project", project_id="jfyi")
+    db.add_rule(1, "other project rule", scope="project", project_id="other-repo")
+    rules = db.get_rules(1, project_context="jfyi")
+    texts = [r["text"] for r in rules]
+    assert "global rule" in texts
+    assert "jfyi rule" in texts
+    assert "other project rule" not in texts
+
+
+def test_get_rules_with_project_context_project_rules_sort_first(db):
+    db.add_rule(1, "global rule", scope="global")
+    db.add_rule(1, "project rule", scope="project", project_id="jfyi")
+    rules = db.get_rules(1, project_context="jfyi")
+    assert rules[0]["scope"] == "project"
+    assert rules[1]["scope"] == "global"
+
+
+def test_update_rule_can_change_scope(db):
+    rule_id = db.add_rule(1, "rule text", scope="global")
+    ok = db.update_rule(
+        1, rule_id, "rule text", "general", scope="project", project_id="jfyi", confidence=0.9
+    )
+    assert ok
+    rules = db.get_rules(1)
+    assert rules[0]["scope"] == "project"
+    assert rules[0]["project_id"] == "jfyi"
+    assert rules[0]["confidence"] == pytest.approx(0.9)
+
+
 # ── Agents and interactions (unrelated to notes/rules split) ───────────────────
 
 

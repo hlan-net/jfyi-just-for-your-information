@@ -46,7 +46,7 @@ class Database:
                     "SELECT id, user_id, text, category, agent_name FROM profile_notes"
                 ).fetchall()
                 rule_rows = conn.execute(
-                    "SELECT id, user_id, text, category FROM profile_rules"
+                    "SELECT id, user_id, text, category, scope, project_id FROM profile_rules"
                 ).fetchall()
         except sqlite3.OperationalError:
             # Tables not present (pre-migration call path); nothing to reconcile.
@@ -71,7 +71,12 @@ class Database:
                 "rules",
                 str(r["id"]),
                 r["text"] or "",
-                {"user_id": r["user_id"], "category": r["category"] or "general"},
+                {
+                    "user_id": r["user_id"],
+                    "category": r["category"] or "general",
+                    "scope": r["scope"] or "global",
+                    "project_id": r["project_id"] or "",
+                },
             )
 
     @contextmanager
@@ -374,6 +379,21 @@ class Database:
 
                     PRAGMA user_version = 10;
                 """)
+            if version < 11:
+                # Tiered Profiling: rules now carry a scope ('global', 'project',
+                # 'agent'), an optional project_id (git remote or directory name),
+                # and a per-rule confidence score. Existing rows default to
+                # scope='global', project_id=NULL, confidence=0.5.
+                conn.executescript("""
+                    ALTER TABLE profile_rules ADD COLUMN scope TEXT NOT NULL DEFAULT 'global';
+                    ALTER TABLE profile_rules ADD COLUMN project_id TEXT;
+                    ALTER TABLE profile_rules ADD COLUMN confidence REAL NOT NULL DEFAULT 0.5;
+
+                    CREATE INDEX idx_profile_rules_scope
+                        ON profile_rules(user_id, scope, project_id);
+
+                    PRAGMA user_version = 11;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -648,6 +668,9 @@ class Database:
         text: str,
         category: str = "general",
         source_note_ids: list[int] | None = None,
+        scope: str = "global",
+        project_id: str | None = None,
+        confidence: float = 0.5,
     ) -> int:
         """Insert a curated rule and link it to its source notes.
 
@@ -669,9 +692,9 @@ class Database:
                 valid_note_ids = [r["id"] for r in rows]
             cur = conn.execute(
                 "INSERT INTO profile_rules"
-                " (user_id, text, category, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (user_id, clean, category, now, now),
+                " (user_id, text, category, scope, project_id, confidence, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, clean, category, scope, project_id, confidence, now, now),
             )
             rule_id = cur.lastrowid
             for note_id in valid_note_ids:
@@ -684,24 +707,49 @@ class Database:
                 "rules",
                 str(rule_id),
                 clean,
-                {"user_id": user_id, "category": category},
+                {
+                    "user_id": user_id,
+                    "category": category,
+                    "scope": scope,
+                    "project_id": project_id or "",
+                },
             )
         return rule_id
 
-    def get_rules(self, user_id: int, category: str | None = None) -> list[dict[str, Any]]:
+    def get_rules(
+        self,
+        user_id: int,
+        category: str | None = None,
+        project_context: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return curated rules for a user.
+
+        Without project_context, returns all non-archived rules (backward
+        compatible). With project_context, returns global rules plus rules
+        whose project_id matches, ordered so project-scoped rules sort first
+        (highest specificity). project-scoped rules for a different project
+        are excluded.
+        """
         with self._conn() as conn:
+            params: list[Any] = [user_id]
+            scope_clause = ""
+            if project_context is not None:
+                scope_clause = " AND (scope = 'global' OR (scope = 'project' AND project_id = ?))"
+                params.append(project_context)
+
+            category_clause = ""
             if category:
-                rows = conn.execute(
-                    "SELECT * FROM profile_rules WHERE user_id = ? AND category = ? "
-                    "AND archived = 0 ORDER BY id DESC",
-                    (user_id, category),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM profile_rules WHERE user_id = ? AND archived = 0 "
-                    "ORDER BY id DESC",
-                    (user_id,),
-                ).fetchall()
+                category_clause = " AND category = ?"
+                params.append(category)
+
+            rows = conn.execute(
+                "SELECT * FROM profile_rules WHERE user_id = ? AND archived = 0"
+                + scope_clause
+                + category_clause
+                + " ORDER BY CASE scope WHEN 'project' THEN 0 WHEN 'agent' THEN 1 ELSE 2 END,"
+                " id DESC",
+                params,
+            ).fetchall()
             results: list[dict[str, Any]] = []
             for row in rows:
                 d = dict(row)
@@ -719,22 +767,37 @@ class Database:
         rule_id: int,
         text: str,
         category: str,
+        scope: str = "global",
+        project_id: str | None = None,
+        confidence: float | None = None,
     ) -> bool:
         now = datetime.now(UTC).isoformat()
         clean = sanitize_rule(text)
         with self._conn() as conn:
-            cur = conn.execute(
-                "UPDATE profile_rules SET text=?, category=?, updated_at=? "
-                "WHERE id=? AND user_id=?",
-                (clean, category, now, rule_id, user_id),
-            )
+            if confidence is not None:
+                cur = conn.execute(
+                    "UPDATE profile_rules SET text=?, category=?, scope=?, project_id=?,"
+                    " confidence=?, updated_at=? WHERE id=? AND user_id=?",
+                    (clean, category, scope, project_id, confidence, now, rule_id, user_id),
+                )
+            else:
+                cur = conn.execute(
+                    "UPDATE profile_rules SET text=?, category=?, scope=?, project_id=?,"
+                    " updated_at=? WHERE id=? AND user_id=?",
+                    (clean, category, scope, project_id, now, rule_id, user_id),
+                )
             ok = cur.rowcount > 0
         if ok and self._vs:
             self._vs.add(
                 "rules",
                 str(rule_id),
                 clean,
-                {"user_id": user_id, "category": category},
+                {
+                    "user_id": user_id,
+                    "category": category,
+                    "scope": scope,
+                    "project_id": project_id or "",
+                },
             )
         return ok
 
@@ -764,19 +827,32 @@ class Database:
             )
             return cur.rowcount > 0
 
-    def get_rules_semantic(self, user_id: int, query: str, k: int = 5) -> list[dict[str, Any]]:
+    def get_rules_semantic(
+        self,
+        user_id: int,
+        query: str,
+        k: int = 5,
+        project_context: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Return curated rules ranked by semantic similarity. Falls back to recency."""
         if not self._vs:
-            return self.get_rules(user_id)
+            return self.get_rules(user_id, project_context=project_context)
         ids = self._vs.query("rules", query, k=k, where={"user_id": user_id})
         if not ids:
-            return self.get_rules(user_id)
+            return self.get_rules(user_id, project_context=project_context)
         placeholders = ",".join("?" * len(ids))
         with self._conn() as conn:
+            params: list[Any] = [*ids, user_id]
+            scope_clause = ""
+            if project_context is not None:
+                scope_clause = (
+                    " AND (scope = 'global' OR (scope = 'project' AND project_id = ?))"
+                )
+                params.append(project_context)
             rows = conn.execute(
                 f"SELECT * FROM profile_rules WHERE id IN ({placeholders}) AND user_id=? "
-                "AND archived = 0",
-                (*ids, user_id),
+                "AND archived = 0" + scope_clause,
+                params,
             ).fetchall()
             results: list[dict[str, Any]] = []
             for row in rows:

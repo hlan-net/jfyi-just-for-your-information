@@ -83,11 +83,17 @@ class RuleCreate(BaseModel):
     text: str
     category: str = "general"
     source_note_ids: list[int] = []
+    scope: str = "global"
+    project_id: str | None = None
+    confidence: float = 0.5
 
 
 class RuleUpdate(BaseModel):
     text: str
     category: str
+    scope: str = "global"
+    project_id: str | None = None
+    confidence: float | None = None
 
 
 class InteractionCreate(BaseModel):
@@ -538,9 +544,14 @@ def _register_profile_api(app: FastAPI) -> None:
     # ── Rules (curated constitution tier) ─────────────────────────────────────
     @app.get("/api/profile/rules")
     async def get_rules(
-        current_user: CurrentUser, db: DBDep, category: str | None = None
+        current_user: CurrentUser,
+        db: DBDep,
+        category: str | None = None,
+        project_context: str | None = None,
     ) -> list[dict[str, Any]]:
-        return db.get_rules(user_id=current_user["id"], category=category)
+        return db.get_rules(
+            user_id=current_user["id"], category=category, project_context=project_context
+        )
 
     @app.post("/api/profile/rules", status_code=201)
     async def create_rule(body: RuleCreate, current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
@@ -549,19 +560,33 @@ def _register_profile_api(app: FastAPI) -> None:
             text=body.text,
             category=body.category,
             source_note_ids=body.source_note_ids,
+            scope=body.scope,
+            project_id=body.project_id,
+            confidence=body.confidence,
         )
         return {
             "id": rule_id,
             "text": body.text,
             "category": body.category,
             "source_note_ids": body.source_note_ids,
+            "scope": body.scope,
+            "project_id": body.project_id,
+            "confidence": body.confidence,
         }
 
     @app.put("/api/profile/rules/{rule_id}", responses={404: {"description": "Rule not found"}})
     async def update_rule(
         rule_id: int, body: RuleUpdate, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
-        ok = db.update_rule(current_user["id"], rule_id, body.text, body.category)
+        ok = db.update_rule(
+            current_user["id"],
+            rule_id,
+            body.text,
+            body.category,
+            scope=body.scope,
+            project_id=body.project_id,
+            confidence=body.confidence,
+        )
         if not ok:
             raise HTTPException(status_code=404, detail="Rule not found")
         return {"id": rule_id, **body.model_dump()}
