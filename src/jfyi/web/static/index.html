@@ -791,6 +791,29 @@
         </table>
       </div>
 
+      <!-- Best Matches (Positive Reinforcement) -->
+      <div class="card">
+        <h2 style="margin:0 0 0.25rem;">⚡ Best Matches</h2>
+        <p class="desc" style="margin-bottom:1rem;">Substantive contributions accepted without any corrections — the moments your agent nailed the vibe.</p>
+        <div v-if="!vibeMatches.length" class="empty" style="padding:1rem;">No vibe matches yet — they appear when an agent produces a long response you accept without edits.</div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Response length</th>
+              <th>When</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="m in vibeMatches" :key="m.id">
+              <td style="font-size:0.85rem;">{{ m.agent_name }}</td>
+              <td style="color:var(--muted);font-size:0.85rem;">{{ m.response_length.toLocaleString() }} chars</td>
+              <td style="color:var(--muted);font-size:0.85rem;">{{ new Date(m.created_at).toLocaleDateString() }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </div>
 </script>
@@ -1495,6 +1518,7 @@ const DeveloperAnalytics = {
     const latencyDist = ref([]);
     const ruleConfidence = ref([]);
     const ruleAccum = ref([]);
+    const vibeMatches = ref([]);
     const trendDays = ref(30);
     const accumWeeks = ref(12);
 
@@ -1551,13 +1575,14 @@ const DeveloperAnalytics = {
     const loadAll = async () => {
       loading.value = true;
       try {
-        const [s, t, f, l, c, a] = await Promise.all([
+        const [s, t, f, l, c, a, vm] = await Promise.all([
           fetch(API + '/api/developer/summary').then(r => r.json()),
           fetch(API + `/api/developer/trend?days=${trendDays.value}`).then(r => r.json()),
           fetch(API + '/api/developer/friction-by-agent').then(r => r.json()),
           fetch(API + '/api/developer/latency-distribution').then(r => r.json()),
           fetch(API + '/api/developer/rule-confidence').then(r => r.json()),
           fetch(API + `/api/developer/rule-accumulation?weeks=${accumWeeks.value}`).then(r => r.json()),
+          fetch(API + '/api/developer/vibe-matches').then(r => r.json()),
         ]);
         summary.value = s;
         trend.value = t;
@@ -1565,6 +1590,7 @@ const DeveloperAnalytics = {
         latencyDist.value = l;
         ruleConfidence.value = c;
         ruleAccum.value = a;
+        vibeMatches.value = Array.isArray(vm) ? vm : [];
       } finally { loading.value = false; }
     };
 
@@ -1580,7 +1606,7 @@ const DeveloperAnalytics = {
     onMounted(loadAll);
 
     return {
-      loading, summary, trend, frictionByAgent, latencyDist, ruleConfidence, ruleAccum,
+      loading, summary, trend, frictionByAgent, latencyDist, ruleConfidence, ruleAccum, vibeMatches,
       trendDays, accumWeeks, tY,
       trendPoints, trendPath, trendArea, trendXLabels,
       maxFriction, maxLatency, barPct,

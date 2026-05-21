@@ -789,6 +789,12 @@ def _register_developer_api(app: FastAPI) -> None:
     ) -> list[dict[str, Any]]:
         return db.developer_rule_confidence(current_user["id"])
 
+    @app.get("/api/developer/vibe-matches")
+    async def developer_vibe_matches(
+        current_user: CurrentUser, db: DBDep, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        return db.get_vibe_matches(current_user["id"], limit=min(limit, 100))
+
 
 class ClientRegistration(BaseModel):
     client_name: str

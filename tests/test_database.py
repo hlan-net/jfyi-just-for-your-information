@@ -243,6 +243,68 @@ def test_update_rule_can_change_scope(db):
     assert rules[0]["confidence"] == pytest.approx(0.9)
 
 
+# ── Positive Reinforcement (migration v12) ────────────────────────────────────
+
+
+def test_migration_v12_vibe_matches_table_exists(tmp_path):
+    import sqlite3
+
+    from jfyi.database import Database
+
+    Database(tmp_path / "v12.db")
+    conn = sqlite3.connect(tmp_path / "v12.db")
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    tables = {r[0] for r in rows}
+    conn.close()
+    assert "vibe_matches" in tables
+
+
+def test_add_and_get_vibe_match(db):
+    agent_id = db.get_or_create_agent(1, "claude")
+    interaction_id = db.record_interaction(
+        1, agent_id=agent_id, session_id="s1", was_corrected=False, friction_score=0.0
+    )
+    match_id = db.add_vibe_match(1, agent_id, interaction_id, response_length=600)
+    assert match_id > 0
+    matches = db.get_vibe_matches(1)
+    assert len(matches) == 1
+    assert matches[0]["response_length"] == 600
+    assert matches[0]["agent_name"] == "claude"
+
+
+def test_get_vibe_matches_filtered_by_agent(db):
+    a1 = db.get_or_create_agent(1, "claude")
+    a2 = db.get_or_create_agent(1, "gpt-4o")
+    i1 = db.record_interaction(
+        1, agent_id=a1, session_id="s1", was_corrected=False, friction_score=0.0
+    )
+    i2 = db.record_interaction(
+        1, agent_id=a2, session_id="s2", was_corrected=False, friction_score=0.0
+    )
+    db.add_vibe_match(1, a1, i1, 600)
+    db.add_vibe_match(1, a2, i2, 700)
+    matches = db.get_vibe_matches(1, agent_id=a1)
+    assert len(matches) == 1
+    assert matches[0]["agent_name"] == "claude"
+
+
+def test_boost_rule_confidence(db):
+    db.add_rule(1, "rule one", confidence=0.5)
+    db.add_rule(1, "rule two", confidence=0.7)
+    updated = db.boost_rule_confidence(1, delta=0.1)
+    assert updated == 2
+    rules = {r["text"]: r["confidence"] for r in db.get_rules(1)}
+    assert rules["rule one"] == pytest.approx(0.6)
+    assert rules["rule two"] == pytest.approx(0.8)
+
+
+def test_boost_rule_confidence_capped_at_1(db):
+    db.add_rule(1, "high confidence rule", confidence=0.98)
+    db.boost_rule_confidence(1, delta=0.05)
+    rules = db.get_rules(1)
+    assert rules[0]["confidence"] == pytest.approx(1.0)
+
+
 # ── Agents and interactions (unrelated to notes/rules split) ───────────────────
 
 

@@ -141,6 +141,15 @@ class AnalyticsEngine:
                 context={"factors": factors, "friction_score": friction_score},
                 interaction_id=interaction_id,
             )
+        elif len(response) >= 500:
+            # Vibe match: substantive response accepted without correction.
+            self._db.add_vibe_match(
+                user_id=user_id,
+                agent_id=agent_id,
+                interaction_id=interaction_id,
+                response_length=len(response),
+            )
+            self._db.boost_rule_confidence(user_id=user_id, delta=0.05)
 
         return FrictionScore(
             agent_name=agent_name,
@@ -166,16 +175,20 @@ class AnalyticsEngine:
         ]
 
     def infer_profile_rules(self, user_id: int) -> list[str]:
-        """Infer profile rules from recent friction events and interactions."""
-        events = self._db.get_friction_events(user_id=user_id, limit=200)
-        if not events:
-            return []
-
-        # Simple heuristic: group events by type and surface the most common patterns
+        """Infer profile rules from recent friction events and vibe matches."""
         from collections import Counter
 
+        events = self._db.get_friction_events(user_id=user_id, limit=200)
         type_counts: Counter = Counter(e["event_type"] for e in events)
+
         rules = []
         if type_counts.get("correction", 0) > 5:
             rules.append("AI output frequently requires post-generation corrections")
+
+        matches = self._db.get_vibe_matches(user_id=user_id, limit=200)
+        if len(matches) >= 3:
+            rules.append(
+                "Agent regularly produces substantive contributions accepted without correction"
+            )
+
         return rules

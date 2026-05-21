@@ -70,6 +70,82 @@ def test_get_agent_profiles(engine):
     assert profiles[0].alignment_score == pytest.approx(100.0)
 
 
+def test_vibe_match_created_for_long_uncorrected_response(engine):
+    long_response = "x" * 500
+    engine.record_interaction(
+        user_id=1,
+        agent_name="claude",
+        session_id="s1",
+        prompt="p",
+        response=long_response,
+        was_corrected=False,
+    )
+    matches = engine._db.get_vibe_matches(1)
+    assert len(matches) == 1
+    assert matches[0]["response_length"] == 500
+    assert matches[0]["agent_name"] == "claude"
+
+
+def test_vibe_match_not_created_for_short_response(engine):
+    engine.record_interaction(
+        user_id=1,
+        agent_name="claude",
+        session_id="s1",
+        prompt="p",
+        response="short",
+        was_corrected=False,
+    )
+    assert engine._db.get_vibe_matches(1) == []
+
+
+def test_vibe_match_not_created_when_corrected(engine):
+    long_response = "x" * 500
+    engine.record_interaction(
+        user_id=1,
+        agent_name="claude",
+        session_id="s1",
+        prompt="p",
+        response=long_response,
+        was_corrected=True,
+    )
+    assert engine._db.get_vibe_matches(1) == []
+
+
+def test_vibe_match_boosts_rule_confidence(engine):
+    db = engine._db
+    db.add_rule(1, "a rule", confidence=0.5)
+    long_response = "x" * 500
+    engine.record_interaction(
+        user_id=1, agent_name="claude", session_id="s1",
+        prompt="p", response=long_response, was_corrected=False,
+    )
+    rules = db.get_rules(1)
+    assert rules[0]["confidence"] == pytest.approx(0.55)
+
+
+def test_confidence_boost_capped_at_1(engine):
+    db = engine._db
+    db.add_rule(1, "near-max rule", confidence=0.98)
+    long_response = "x" * 500
+    engine.record_interaction(
+        user_id=1, agent_name="claude", session_id="s1",
+        prompt="p", response=long_response, was_corrected=False,
+    )
+    rules = db.get_rules(1)
+    assert rules[0]["confidence"] == pytest.approx(1.0)
+
+
+def test_infer_profile_rules_positive_signal(engine):
+    long_response = "x" * 500
+    for i in range(3):
+        engine.record_interaction(
+            user_id=1, agent_name="claude", session_id=f"s{i}",
+            prompt="p", response=long_response, was_corrected=False,
+        )
+    rules = engine.infer_profile_rules(1)
+    assert any("accepted without correction" in r for r in rules)
+
+
 def test_alignment_score_inverse_of_correction_rate(engine):
     for i in range(4):
         engine.record_interaction(

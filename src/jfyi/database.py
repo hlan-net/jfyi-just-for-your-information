@@ -394,6 +394,27 @@ class Database:
 
                     PRAGMA user_version = 11;
                 """)
+            if version < 12:
+                # Positive Reinforcement: track zero-friction, substantive
+                # contributions as "vibe matches." Each match row records the
+                # interaction that triggered it so it can be surfaced in the
+                # dashboard's "Best Matches" view.
+                conn.executescript("""
+                    CREATE TABLE vibe_matches (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+                        interaction_id INTEGER NOT NULL
+                            REFERENCES interactions(id) ON DELETE CASCADE,
+                        response_length INTEGER NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+
+                    CREATE INDEX idx_vibe_matches_user
+                        ON vibe_matches(user_id, agent_id);
+
+                    PRAGMA user_version = 12;
+                """)
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -971,6 +992,56 @@ class Database:
                     (user_id, limit),
                 ).fetchall()
             return [dict(r) for r in rows]
+
+    # ── Vibe Matches (Positive Reinforcement) ─────────────────────────────
+
+    def add_vibe_match(
+        self, user_id: int, agent_id: int, interaction_id: int, response_length: int
+    ) -> int:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO vibe_matches"
+                " (user_id, agent_id, interaction_id, response_length, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (user_id, agent_id, interaction_id, response_length, now),
+            )
+            return cur.lastrowid
+
+    def get_vibe_matches(
+        self, user_id: int, agent_id: int | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            if agent_id is not None:
+                rows = conn.execute(
+                    "SELECT vm.*, a.name as agent_name FROM vibe_matches vm"
+                    " JOIN agents a ON a.id = vm.agent_id"
+                    " WHERE vm.user_id=? AND vm.agent_id=?"
+                    " ORDER BY vm.created_at DESC LIMIT ?",
+                    (user_id, agent_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT vm.*, a.name as agent_name FROM vibe_matches vm"
+                    " JOIN agents a ON a.id = vm.agent_id"
+                    " WHERE vm.user_id=? ORDER BY vm.created_at DESC LIMIT ?",
+                    (user_id, limit),
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def boost_rule_confidence(self, user_id: int, delta: float = 0.05) -> int:
+        """Increment confidence on all active rules for the user, capped at 1.0.
+
+        Returns the number of rules updated.
+        """
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE profile_rules"
+                " SET confidence = MIN(1.0, confidence + ?), updated_at = ?"
+                " WHERE user_id = ? AND archived = 0",
+                (delta, datetime.now(UTC).isoformat(), user_id),
+            )
+            return cur.rowcount
 
     # ── Summarizer queries ─────────────────────────────────────────────────
 
