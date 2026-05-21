@@ -46,7 +46,7 @@ class Database:
                     "SELECT id, user_id, text, category, agent_name FROM profile_notes"
                 ).fetchall()
                 rule_rows = conn.execute(
-                    "SELECT id, user_id, text, category FROM profile_rules"
+                    "SELECT id, user_id, text, category, scope, project_id FROM profile_rules"
                 ).fetchall()
         except sqlite3.OperationalError:
             # Tables not present (pre-migration call path); nothing to reconcile.
@@ -71,7 +71,12 @@ class Database:
                 "rules",
                 str(r["id"]),
                 r["text"] or "",
-                {"user_id": r["user_id"], "category": r["category"] or "general"},
+                {
+                    "user_id": r["user_id"],
+                    "category": r["category"] or "general",
+                    "scope": r["scope"] or "global",
+                    "project_id": r["project_id"] or "",
+                },
             )
 
     @contextmanager
@@ -702,7 +707,12 @@ class Database:
                 "rules",
                 str(rule_id),
                 clean,
-                {"user_id": user_id, "category": category, "scope": scope},
+                {
+                    "user_id": user_id,
+                    "category": category,
+                    "scope": scope,
+                    "project_id": project_id or "",
+                },
             )
         return rule_id
 
@@ -782,7 +792,12 @@ class Database:
                 "rules",
                 str(rule_id),
                 clean,
-                {"user_id": user_id, "category": category, "scope": scope},
+                {
+                    "user_id": user_id,
+                    "category": category,
+                    "scope": scope,
+                    "project_id": project_id or "",
+                },
             )
         return ok
 
@@ -827,10 +842,17 @@ class Database:
             return self.get_rules(user_id, project_context=project_context)
         placeholders = ",".join("?" * len(ids))
         with self._conn() as conn:
+            params: list[Any] = [*ids, user_id]
+            scope_clause = ""
+            if project_context is not None:
+                scope_clause = (
+                    " AND (scope = 'global' OR (scope = 'project' AND project_id = ?))"
+                )
+                params.append(project_context)
             rows = conn.execute(
                 f"SELECT * FROM profile_rules WHERE id IN ({placeholders}) AND user_id=? "
-                "AND archived = 0",
-                (*ids, user_id),
+                "AND archived = 0" + scope_clause,
+                params,
             ).fetchall()
             results: list[dict[str, Any]] = []
             for row in rows:
