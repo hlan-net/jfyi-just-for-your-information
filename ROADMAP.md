@@ -133,7 +133,7 @@ High-level alignment features designed to maximize the "flow" between developer 
 
 | Item | Tag | Status | Spec |
 |------|-----|--------|------|
-| [Tiered Profiling](docs/tiered-profiling.md) | Core | In Progress | [docs/tiered-profiling.md](docs/tiered-profiling.md) |
+| [Tiered Profiling](docs/tiered-profiling.md) | Core | Done | [docs/tiered-profiling.md](docs/tiered-profiling.md) |
 | [Positive Reinforcement](docs/positive-reinforcement.md) | Core | Planned | [docs/positive-reinforcement.md](docs/positive-reinforcement.md) |
 | [Semantic Rule Inference](docs/semantic-rule-inference.md) | Core | Planned | [docs/semantic-rule-inference.md](docs/semantic-rule-inference.md) |
 | [Vibe Telemetry](docs/vibe-telemetry.md) | Core | Planned | [docs/vibe-telemetry.md](docs/vibe-telemetry.md) |
