@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     compaction_trigger_count: int = 10  # compact when session has > N episodic entries
     compaction_batch_size: int = 5  # how many oldest entries to merge per round
 
+    # Friction clustering (on-demand K-Means over friction event descriptions)
+    enable_clustering: bool = False
+
     # Inference engine (background LLM inference of profile notes from friction events)
     inference_enabled: bool = False
     inference_interval_s: int = 600

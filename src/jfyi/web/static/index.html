@@ -796,6 +796,22 @@
         </table>
       </div>
 
+      <!-- Vibe Map (Friction Clustering) -->
+      <div class="card">
+        <h2 style="margin:0 0 0.25rem;">🗺 Vibe Map</h2>
+        <p class="desc" style="margin-bottom:1rem;">Recurring friction patterns detected across your correction history. Enable <code>JFYI_ENABLE_CLUSTERING</code> to activate.</p>
+        <div v-if="!frictionClusters.length" class="empty" style="padding:1rem;">No patterns computed yet. Clusters appear once you have enough friction events and clustering is enabled.</div>
+        <div v-else style="display:grid;gap:0.75rem;">
+          <div v-for="c in frictionClusters" :key="c.id" style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:0.75rem 1rem;">
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.35rem;">
+              <span class="pill pill-red">{{ c.label }}</span>
+              <span style="color:var(--muted);font-size:0.8rem;">{{ c.size }} event{{ c.size !== 1 ? 's' : '' }}</span>
+            </div>
+            <p style="margin:0;font-size:0.9rem;">{{ c.summary }}</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Best Matches (Positive Reinforcement) -->
       <div class="card">
         <h2 style="margin:0 0 0.25rem;">⚡ Best Matches</h2>
@@ -1529,6 +1545,7 @@ const DeveloperAnalytics = {
     const ruleConfidence = ref([]);
     const ruleAccum = ref([]);
     const vibeMatches = ref([]);
+    const frictionClusters = ref([]);
     const trendDays = ref(30);
     const accumWeeks = ref(12);
 
@@ -1585,7 +1602,7 @@ const DeveloperAnalytics = {
     const loadAll = async () => {
       loading.value = true;
       try {
-        const [s, t, f, l, c, a, vm] = await Promise.all([
+        const [s, t, f, l, c, a, vm, fc] = await Promise.all([
           fetch(API + '/api/developer/summary').then(r => r.json()),
           fetch(API + `/api/developer/trend?days=${trendDays.value}`).then(r => r.json()),
           fetch(API + '/api/developer/friction-by-agent').then(r => r.json()),
@@ -1593,6 +1610,7 @@ const DeveloperAnalytics = {
           fetch(API + '/api/developer/rule-confidence').then(r => r.json()),
           fetch(API + `/api/developer/rule-accumulation?weeks=${accumWeeks.value}`).then(r => r.json()),
           fetch(API + '/api/developer/vibe-matches').then(r => r.json()),
+          fetch(API + '/api/analytics/friction-clusters').then(r => r.json()),
         ]);
         summary.value = s;
         trend.value = t;
@@ -1601,6 +1619,7 @@ const DeveloperAnalytics = {
         ruleConfidence.value = c;
         ruleAccum.value = a;
         vibeMatches.value = Array.isArray(vm) ? vm : [];
+        frictionClusters.value = Array.isArray(fc) ? fc : [];
       } finally { loading.value = false; }
     };
 
@@ -1616,7 +1635,8 @@ const DeveloperAnalytics = {
     onMounted(loadAll);
 
     return {
-      loading, summary, trend, frictionByAgent, latencyDist, ruleConfidence, ruleAccum, vibeMatches,
+      loading, summary, trend, frictionByAgent, latencyDist, ruleConfidence, ruleAccum,
+      vibeMatches, frictionClusters,
       trendDays, accumWeeks, tY,
       trendPoints, trendPath, trendArea, trendXLabels,
       maxFriction, maxLatency, barPct,
