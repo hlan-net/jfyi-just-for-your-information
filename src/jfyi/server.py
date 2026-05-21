@@ -10,12 +10,17 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .retrieval import Retriever
 
+import re
+
 from mcp.server import Server
+from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.models import InitializationOptions
 from mcp.types import (
+    Resource,
     TextContent,
     Tool,
 )
+from pydantic import AnyUrl
 
 from .analytics import AnalyticsEngine
 from .database import Database
@@ -596,6 +601,46 @@ def build_mcp_server(
         return await dispatch_tool(
             name, arguments, db, analytics, user_id=user_id, retriever=retriever
         )
+
+    @server.list_resources()
+    async def list_resources() -> list[Resource]:
+        return [
+            Resource(
+                uri=AnyUrl("jfyi://sessions/current/telemetry"),
+                name="Vibe Telemetry",
+                description=(
+                    "Real-time session alignment score, friction trend, and corrective hints. "
+                    "Use jfyi://sessions/{session_id}/telemetry for a specific session."
+                ),
+                mimeType="application/json",
+            )
+        ]
+
+    @server.read_resource()
+    async def read_resource(uri: AnyUrl | str) -> list[ReadResourceContents]:
+        uri_str = str(uri)
+        match = re.match(r"jfyi://sessions/([^/]+)/telemetry$", uri_str)
+        if not match:
+            raise ValueError(f"Unknown resource URI: {uri_str}")
+
+        session_id_raw = match.group(1)
+        if session_id_raw == "current":
+            session_id = await asyncio.to_thread(db.get_latest_session_id, user_id)
+            if session_id is None:
+                payload = json.dumps({
+                    "session_id": "current",
+                    "alignment_score": 100.0,
+                    "friction_trend": "stable",
+                    "recent_corrections": 0,
+                    "window_interactions": 0,
+                    "corrective_hints": [],
+                })
+                return [ReadResourceContents(content=payload, mime_type="application/json")]
+        else:
+            session_id = session_id_raw
+
+        telemetry = await asyncio.to_thread(db.get_session_telemetry, user_id, session_id)
+        return [ReadResourceContents(content=json.dumps(telemetry), mime_type="application/json")]
 
     return server
 
