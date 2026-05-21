@@ -1038,7 +1038,7 @@ class Database:
             cur = conn.execute(
                 "UPDATE profile_rules"
                 " SET confidence = MIN(1.0, confidence + ?), updated_at = ?"
-                " WHERE user_id = ? AND archived = 0",
+                " WHERE user_id = ? AND archived = 0 AND confidence < 1.0",
                 (delta, datetime.now(UTC).isoformat(), user_id),
             )
             return cur.rowcount

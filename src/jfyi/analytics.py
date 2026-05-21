@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+MIN_VIBE_MATCH_LENGTH = 500
+VIBE_CONFIDENCE_BOOST = 0.05
+
 if TYPE_CHECKING:
     from .database import Database
 
@@ -141,7 +144,7 @@ class AnalyticsEngine:
                 context={"factors": factors, "friction_score": friction_score},
                 interaction_id=interaction_id,
             )
-        elif len(response) >= 500:
+        elif len(response) >= MIN_VIBE_MATCH_LENGTH:
             # Vibe match: substantive response accepted without correction.
             self._db.add_vibe_match(
                 user_id=user_id,
@@ -149,7 +152,7 @@ class AnalyticsEngine:
                 interaction_id=interaction_id,
                 response_length=len(response),
             )
-            self._db.boost_rule_confidence(user_id=user_id, delta=0.05)
+            self._db.boost_rule_confidence(user_id=user_id, delta=VIBE_CONFIDENCE_BOOST)
 
         return FrictionScore(
             agent_name=agent_name,
@@ -185,7 +188,7 @@ class AnalyticsEngine:
         if type_counts.get("correction", 0) > 5:
             rules.append("AI output frequently requires post-generation corrections")
 
-        matches = self._db.get_vibe_matches(user_id=user_id, limit=200)
+        matches = self._db.get_vibe_matches(user_id=user_id, limit=3)
         if len(matches) >= 3:
             rules.append(
                 "Agent regularly produces substantive contributions accepted without correction"
