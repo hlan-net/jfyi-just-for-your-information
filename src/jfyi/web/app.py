@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
 if TYPE_CHECKING:
+    from ..inference import InferenceEngine
     from ..summarizer import Summarizer
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -934,17 +935,24 @@ class ProxySchemeMiddleware(BaseHTTPMiddleware):
 
 
 def create_app(
-    db: Database, analytics: AnalyticsEngine, summarizer: Summarizer | None = None
+    db: Database,
+    analytics: AnalyticsEngine,
+    summarizer: Summarizer | None = None,
+    inference_engine: InferenceEngine | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI web dashboard."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        task = asyncio.create_task(summarizer.run()) if summarizer else None
+        background_tasks = [
+            asyncio.create_task(t.run())
+            for t in (summarizer, inference_engine)
+            if t is not None
+        ]
         yield
-        if task:
+        for task in background_tasks:
             task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        await asyncio.gather(*background_tasks, return_exceptions=True)
 
     app = FastAPI(
         title="JFYI Dashboard",

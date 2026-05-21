@@ -76,6 +76,7 @@ env:
   JFYI_MCP_PORT: "8080"
   PYTHONDONTWRITEBYTECODE: "1"
   # JFYI_DLP_ENABLED: "true"   # Set to "false" to bypass PII redaction in local dev
+  # JFYI_INFERENCE_ENABLED: "true"   # Enable background LLM inference of profile notes from friction events
 
 # JWT / session secret — stable across pod restarts and upgrades.
 # If existingSecret is set, the chart reads JFYI_JWT_SECRET from that Secret.
