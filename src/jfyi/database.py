@@ -1047,6 +1047,75 @@ class Database:
                 (user_id, friction_event_id, note_id, now),
             )
 
+    # ── Vibe Telemetry ────────────────────────────────────────────────────
+
+    def get_latest_session_id(self, user_id: int) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT session_id FROM interactions WHERE user_id = ?"
+                " ORDER BY created_at DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
+        return row[0] if row else None
+
+    def get_session_telemetry(
+        self, user_id: int, session_id: str, window: int = 10
+    ) -> dict[str, Any]:
+        """Return rolling telemetry for a session: alignment score, trend, and corrective hints."""
+        with self._conn() as conn:
+            interactions = conn.execute(
+                "SELECT was_corrected, friction_score FROM interactions"
+                " WHERE user_id = ? AND session_id = ? ORDER BY created_at DESC LIMIT ?",
+                (user_id, session_id, window),
+            ).fetchall()
+            hints_rows = conn.execute(
+                "SELECT fe.description FROM friction_events fe"
+                " JOIN interactions i ON i.id = fe.interaction_id"
+                " WHERE fe.user_id = ? AND i.session_id = ?"
+                " ORDER BY fe.created_at DESC LIMIT 3",
+                (user_id, session_id),
+            ).fetchall()
+
+        interactions = [dict(r) for r in interactions]
+        if not interactions:
+            return {
+                "session_id": session_id,
+                "alignment_score": 100.0,
+                "friction_trend": "stable",
+                "recent_corrections": 0,
+                "window_interactions": 0,
+                "corrective_hints": [],
+            }
+
+        total = len(interactions)
+        corrected = sum(1 for i in interactions if i["was_corrected"])
+        alignment_score = round((1.0 - corrected / total) * 100.0, 1)
+
+        # Compare avg friction of recent half vs older half to derive trend.
+        # List is newest-first, so [:mid] is recent, [mid:] is older.
+        mid = total // 2
+        if mid >= 1 and total >= 4:
+            recent_avg = sum(i["friction_score"] for i in interactions[:mid]) / mid
+            older_avg = sum(i["friction_score"] for i in interactions[mid:]) / (total - mid)
+            if recent_avg < older_avg - 0.05:
+                trend = "improving"
+            elif recent_avg > older_avg + 0.05:
+                trend = "worsening"
+            else:
+                trend = "stable"
+        else:
+            trend = "stable"
+
+        corrective_hints = [r[0] for r in hints_rows if r[0]]
+        return {
+            "session_id": session_id,
+            "alignment_score": alignment_score,
+            "friction_trend": trend,
+            "recent_corrections": corrected,
+            "window_interactions": total,
+            "corrective_hints": corrective_hints,
+        }
+
     # ── Vibe Matches (Positive Reinforcement) ─────────────────────────────
 
     def add_vibe_match(

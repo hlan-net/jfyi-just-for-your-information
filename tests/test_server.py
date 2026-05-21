@@ -120,3 +120,92 @@ def test_build_mcp_server_registers_tool_handlers(ctx):
     srv = build_mcp_server(db, analytics)
     assert ListToolsRequest in srv.request_handlers
     assert CallToolRequest in srv.request_handlers
+
+
+# ── Vibe Telemetry MCP resources ───────────────────────────────────────────────
+
+
+def test_build_mcp_server_registers_resource_handlers(ctx):
+    from mcp.types import ListResourcesRequest, ReadResourceRequest
+
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    assert ListResourcesRequest in srv.request_handlers
+    assert ReadResourceRequest in srv.request_handlers
+
+
+async def test_list_resources_returns_telemetry_resource(ctx):
+    from mcp.types import ListResourcesRequest
+
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    req = ListResourcesRequest(method="resources/list", params=None)
+    result = await srv.request_handlers[ListResourcesRequest](req)
+    resources = result.root.resources
+    assert len(resources) == 1
+    assert "telemetry" in str(resources[0].uri)
+    assert resources[0].mimeType == "application/json"
+
+
+async def test_read_resource_empty_session_returns_perfect_score(ctx):
+    import json
+
+    from mcp.types import ReadResourceRequest, ReadResourceRequestParams
+    from pydantic import AnyUrl
+
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    params = ReadResourceRequestParams(uri=AnyUrl("jfyi://sessions/no-such-session/telemetry"))
+    req = ReadResourceRequest(method="resources/read", params=params)
+    result = await srv.request_handlers[ReadResourceRequest](req)
+    contents = result.root.contents
+    payload = json.loads(contents[0].text)
+    assert payload["alignment_score"] == 100.0
+    assert payload["window_interactions"] == 0
+    assert payload["corrective_hints"] == []
+
+
+async def test_read_resource_reflects_corrections(ctx):
+    import json
+
+    from mcp.types import ReadResourceRequest, ReadResourceRequestParams
+    from pydantic import AnyUrl
+
+    db, analytics = ctx
+    agent_id = db.get_or_create_agent(1, "claude")
+    for i in range(4):
+        db.record_interaction(
+            1, agent_id=agent_id, session_id="s1",
+            was_corrected=(i < 2), friction_score=0.6 if i < 2 else 0.0,
+        )
+    srv = build_mcp_server(db, analytics)
+    params = ReadResourceRequestParams(uri=AnyUrl("jfyi://sessions/s1/telemetry"))
+    req = ReadResourceRequest(method="resources/read", params=params)
+    result = await srv.request_handlers[ReadResourceRequest](req)
+    payload = json.loads(result.root.contents[0].text)
+    assert payload["session_id"] == "s1"
+    assert payload["recent_corrections"] == 2
+    assert payload["alignment_score"] == pytest.approx(50.0)
+
+
+async def test_read_resource_corrective_hints_populated(ctx):
+    import json
+
+    from mcp.types import ReadResourceRequest, ReadResourceRequestParams
+    from pydantic import AnyUrl
+
+    db, analytics = ctx
+    agent_id = db.get_or_create_agent(1, "claude")
+    interaction_id = db.record_interaction(
+        1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8,
+    )
+    db.add_friction_event(
+        1, agent_id=agent_id, event_type="correction",
+        description="Output was too verbose", interaction_id=interaction_id,
+    )
+    srv = build_mcp_server(db, analytics)
+    params = ReadResourceRequestParams(uri=AnyUrl("jfyi://sessions/s1/telemetry"))
+    req = ReadResourceRequest(method="resources/read", params=params)
+    result = await srv.request_handlers[ReadResourceRequest](req)
+    payload = json.loads(result.root.contents[0].text)
+    assert "Output was too verbose" in payload["corrective_hints"]
