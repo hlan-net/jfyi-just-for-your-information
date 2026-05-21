@@ -29,6 +29,31 @@ async def test_get_developer_profile_lists_rules(ctx):
     assert "[style]" in result[0].text
 
 
+async def test_get_developer_profile_with_project_context(ctx):
+    db, analytics = ctx
+    db.add_rule(1, "global rule", scope="global")
+    db.add_rule(1, "project rule", scope="project", project_id="jfyi")
+    db.add_rule(1, "other rule", scope="project", project_id="other")
+    result = await dispatch_tool(
+        "get_developer_profile", {"project_context": "jfyi"}, db, analytics
+    )
+    text = result[0].text
+    assert "global rule" in text
+    assert "project rule" in text
+    assert "other rule" not in text
+    assert "jfyi" in text
+
+
+async def test_get_developer_profile_without_project_context_returns_all(ctx):
+    db, analytics = ctx
+    db.add_rule(1, "global rule", scope="global")
+    db.add_rule(1, "project rule", scope="project", project_id="jfyi")
+    result = await dispatch_tool("get_developer_profile", {}, db, analytics)
+    text = result[0].text
+    assert "global rule" in text
+    assert "project rule" in text
+
+
 async def test_add_profile_note(ctx):
     db, analytics = ctx
     result = await dispatch_tool(

@@ -389,6 +389,7 @@
           <thead>
             <tr>
               <th>Category</th>
+              <th>Scope</th>
               <th>Rule</th>
               <th>Source notes</th>
               <th></th>
@@ -397,6 +398,11 @@
           <tbody>
             <tr v-for="r in rules" :key="r.id">
               <td><span :class="'pill pill-' + categoryColor(r.category)">{{ r.category }}</span></td>
+              <td>
+                <span v-if="r.scope === 'project'" style="font-size:0.75rem;color:var(--accent);" :title="r.project_id">📁 {{ r.project_id || 'project' }}</span>
+                <span v-else-if="r.scope === 'agent'" style="font-size:0.75rem;color:var(--muted);">🤖 agent</span>
+                <span v-else style="font-size:0.75rem;color:var(--muted);">🌐 global</span>
+              </td>
               <td>{{ r.text }}</td>
               <td style="color:var(--muted);font-size:0.85rem;">{{ (r.source_note_ids || []).length }} note{{ (r.source_note_ids || []).length === 1 ? '' : 's' }}</td>
               <td style="text-align: right;"><button class="btn-danger" style="border:none; cursor:pointer;" @click="deleteRule(r.id)">×</button></td>
@@ -416,13 +422,23 @@
         <label style="display:block;font-size:0.8rem;color:var(--muted);">Rule text</label>
         <textarea v-model="newText" rows="3" style="width:100%;margin-bottom:0.75rem;padding:0.5rem;border:1px solid var(--border);border-radius:4px;font:inherit;"></textarea>
         <label style="display:block;font-size:0.8rem;color:var(--muted);">Category</label>
-        <select v-model="newCategory" style="width:100%;margin-bottom:1rem;padding:0.5rem;border:1px solid var(--border);border-radius:4px;font:inherit;">
+        <select v-model="newCategory" style="width:100%;margin-bottom:0.75rem;padding:0.5rem;border:1px solid var(--border);border-radius:4px;font:inherit;">
           <option value="general">general</option>
           <option value="style">style</option>
           <option value="architecture">architecture</option>
           <option value="testing">testing</option>
           <option value="workflow">workflow</option>
         </select>
+        <label style="display:block;font-size:0.8rem;color:var(--muted);">Scope</label>
+        <select v-model="newScope" style="width:100%;margin-bottom:0.75rem;padding:0.5rem;border:1px solid var(--border);border-radius:4px;font:inherit;">
+          <option value="global">🌐 Global — applies everywhere</option>
+          <option value="project">📁 Project — applies to a specific codebase</option>
+        </select>
+        <div v-if="newScope === 'project'" style="margin-bottom:1rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--muted);">Project ID (git remote URL or directory name)</label>
+          <input v-model="newProjectId" type="text" placeholder="e.g. jfyi" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;font:inherit;" />
+        </div>
+        <div v-else style="margin-bottom:1rem;"></div>
         <div v-if="addError" style="color:var(--red);font-size:0.85rem;margin-bottom:0.5rem;">{{ addError }}</div>
         <div style="display:flex;justify-content:flex-end;gap:0.5rem;">
           <button @click="showAdd = false" class="btn btn-outline">Cancel</button>
@@ -1305,6 +1321,8 @@ const Profile = {
     const showAdd = ref(false);
     const newText = ref('');
     const newCategory = ref('general');
+    const newScope = ref('global');
+    const newProjectId = ref('');
     const addError = ref('');
     const adding = ref(false);
 
@@ -1333,12 +1351,16 @@ const Profile = {
             text: newText.value.trim(),
             category: newCategory.value,
             source_note_ids: [],
+            scope: newScope.value,
+            project_id: newScope.value === 'project' ? (newProjectId.value.trim() || null) : null,
           }),
         });
         if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Failed to add rule'); }
         showAdd.value = false;
         newText.value = '';
         newCategory.value = 'general';
+        newScope.value = 'global';
+        newProjectId.value = '';
         loadRules();
       } catch (e) {
         addError.value = e.message || 'Failed to add rule';
@@ -1367,7 +1389,7 @@ const Profile = {
     onMounted(loadRules);
 
     return {
-      rules, loading, copied, showAdd, newText, newCategory, addError, adding,
+      rules, loading, copied, showAdd, newText, newCategory, newScope, newProjectId, addError, adding,
       categoryColor, deleteRule, createRule, copyRules,
     };
   }

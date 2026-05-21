@@ -73,11 +73,10 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
     },
     "get_developer_profile": {
         "description": (
-            "Returns the developer's curated constitution — cross-project, cross-agent "
-            "rules that the developer has explicitly authored to describe how they think "
-            "and work. These are not project-specific notes; they apply regardless of "
-            "what codebase or agent is in use. Use them to align your behaviour with the "
-            "developer's established preferences before the session begins. "
+            "Returns the developer's curated constitution — rules that the developer "
+            "has explicitly authored to describe how they think and work. Pass "
+            "project_context (git remote URL or directory basename) to also receive "
+            "project-scoped rules on top of the global ones; project rules sort first. "
             "When you observe a candidate pattern worth recording, call add_profile_note "
             "to file it as a raw observation — the developer will review and (optionally) "
             "promote it into a rule. Write notes at the same level of generality as "
@@ -92,10 +91,17 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
                 "category": {
                     "type": "string",
                     "description": "Filter by category (e.g. 'style', 'architecture'). Omit for all.",  # noqa: E501
-                }
+                },
+                "project_context": {
+                    "type": "string",
+                    "description": (
+                        "Git remote URL or directory basename of the current project. "
+                        "When provided, includes project-scoped rules in addition to global rules."
+                    ),
+                },
             },
         },
-        "example": "get_developer_profile()  # or get_developer_profile(category='style')",
+        "example": "get_developer_profile(project_context='jfyi')  # or omit for global only",
     },
     "get_agent_analytics": {
         "description": (
@@ -357,7 +363,8 @@ async def dispatch_tool(
 
     if name == "get_developer_profile":
         category = arguments.get("category")
-        rules = db.get_rules(user_id=user_id, category=category)
+        project_context = arguments.get("project_context")
+        rules = db.get_rules(user_id=user_id, category=category, project_context=project_context)
         if not rules:
             return [
                 TextContent(
@@ -371,10 +378,11 @@ async def dispatch_tool(
                 )
             ]
         block = render_read_only_block(rules)
+        project_note = f" (+ project rules for '{project_context}')" if project_context else ""
         preamble = (
-            f"Developer constitution ({len(rules)} rules):\n"
-            "These are cross-project, cross-agent preferences — apply them throughout "
-            "this session regardless of which codebase you are working in.\n\n"
+            f"Developer constitution ({len(rules)} rules{project_note}):\n"
+            "Global rules apply throughout this session. Project-scoped rules apply "
+            "to the current codebase and take precedence when they overlap.\n\n"
         )
         return [TextContent(type="text", text=preamble + block)]
 
