@@ -363,7 +363,7 @@ def test_add_and_get_friction_events(db):
 
 def test_get_session_telemetry_empty_session_returns_defaults(db):
     telemetry = db.get_session_telemetry(1, "no-such-session")
-    assert telemetry["alignment_score"] == 100.0
+    assert telemetry["alignment_score"] == pytest.approx(100.0)
     assert telemetry["window_interactions"] == 0
     assert telemetry["friction_trend"] == "stable"
     assert telemetry["corrective_hints"] == []

@@ -1050,6 +1050,7 @@ class Database:
     # ── Vibe Telemetry ────────────────────────────────────────────────────
 
     def get_latest_session_id(self, user_id: int) -> str | None:
+        """Return the session_id of the most recent interaction for this user, or None."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT session_id FROM interactions WHERE user_id = ?"

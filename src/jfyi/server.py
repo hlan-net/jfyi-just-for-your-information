@@ -20,6 +20,7 @@ from mcp.types import (
     TextContent,
     Tool,
 )
+from pydantic import AnyUrl
 
 from .analytics import AnalyticsEngine
 from .database import Database
@@ -605,7 +606,7 @@ def build_mcp_server(
     async def list_resources() -> list[Resource]:
         return [
             Resource(
-                uri="jfyi://sessions/current/telemetry",  # type: ignore[arg-type]
+                uri=AnyUrl("jfyi://sessions/current/telemetry"),
                 name="Vibe Telemetry",
                 description=(
                     "Real-time session alignment score, friction trend, and corrective hints. "
@@ -616,7 +617,7 @@ def build_mcp_server(
         ]
 
     @server.read_resource()
-    async def read_resource(uri) -> list[ReadResourceContents]:
+    async def read_resource(uri: AnyUrl | str) -> list[ReadResourceContents]:
         uri_str = str(uri)
         match = re.match(r"jfyi://sessions/([^/]+)/telemetry$", uri_str)
         if not match:

@@ -160,7 +160,7 @@ async def test_read_resource_empty_session_returns_perfect_score(ctx):
     result = await srv.request_handlers[ReadResourceRequest](req)
     contents = result.root.contents
     payload = json.loads(contents[0].text)
-    assert payload["alignment_score"] == 100.0
+    assert payload["alignment_score"] == pytest.approx(100.0)
     assert payload["window_interactions"] == 0
     assert payload["corrective_hints"] == []
 
