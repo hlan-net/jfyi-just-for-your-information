@@ -139,12 +139,29 @@ class InferenceEngine:
             logger.warning("InferenceEngine: LLM returned non-JSON: %s", raw[:100])
             return
 
+        if not isinstance(note_dict, dict):
+            logger.warning(
+                "InferenceEngine: LLM returned JSON that is not an object: %s", raw[:100]
+            )
+            return
+
+        text = note_dict.get("text", "").strip()
+        if not text:
+            logger.warning("InferenceEngine: LLM returned empty text for rule.")
+            return
+
+        category = note_dict.get("category", "general")
+        try:
+            confidence = float(note_dict.get("confidence", 0.3))
+        except (ValueError, TypeError):
+            confidence = 0.3
+
         note_id = await asyncio.to_thread(
             self._db.add_note,
             user_id,
-            note_dict.get("text", ""),
-            note_dict.get("category", "general"),
-            float(note_dict.get("confidence", 0.3)),
+            text,
+            category,
+            confidence,
             "inferred",
             event.get("agent_name"),
         )

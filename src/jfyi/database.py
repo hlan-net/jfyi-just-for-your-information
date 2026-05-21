@@ -178,18 +178,6 @@ class Database:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
-
-                CREATE TABLE IF NOT EXISTS inference_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    friction_event_id INTEGER NOT NULL
-                        REFERENCES friction_events(id) ON DELETE CASCADE,
-                    note_id INTEGER NOT NULL REFERENCES profile_notes(id) ON DELETE CASCADE,
-                    created_at TEXT NOT NULL,
-                    UNIQUE(friction_event_id)
-                );
-                CREATE INDEX IF NOT EXISTS idx_inference_log_user
-                    ON inference_log(user_id);
             """)
 
     def _run_migrations(self) -> None:
@@ -426,6 +414,28 @@ class Database:
                         ON vibe_matches(user_id, agent_id);
 
                     PRAGMA user_version = 12;
+                """)
+
+            if version < 13:
+                # Semantic Rule Inference: track which friction events have
+                # already been processed by the inference engine so that
+                # re-runs remain idempotent.
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS inference_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        friction_event_id INTEGER NOT NULL
+                            REFERENCES friction_events(id) ON DELETE CASCADE,
+                        note_id INTEGER NOT NULL
+                            REFERENCES profile_notes(id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL,
+                        UNIQUE(friction_event_id)
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_inference_log_user
+                        ON inference_log(user_id);
+
+                    PRAGMA user_version = 13;
                 """)
 
     # ── Users & Identities ─────────────────────────────────────────────────

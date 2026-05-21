@@ -156,6 +156,81 @@ async def test_infer_from_friction_skips_invalid_json(engine, db):
     assert db.get_notes(1) == []
 
 
+@pytest.mark.asyncio
+async def test_infer_from_friction_skips_json_array(engine, db):
+    agent_id = db.get_or_create_agent(1, "claude")
+    interaction_id = db.record_interaction(
+        1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
+    )
+    db.add_friction_event(
+        1, agent_id=agent_id, event_type="correction",
+        description="Output corrected", interaction_id=interaction_id,
+    )
+    events = db.get_uninferred_friction_events(1)
+    engine._client.messages.create = AsyncMock(return_value=_make_llm_response('[{"text": "bad"}]'))
+
+    await engine._infer_from_friction(1, events[0])
+
+    assert db.get_notes(1) == []
+
+
+@pytest.mark.asyncio
+async def test_infer_from_friction_skips_empty_text(engine, db):
+    agent_id = db.get_or_create_agent(1, "claude")
+    interaction_id = db.record_interaction(
+        1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
+    )
+    db.add_friction_event(
+        1, agent_id=agent_id, event_type="correction",
+        description="Output corrected", interaction_id=interaction_id,
+    )
+    events = db.get_uninferred_friction_events(1)
+    engine._client.messages.create = AsyncMock(
+        return_value=_make_llm_response(json.dumps({"text": "  ", "category": "style"}))
+    )
+
+    await engine._infer_from_friction(1, events[0])
+
+    assert db.get_notes(1) == []
+
+
+@pytest.mark.asyncio
+async def test_infer_from_friction_falls_back_on_bad_confidence(engine, db):
+    agent_id = db.get_or_create_agent(1, "claude")
+    interaction_id = db.record_interaction(
+        1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
+    )
+    db.add_friction_event(
+        1, agent_id=agent_id, event_type="correction",
+        description="Output corrected", interaction_id=interaction_id,
+    )
+    events = db.get_uninferred_friction_events(1)
+    engine._client.messages.create = AsyncMock(
+        return_value=_make_llm_response(
+            json.dumps({"text": "Use early returns", "category": "style", "confidence": "high"})
+        )
+    )
+
+    await engine._infer_from_friction(1, events[0])
+
+    notes = db.get_notes(1)
+    assert len(notes) == 1
+    assert notes[0]["confidence"] == pytest.approx(0.3)
+
+
+# ── Migration v13 ──────────────────────────────────────────────────────────────
+
+
+def test_migration_v13_inference_log_table_exists(tmp_path):
+    import sqlite3
+    Database(tmp_path / "v13.db")
+    conn = sqlite3.connect(tmp_path / "v13.db")
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    tables = {r[0] for r in rows}
+    conn.close()
+    assert "inference_log" in tables
+
+
 # ── Daily token cap ────────────────────────────────────────────────────────────
 
 
