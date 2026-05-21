@@ -416,6 +416,28 @@ class Database:
                     PRAGMA user_version = 12;
                 """)
 
+            if version < 13:
+                # Semantic Rule Inference: track which friction events have
+                # already been processed by the inference engine so that
+                # re-runs remain idempotent.
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS inference_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        friction_event_id INTEGER NOT NULL
+                            REFERENCES friction_events(id) ON DELETE CASCADE,
+                        note_id INTEGER NOT NULL
+                            REFERENCES profile_notes(id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL,
+                        UNIQUE(friction_event_id)
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_inference_log_user
+                        ON inference_log(user_id);
+
+                    PRAGMA user_version = 13;
+                """)
+
     # ── Users & Identities ─────────────────────────────────────────────────
 
     # Fixed IDs for built-in OAuth providers; custom OIDC providers start at 101.
@@ -992,6 +1014,38 @@ class Database:
                     (user_id, limit),
                 ).fetchall()
             return [dict(r) for r in rows]
+
+    # ── Inference (Semantic Rule Inference) ───────────────────────────────
+
+    def get_all_user_ids(self) -> list[int]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT id FROM users").fetchall()
+        return [r[0] for r in rows]
+
+    def get_uninferred_friction_events(
+        self, user_id: int, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Return correction friction events not yet processed by the inference engine."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT fe.*, a.name as agent_name FROM friction_events fe"
+                " JOIN agents a ON a.id = fe.agent_id"
+                " LEFT JOIN inference_log il ON il.friction_event_id = fe.id"
+                " WHERE fe.user_id = ? AND fe.event_type = 'correction' AND il.id IS NULL"
+                " ORDER BY fe.created_at ASC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_event_inferred(self, user_id: int, friction_event_id: int, note_id: int) -> None:
+        """Record that a friction event has been processed and produced the given note."""
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO inference_log"
+                " (user_id, friction_event_id, note_id, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, friction_event_id, note_id, now),
+            )
 
     # ── Vibe Matches (Positive Reinforcement) ─────────────────────────────
 

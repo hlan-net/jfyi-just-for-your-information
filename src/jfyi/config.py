@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     compaction_trigger_count: int = 10  # compact when session has > N episodic entries
     compaction_batch_size: int = 5  # how many oldest entries to merge per round
 
+    # Inference engine (background LLM inference of profile notes from friction events)
+    inference_enabled: bool = False
+    inference_interval_s: int = 600
+    inference_daily_token_cap: int = 50_000
+    inference_model: str = "claude-haiku-4-5-20251001"
+
     # DLP / PII redaction
     dlp_enabled: bool = True  # Set to false in local dev to bypass redaction
 

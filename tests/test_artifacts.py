@@ -34,10 +34,10 @@ def test_migration_creates_artifacts_table(db):
         conn.execute("SELECT id FROM artifacts LIMIT 0")
 
 
-def test_migration_version_is_12(db):
+def test_migration_version_is_13(db):
     with db._conn() as conn:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-    assert version == 12
+    assert version == 13
 
 
 # ── artifact_store ─────────────────────────────────────────────────────────────
