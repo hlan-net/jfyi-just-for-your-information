@@ -178,6 +178,19 @@ class Database:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS friction_clusters (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    label TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    size INTEGER NOT NULL,
+                    event_ids TEXT NOT NULL,
+                    event_count_at_compute INTEGER NOT NULL DEFAULT 0,
+                    computed_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_friction_clusters_user
+                    ON friction_clusters(user_id);
             """)
 
     def _run_migrations(self) -> None:
@@ -888,9 +901,7 @@ class Database:
             params: list[Any] = [*ids, user_id]
             scope_clause = ""
             if project_context is not None:
-                scope_clause = (
-                    " AND (scope = 'global' OR (scope = 'project' AND project_id = ?))"
-                )
+                scope_clause = " AND (scope = 'global' OR (scope = 'project' AND project_id = ?))"
                 params.append(project_context)
             rows = conn.execute(
                 f"SELECT * FROM profile_rules WHERE id IN ({placeholders}) AND user_id=? "
@@ -1015,6 +1026,40 @@ class Database:
                 ).fetchall()
             return [dict(r) for r in rows]
 
+    # ── Friction Clustering ────────────────────────────────────────────────
+
+    def get_friction_clusters(self, user_id: int) -> list[dict[str, Any]]:
+        """Return cached friction clusters for this user, newest first."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM friction_clusters WHERE user_id = ?"
+                " ORDER BY computed_at DESC, id ASC",
+                (user_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def save_friction_clusters(self, user_id: int, clusters: list[dict[str, Any]]) -> None:
+        """Atomically replace all cached clusters for this user."""
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.execute("DELETE FROM friction_clusters WHERE user_id = ?", (user_id,))
+            for c in clusters:
+                conn.execute(
+                    "INSERT INTO friction_clusters"
+                    " (user_id, label, summary, size, event_ids,"
+                    " event_count_at_compute, computed_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        user_id,
+                        c["label"],
+                        c["summary"],
+                        c["size"],
+                        json.dumps(c.get("event_ids", [])),
+                        c.get("event_count_at_compute", 0),
+                        now,
+                    ),
+                )
+
     # ── Inference (Semantic Rule Inference) ───────────────────────────────
 
     def get_all_user_ids(self) -> list[int]:
@@ -1022,9 +1067,7 @@ class Database:
             rows = conn.execute("SELECT id FROM users").fetchall()
         return [r[0] for r in rows]
 
-    def get_uninferred_friction_events(
-        self, user_id: int, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    def get_uninferred_friction_events(self, user_id: int, limit: int = 10) -> list[dict[str, Any]]:
         """Return correction friction events not yet processed by the inference engine."""
         with self._conn() as conn:
             rows = conn.execute(

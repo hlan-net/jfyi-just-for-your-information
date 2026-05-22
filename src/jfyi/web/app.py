@@ -796,6 +796,14 @@ def _register_developer_api(app: FastAPI) -> None:
     ) -> list[dict[str, Any]]:
         return db.get_vibe_matches(current_user["id"], limit=min(limit, 100))
 
+    @app.get("/api/analytics/friction-clusters")
+    async def analytics_friction_clusters(
+        current_user: CurrentUser, db: DBDep
+    ) -> list[dict[str, Any]]:
+        from ..clustering import get_clusters_for_user
+
+        return await asyncio.to_thread(get_clusters_for_user, db, current_user["id"])
+
 
 class ClientRegistration(BaseModel):
     client_name: str
@@ -945,9 +953,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         background_tasks = [
-            asyncio.create_task(t.run())
-            for t in (summarizer, inference_engine)
-            if t is not None
+            asyncio.create_task(t.run()) for t in (summarizer, inference_engine) if t is not None
         ]
         yield
         for task in background_tasks:

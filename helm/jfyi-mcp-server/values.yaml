@@ -77,6 +77,7 @@ env:
   PYTHONDONTWRITEBYTECODE: "1"
   # JFYI_DLP_ENABLED: "true"   # Set to "false" to bypass PII redaction in local dev
   # JFYI_INFERENCE_ENABLED: "true"   # Enable background LLM inference of profile notes from friction events
+  # JFYI_ENABLE_CLUSTERING: "true"   # Enable on-demand K-Means friction event clustering (requires cluster extra)
 
 # JWT / session secret — stable across pod restarts and upgrades.
 # If existingSecret is set, the chart reads JFYI_JWT_SECRET from that Secret.
