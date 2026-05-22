@@ -1032,7 +1032,8 @@ class Database:
         """Return cached friction clusters for this user, newest first."""
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT * FROM friction_clusters WHERE user_id = ? ORDER BY computed_at DESC",
+                "SELECT * FROM friction_clusters WHERE user_id = ?"
+                " ORDER BY computed_at DESC, id ASC",
                 (user_id,),
             ).fetchall()
         return [dict(r) for r in rows]

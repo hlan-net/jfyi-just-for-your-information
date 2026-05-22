@@ -156,6 +156,15 @@ def test_get_clusters_each_cluster_has_required_keys(db):
         assert "size" in c
 
 
+def test_get_clusters_returns_empty_on_computation_error(db):
+    engine = ClusteringEngine(db, k=2)
+    _add_events(db, 10)
+    with patch("jfyi.clustering.TfidfVectorizer") as mock_vec:
+        mock_vec.return_value.fit_transform.side_effect = ValueError("empty vocabulary")
+        result = engine.get_clusters(1)
+    assert result == []
+
+
 def test_get_clusters_fallback_summary_without_llm(db):
     engine = ClusteringEngine(db, k=2, api_key=None)
     _add_events(db, 10)

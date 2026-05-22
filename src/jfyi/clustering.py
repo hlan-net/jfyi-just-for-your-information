@@ -98,11 +98,15 @@ class ClusteringEngine:
         descriptions = [e.get("description") or e["event_type"] for e in events]
         k = min(self._k, len(events))
 
-        vectorizer = TfidfVectorizer(max_features=200, stop_words="english", min_df=1)
-        X = vectorizer.fit_transform(descriptions)
+        try:
+            vectorizer = TfidfVectorizer(max_features=200, stop_words="english", min_df=1)
+            X = vectorizer.fit_transform(descriptions)
 
-        km = KMeans(n_clusters=k, random_state=42, n_init=10)
-        labels = km.fit_predict(X)
+            km = KMeans(n_clusters=k, random_state=42, n_init=10)
+            labels = km.fit_predict(X)
+        except Exception:
+            logger.exception("ClusteringEngine: computation failed")
+            return []
 
         clusters: list[dict[str, Any]] = []
         for cid in range(k):
