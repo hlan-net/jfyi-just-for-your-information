@@ -1092,6 +1092,30 @@ class Database:
 
     # ── Vibe Telemetry ────────────────────────────────────────────────────
 
+    def get_best_sessions(self, user_id: int, limit: int = 5) -> list[dict[str, Any]]:
+        """Return the top low-friction sessions for this user.
+
+        Ranks sessions by ascending avg friction_score, breaking ties by
+        descending interaction count so longer zero-friction sessions rank first.
+        Only includes sessions where every interaction was uncorrected.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT session_id,
+                       COUNT(*) AS interaction_count,
+                       ROUND(AVG(friction_score), 4) AS avg_friction
+                FROM interactions
+                WHERE user_id = ?
+                GROUP BY session_id
+                HAVING SUM(was_corrected) = 0
+                ORDER BY avg_friction ASC, interaction_count DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def get_latest_session_id(self, user_id: int) -> str | None:
         """Return the session_id of the most recent interaction for this user, or None."""
         with self._conn() as conn:

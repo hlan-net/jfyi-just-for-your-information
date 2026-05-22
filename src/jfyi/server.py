@@ -28,6 +28,14 @@ from .memory import MemoryFacade
 from .prompt import render_read_only_block
 from .serializer import PayloadSerializer
 
+try:
+    from anthropic import Anthropic as _Anthropic
+
+    _ANTHROPIC_AVAILABLE = True
+except ImportError:
+    _Anthropic = None  # type: ignore[assignment,misc]
+    _ANTHROPIC_AVAILABLE = False
+
 _serializer = PayloadSerializer()
 
 # ── Tool catalogue ─────────────────────────────────────────────────────────────
@@ -239,6 +247,27 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
             " arguments={'content': '...', 'type': 'log', 'session_id': '...'})"
         ),
     },
+    "warm_agent": {
+        "description": (
+            "Generate a Vibe Brief for a new agent session. "
+            "Synthesises the developer's best past interactions into 3–5 concise style "
+            "examples that give the agent an immediate working model of how the developer "
+            "thinks and communicates. Call once at the start of a fresh session to "
+            "bootstrap alignment before the first interaction."
+        ),
+        "token_cost": 300,
+        "always_on": False,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_name": {
+                    "type": "string",
+                    "description": "Name of the agent being warmed (informational only).",
+                },
+            },
+        },
+        "example": "discover_tools(tool_name='warm_agent', arguments={'agent_name': 'claude'})",
+    },
     "run_local_script": {
         "description": (
             "Execute a short Python script against a stored artifact. "
@@ -298,6 +327,91 @@ _DISCOVER_SCHEMA = {
         },
     },
 }
+
+
+_WARM_AGENT_PROMPT = (
+    "You are a developer-experience analyst. "
+    "Given episodic summaries of a developer's best (zero-friction) sessions, "
+    "write a 'Developer Vibe Brief' — 3 to 5 concise bullet points that capture "
+    "the developer's communication style, workflow preferences, and quality expectations. "
+    "Each bullet should name a concrete pattern with a brief example. "
+    "Start each bullet with an active verb. "
+    "Return only the bullet list, no preamble or headers."
+)
+
+
+async def _handle_warm_agent(
+    arguments: dict[str, Any],
+    db: Database,
+    user_id: int,
+) -> list[TextContent]:
+    """Build a Vibe Brief from the developer's best past sessions."""
+    sessions = await asyncio.to_thread(db.get_best_sessions, user_id, 5)
+    if not sessions:
+        return [
+            TextContent(
+                type="text",
+                text=(
+                    "No low-friction sessions found yet. "
+                    "Record a few interactions with record_interaction() first, "
+                    "then call warm_agent again."
+                ),
+            )
+        ]
+
+    memory = MemoryFacade(db)
+    summaries: list[str] = []
+    for s in sessions:
+        entries = await asyncio.to_thread(
+            memory.recall,
+            "episodic",
+            user_id=user_id,
+            session_id=s["session_id"],
+            limit=3,
+        )
+        for e in entries:
+            if e.get("summary"):
+                summaries.append(e["summary"])
+
+    if not summaries:
+        # Fall back to a structured brief from session stats alone
+        lines = ["Developer Vibe Brief (inferred from interaction patterns):"]
+        for s in sessions:
+            lines.append(
+                f"- Session {s['session_id'][:8]}: "
+                f"{s['interaction_count']} interactions, "
+                f"avg friction {s['avg_friction']}"
+            )
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    # Try LLM synthesis
+    from .config import settings
+
+    if _ANTHROPIC_AVAILABLE and settings.anthropic_api_key:
+        try:
+            client = _Anthropic(api_key=settings.anthropic_api_key)
+            sample_text = "\n".join(f"- {s}" for s in summaries[:15])
+            response = await asyncio.to_thread(
+                client.messages.create,
+                model="claude-haiku-4-5-20251001",
+                max_tokens=400,
+                system=_WARM_AGENT_PROMPT,
+                messages=[{"role": "user", "content": sample_text}],
+            )
+            brief = response.content[0].text.strip()
+            return [TextContent(type="text", text=f"Developer Vibe Brief:\n{brief}")]
+        except Exception:
+            pass  # fall through to summary-based fallback
+
+    # No API key or LLM failure — join representative summaries
+    agent_name = arguments.get("agent_name", "agent")
+    brief = "\n".join(f"- {s}" for s in summaries[:5])
+    return [
+        TextContent(
+            type="text",
+            text=f"Developer Vibe Brief for {agent_name}:\n{brief}",
+        )
+    ]
 
 
 async def dispatch_tool(
@@ -498,6 +612,9 @@ async def dispatch_tool(
             )
         ]
 
+    if name == "warm_agent":
+        return await _handle_warm_agent(arguments, db, user_id)
+
     if name == "store_artifact":
         artifact = await asyncio.to_thread(
             db.artifact_store,
@@ -627,14 +744,16 @@ def build_mcp_server(
         if session_id_raw == "current":
             session_id = await asyncio.to_thread(db.get_latest_session_id, user_id)
             if session_id is None:
-                payload = json.dumps({
-                    "session_id": "current",
-                    "alignment_score": 100.0,
-                    "friction_trend": "stable",
-                    "recent_corrections": 0,
-                    "window_interactions": 0,
-                    "corrective_hints": [],
-                })
+                payload = json.dumps(
+                    {
+                        "session_id": "current",
+                        "alignment_score": 100.0,
+                        "friction_trend": "stable",
+                        "recent_corrections": 0,
+                        "window_interactions": 0,
+                        "corrective_hints": [],
+                    }
+                )
                 return [ReadResourceContents(content=payload, mime_type="application/json")]
         else:
             session_id = session_id_raw
@@ -657,9 +776,7 @@ async def run_stdio(
 
     server = build_mcp_server(db, analytics, retriever=retriever)
     background_tasks = [
-        asyncio.create_task(t.run())
-        for t in (summarizer, inference_engine)
-        if t is not None
+        asyncio.create_task(t.run()) for t in (summarizer, inference_engine) if t is not None
     ]
     try:
         async with stdio_server() as (read_stream, write_stream):

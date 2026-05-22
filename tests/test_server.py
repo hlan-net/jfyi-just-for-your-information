@@ -175,8 +175,11 @@ async def test_read_resource_reflects_corrections(ctx):
     agent_id = db.get_or_create_agent(1, "claude")
     for i in range(4):
         db.record_interaction(
-            1, agent_id=agent_id, session_id="s1",
-            was_corrected=(i < 2), friction_score=0.6 if i < 2 else 0.0,
+            1,
+            agent_id=agent_id,
+            session_id="s1",
+            was_corrected=(i < 2),
+            friction_score=0.6 if i < 2 else 0.0,
         )
     srv = build_mcp_server(db, analytics)
     params = ReadResourceRequestParams(uri=AnyUrl("jfyi://sessions/s1/telemetry"))
@@ -197,11 +200,18 @@ async def test_read_resource_corrective_hints_populated(ctx):
     db, analytics = ctx
     agent_id = db.get_or_create_agent(1, "claude")
     interaction_id = db.record_interaction(
-        1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8,
+        1,
+        agent_id=agent_id,
+        session_id="s1",
+        was_corrected=True,
+        friction_score=0.8,
     )
     db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output was too verbose", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output was too verbose",
+        interaction_id=interaction_id,
     )
     srv = build_mcp_server(db, analytics)
     params = ReadResourceRequestParams(uri=AnyUrl("jfyi://sessions/s1/telemetry"))
@@ -209,3 +219,97 @@ async def test_read_resource_corrective_hints_populated(ctx):
     result = await srv.request_handlers[ReadResourceRequest](req)
     payload = json.loads(result.root.contents[0].text)
     assert "Output was too verbose" in payload["corrective_hints"]
+
+
+# ── warm_agent ──────────────────────────────────────────────────────────────────
+
+
+async def test_warm_agent_fallback_when_no_sessions(ctx):
+    db, analytics = ctx
+    result = await dispatch_tool("warm_agent", {}, db, analytics)
+    assert len(result) == 1
+    assert "No low-friction sessions" in result[0].text
+
+
+async def test_warm_agent_excludes_sessions_with_any_correction(ctx):
+    db, analytics = ctx
+    agent_id = db.get_or_create_agent(1, "claude")
+    # Session with one good and one corrected interaction — must be excluded
+    db.record_interaction(
+        1, agent_id=agent_id, session_id="mixed", was_corrected=False, friction_score=0.0
+    )
+    db.record_interaction(
+        1, agent_id=agent_id, session_id="mixed", was_corrected=True, friction_score=0.9
+    )
+    result = await dispatch_tool("warm_agent", {}, db, analytics)
+    assert "No low-friction sessions" in result[0].text
+
+
+async def test_warm_agent_returns_brief_without_llm(ctx):
+    db, analytics = ctx
+    agent_id = db.get_or_create_agent(1, "claude")
+    db.record_interaction(
+        1, agent_id=agent_id, session_id="s1", was_corrected=False, friction_score=0.0
+    )
+    result = await dispatch_tool("warm_agent", {"agent_name": "claude"}, db, analytics)
+    assert len(result) == 1
+    assert result[0].text  # non-empty
+
+
+async def test_warm_agent_uses_llm_when_available(ctx):
+    from unittest.mock import MagicMock, patch
+
+    db, analytics = ctx
+    agent_id = db.get_or_create_agent(1, "claude")
+    db.record_interaction(
+        1, agent_id=agent_id, session_id="s1", was_corrected=False, friction_score=0.0
+    )
+    db.episodic_add("s1", 1, "interaction_summary", "Prefers explicit types over implicit ones")
+
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text="- Prefer explicit types\n- Avoid verbose output")]
+    mock_client.messages.create.return_value = mock_response
+    mock_anthropic_cls = MagicMock(return_value=mock_client)
+
+    with (
+        patch("jfyi.server._ANTHROPIC_AVAILABLE", True),
+        patch("jfyi.server._Anthropic", mock_anthropic_cls),
+        patch("jfyi.config.settings") as mock_settings,
+    ):
+        mock_settings.anthropic_api_key = "test-key"
+        result = await dispatch_tool("warm_agent", {}, db, analytics)
+
+    assert "Vibe Brief" in result[0].text
+    mock_client.messages.create.assert_called_once()
+
+
+async def test_warm_agent_falls_back_on_llm_error(ctx):
+    from unittest.mock import MagicMock, patch
+
+    db, analytics = ctx
+    agent_id = db.get_or_create_agent(1, "claude")
+    db.record_interaction(
+        1, agent_id=agent_id, session_id="s1", was_corrected=False, friction_score=0.0
+    )
+
+    mock_client = MagicMock()
+    mock_client.messages.create.side_effect = RuntimeError("API error")
+    mock_anthropic_cls = MagicMock(return_value=mock_client)
+
+    with (
+        patch("jfyi.server._ANTHROPIC_AVAILABLE", True),
+        patch("jfyi.server._Anthropic", mock_anthropic_cls),
+        patch("jfyi.config.settings") as mock_settings,
+    ):
+        mock_settings.anthropic_api_key = "test-key"
+        result = await dispatch_tool("warm_agent", {}, db, analytics)
+
+    assert result[0].text  # non-empty fallback, no exception raised
+
+
+async def test_discover_tools_exposes_warm_agent(ctx):
+    db, analytics = ctx
+    result = await dispatch_tool("discover_tools", {"tool_name": "warm_agent"}, db, analytics)
+    assert "warm_agent" in result[0].text
+    assert "Vibe Brief" in result[0].text
