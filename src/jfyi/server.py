@@ -264,14 +264,6 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "Name of the agent being warmed (informational only).",
                 },
-                "categories": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": (
-                        "Limit the brief to specific rule categories "
-                        "(e.g. ['style', 'architecture']). Omit for all."
-                    ),
-                },
             },
         },
         "example": "discover_tools(tool_name='warm_agent', arguments={'agent_name': 'claude'})",

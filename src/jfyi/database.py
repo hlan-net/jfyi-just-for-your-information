@@ -1106,9 +1106,9 @@ class Database:
                        COUNT(*) AS interaction_count,
                        ROUND(AVG(friction_score), 4) AS avg_friction
                 FROM interactions
-                WHERE user_id = ? AND was_corrected = 0
+                WHERE user_id = ?
                 GROUP BY session_id
-                HAVING COUNT(*) >= 1
+                HAVING SUM(was_corrected) = 0
                 ORDER BY avg_friction ASC, interaction_count DESC
                 LIMIT ?
                 """,

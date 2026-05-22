@@ -231,6 +231,20 @@ async def test_warm_agent_fallback_when_no_sessions(ctx):
     assert "No low-friction sessions" in result[0].text
 
 
+async def test_warm_agent_excludes_sessions_with_any_correction(ctx):
+    db, analytics = ctx
+    agent_id = db.get_or_create_agent(1, "claude")
+    # Session with one good and one corrected interaction — must be excluded
+    db.record_interaction(
+        1, agent_id=agent_id, session_id="mixed", was_corrected=False, friction_score=0.0
+    )
+    db.record_interaction(
+        1, agent_id=agent_id, session_id="mixed", was_corrected=True, friction_score=0.9
+    )
+    result = await dispatch_tool("warm_agent", {}, db, analytics)
+    assert "No low-friction sessions" in result[0].text
+
+
 async def test_warm_agent_returns_brief_without_llm(ctx):
     db, analytics = ctx
     agent_id = db.get_or_create_agent(1, "claude")
