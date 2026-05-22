@@ -196,9 +196,7 @@ def test_add_rule_defaults_to_global_scope(db):
 
 
 def test_add_rule_with_project_scope(db):
-    db.add_rule(
-        1, "project-specific rule", scope="project", project_id="jfyi", confidence=0.8
-    )
+    db.add_rule(1, "project-specific rule", scope="project", project_id="jfyi", confidence=0.8)
     rules = db.get_rules(1)
     assert rules[0]["scope"] == "project"
     assert rules[0]["project_id"] == "jfyi"
@@ -373,8 +371,11 @@ def test_get_session_telemetry_alignment_score(db):
     agent_id = db.get_or_create_agent(1, "claude")
     for i in range(4):
         db.record_interaction(
-            1, agent_id=agent_id, session_id="s1",
-            was_corrected=(i < 2), friction_score=0.6 if i < 2 else 0.0,
+            1,
+            agent_id=agent_id,
+            session_id="s1",
+            was_corrected=(i < 2),
+            friction_score=0.6 if i < 2 else 0.0,
         )
     t = db.get_session_telemetry(1, "s1")
     assert t["recent_corrections"] == 2
@@ -388,8 +389,11 @@ def test_get_session_telemetry_friction_trend_worsening(db):
     # get_session_telemetry fetches DESC, so most recent = first in list.
     for score in [0.0, 0.0, 0.8, 0.8]:  # older→newer order in DB
         db.record_interaction(
-            1, agent_id=agent_id, session_id="s1",
-            was_corrected=False, friction_score=score,
+            1,
+            agent_id=agent_id,
+            session_id="s1",
+            was_corrected=False,
+            friction_score=score,
         )
     t = db.get_session_telemetry(1, "s1")
     assert t["friction_trend"] == "worsening"
@@ -399,8 +403,11 @@ def test_get_session_telemetry_friction_trend_improving(db):
     agent_id = db.get_or_create_agent(1, "claude")
     for score in [0.8, 0.8, 0.0, 0.0]:  # older→newer order in DB
         db.record_interaction(
-            1, agent_id=agent_id, session_id="s1",
-            was_corrected=False, friction_score=score,
+            1,
+            agent_id=agent_id,
+            session_id="s1",
+            was_corrected=False,
+            friction_score=score,
         )
     t = db.get_session_telemetry(1, "s1")
     assert t["friction_trend"] == "improving"
@@ -409,11 +416,18 @@ def test_get_session_telemetry_friction_trend_improving(db):
 def test_get_session_telemetry_corrective_hints(db):
     agent_id = db.get_or_create_agent(1, "claude")
     interaction_id = db.record_interaction(
-        1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8,
+        1,
+        agent_id=agent_id,
+        session_id="s1",
+        was_corrected=True,
+        friction_score=0.8,
     )
     db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output was too verbose", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output was too verbose",
+        interaction_id=interaction_id,
     )
     t = db.get_session_telemetry(1, "s1")
     assert "Output was too verbose" in t["corrective_hints"]

@@ -19,10 +19,13 @@ def db(tmp_path):
 @pytest.fixture
 def engine(db):
     """InferenceEngine with anthropic mocked out (not installed in test env)."""
-    with patch("jfyi.inference._ANTHROPIC_AVAILABLE", True), \
-         patch("jfyi.inference.AsyncAnthropic") as mock_cls:
+    with (
+        patch("jfyi.inference._ANTHROPIC_AVAILABLE", True),
+        patch("jfyi.inference.AsyncAnthropic") as mock_cls,
+    ):
         mock_cls.return_value = MagicMock()
         from jfyi.inference import InferenceEngine
+
         eng = InferenceEngine(db=db, api_key="test-key")
     return eng
 
@@ -36,8 +39,11 @@ def test_get_uninferred_friction_events_returns_unprocessed(db):
         1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
     )
     event_id = db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output corrected", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected",
+        interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
     assert len(events) == 1
@@ -50,8 +56,11 @@ def test_get_uninferred_friction_events_excludes_processed(db):
         1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
     )
     event_id = db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output corrected", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected",
+        interaction_id=interaction_id,
     )
     note_id = db.add_note(1, "Inferred rule", source="inferred")
     db.mark_event_inferred(1, event_id, note_id)
@@ -70,8 +79,11 @@ def test_mark_event_inferred_is_idempotent(db):
         1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
     )
     event_id = db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output corrected", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected",
+        interaction_id=interaction_id,
     )
     note_id = db.add_note(1, "Rule", source="inferred")
     db.mark_event_inferred(1, event_id, note_id)
@@ -101,13 +113,16 @@ async def test_infer_from_friction_writes_note(engine, db):
         1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
     )
     db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output corrected after 10.0s", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected after 10.0s",
+        interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
-    note_payload = json.dumps({
-        "text": "Prefer explicit error handling", "category": "style", "confidence": 0.3
-    })
+    note_payload = json.dumps(
+        {"text": "Prefer explicit error handling", "category": "style", "confidence": 0.3}
+    )
     engine._client.messages.create = AsyncMock(return_value=_make_llm_response(note_payload))
 
     await engine._infer_from_friction(1, events[0])
@@ -126,8 +141,11 @@ async def test_infer_from_friction_marks_event_processed(engine, db):
         1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
     )
     db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output corrected", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected",
+        interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
     note_payload = json.dumps({"text": "Use early returns", "category": "style", "confidence": 0.3})
@@ -145,8 +163,11 @@ async def test_infer_from_friction_skips_invalid_json(engine, db):
         1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
     )
     db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output corrected", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected",
+        interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
     engine._client.messages.create = AsyncMock(return_value=_make_llm_response("not json"))
@@ -163,8 +184,11 @@ async def test_infer_from_friction_skips_json_array(engine, db):
         1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
     )
     db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output corrected", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected",
+        interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
     engine._client.messages.create = AsyncMock(return_value=_make_llm_response('[{"text": "bad"}]'))
@@ -181,8 +205,11 @@ async def test_infer_from_friction_skips_empty_text(engine, db):
         1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
     )
     db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output corrected", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected",
+        interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
     engine._client.messages.create = AsyncMock(
@@ -201,8 +228,11 @@ async def test_infer_from_friction_falls_back_on_bad_confidence(engine, db):
         1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
     )
     db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output corrected", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected",
+        interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
     engine._client.messages.create = AsyncMock(
@@ -223,6 +253,7 @@ async def test_infer_from_friction_falls_back_on_bad_confidence(engine, db):
 
 def test_migration_v13_inference_log_table_exists(tmp_path):
     import sqlite3
+
     Database(tmp_path / "v13.db")
     conn = sqlite3.connect(tmp_path / "v13.db")
     rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -242,8 +273,11 @@ async def test_tick_respects_daily_token_cap(engine, db):
         1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
     )
     db.add_friction_event(
-        1, agent_id=agent_id, event_type="correction",
-        description="Output corrected", interaction_id=interaction_id,
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected",
+        interaction_id=interaction_id,
     )
     engine._client.messages.create = AsyncMock()
     await engine._tick()
@@ -255,6 +289,7 @@ async def test_tick_respects_daily_token_cap(engine, db):
 
 def test_create_inference_engine_disabled_by_default(db):
     from jfyi.inference import create_inference_engine
+
     with patch("jfyi.config.settings") as mock_settings:
         mock_settings.inference_enabled = False
         result = create_inference_engine(db)
@@ -263,6 +298,7 @@ def test_create_inference_engine_disabled_by_default(db):
 
 def test_create_inference_engine_no_api_key(db):
     from jfyi.inference import create_inference_engine
+
     with patch("jfyi.config.settings") as mock_settings:
         mock_settings.inference_enabled = True
         mock_settings.anthropic_api_key = None

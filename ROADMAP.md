@@ -125,20 +125,20 @@ No concrete demand signal; blocked on ACP/A2A spec stability. Pulled from the ac
 
 ---
 
-## Phase 6 — Vibe Coder Optimization `v2.12.0` ← next
+## ✓ Phase 6 — Vibe Coder Optimization `v2.12.0`
 
 *Pulled forward from `v3.1.0`: these items are pure enhancements to the existing MCP profile loop; no Phase 5 protocol work required.*
 
 High-level alignment features designed to maximize the "flow" between developer and AI.
 
-| Item | Tag | Status | Spec |
-|------|-----|--------|------|
-| [Tiered Profiling](docs/tiered-profiling.md) | Core | Done | [docs/tiered-profiling.md](docs/tiered-profiling.md) |
-| [Positive Reinforcement](docs/positive-reinforcement.md) | Core | Planned | [docs/positive-reinforcement.md](docs/positive-reinforcement.md) |
-| [Semantic Rule Inference](docs/semantic-rule-inference.md) | Core | Planned | [docs/semantic-rule-inference.md](docs/semantic-rule-inference.md) |
-| [Vibe Telemetry](docs/vibe-telemetry.md) | Core | Planned | [docs/vibe-telemetry.md](docs/vibe-telemetry.md) |
-| [Friction Clustering](docs/friction-clustering.md) | Supplementary | Planned | [docs/friction-clustering.md](docs/friction-clustering.md) |
-| [Agent Warming](docs/agent-warming.md) | Core | Planned | [docs/agent-warming.md](docs/agent-warming.md) |
+| Item | Tag | Status | PR |
+|------|-----|--------|----|
+| [Tiered Profiling](docs/tiered-profiling.md) | Core | Done | [#40](https://github.com/hlan-net/jfyi-just-for-your-information/pull/40) |
+| [Positive Reinforcement](docs/positive-reinforcement.md) | Core | Done | [#41](https://github.com/hlan-net/jfyi-just-for-your-information/pull/41) |
+| [Semantic Rule Inference](docs/semantic-rule-inference.md) | Core | Done | [#42](https://github.com/hlan-net/jfyi-just-for-your-information/pull/42) |
+| [Vibe Telemetry](docs/vibe-telemetry.md) | Core | Done | [#43](https://github.com/hlan-net/jfyi-just-for-your-information/pull/43) |
+| [Friction Clustering](docs/friction-clustering.md) | Supplementary | Done | [#44](https://github.com/hlan-net/jfyi-just-for-your-information/pull/44) |
+| [Agent Warming](docs/agent-warming.md) | Core | Done | [#45](https://github.com/hlan-net/jfyi-just-for-your-information/pull/45) |
 
 **Tiered Profiling** separates global preferences from project-specific "flavors." Adds a `scope` column and optional `project_id`/`path_pattern` to `profile_rules`; `get_developer_profile` accepts a `project_context` argument and merges global + project rules. Prevents context pollution when working across codebases with different standards.
 
@@ -151,3 +151,12 @@ High-level alignment features designed to maximize the "flow" between developer 
 **Friction Clustering** uses vector embeddings to group similar friction events into semantic clusters. A small LLM generates a "Gap Summary" per cluster; the dashboard surfaces these as a "Vibe Map." Requires ChromaDB (already deployed).
 
 **Agent Warming** generates a "Vibe Brief" for a new agent: 3–5 ideal past interactions, synthesized into a style sample and served via a `warm_agent(agent_name)` MCP tool. Eliminates cold-start overhead when switching models.
+
+### Phase 6 evaluation notes
+
+All six items shipped in `v2.12.0` across PRs [#40](https://github.com/hlan-net/jfyi-just-for-your-information/pull/40)–[#45](https://github.com/hlan-net/jfyi-just-for-your-information/pull/45). Two implementation choices deviated from the original specs:
+
+- **Friction Clustering uses scikit-learn TF-IDF + K-Means, not ChromaDB embeddings.** The spec assumed reuse of the deployed ChromaDB vector store, but TF-IDF over event descriptions keeps clustering self-contained and independent of the `vector` extra. It is gated behind `JFYI_ENABLE_CLUSTERING` (default off) and a new `cluster` optional extra (`scikit-learn`), following the ChromaDB optional-extra precedent — clustering adds no weight to the default image.
+- **Semantic Rule Inference writes to `profile_notes` (`source='inferred'`, confidence 0.3), not a `pending` rule state.** This preserves the *write-raw / curate / read-curated* asymmetry: the LLM files low-confidence raw observations; the developer promotes them to rules via the existing synthesis flow rather than a separate promotion queue.
+
+LLM-backed features (Semantic Rule Inference, Friction Clustering gap summaries, Agent Warming briefs) all degrade gracefully when no `JFYI_ANTHROPIC_API_KEY` is set — they fall back to heuristic or representative-sample output rather than failing.

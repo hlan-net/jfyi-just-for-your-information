@@ -96,9 +96,7 @@ class InferenceEngine:
         for user_id in users:
             if self._tokens_used_today >= self._daily_token_cap:
                 break
-            events = await asyncio.to_thread(
-                self._db.get_uninferred_friction_events, user_id, 10
-            )
+            events = await asyncio.to_thread(self._db.get_uninferred_friction_events, user_id, 10)
             for event in events:
                 if self._tokens_used_today >= self._daily_token_cap:
                     break

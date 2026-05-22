@@ -163,8 +163,11 @@ def serve(
 
         asyncio.run(
             run_stdio(
-                db, analytics, summarizer=summarizer,
-                inference_engine=inference_engine, retriever=retriever,
+                db,
+                analytics,
+                summarizer=summarizer,
+                inference_engine=inference_engine,
+                retriever=retriever,
             )
         )
     else:
