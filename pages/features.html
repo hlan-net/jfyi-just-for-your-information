@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Features — JFYI</title>
+<meta name="description" content="Complete feature history for JFYI across all phases, with rationale, implementation notes, and configuration." />
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<main>
+  <nav>
+    <a href="index.html">Overview</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="tools.html">MCP Tools</a>
+    <a href="features.html" class="active">Features</a>
+  </nav>
+
+  <h1>Features</h1>
+  <p class="tagline">All shipped features across six phases, with rationale and implementation notes.</p>
+
+  <div class="toc">
+    <p>Contents</p>
+    <ul>
+      <li><a href="#v2-12">v2.12.0 — Phase 6: Vibe Coder Optimization</a></li>
+      <li><a href="#v2-11">v2.11.0 — Evidence &amp; Traceability</a></li>
+      <li><a href="#v2-9">v2.9.0 — Profile Architecture</a></li>
+      <li><a href="#v2-6">v2.6.0 — Phase 4: Security &amp; Hardening</a></li>
+      <li><a href="#v2-5">v2.5.0 — Phase 3: Advanced Retrieval</a></li>
+      <li><a href="#v2-4">v2.4.0 — Phase 2: Memory Architecture</a></li>
+      <li><a href="#v2-3">v2.3.0 — Phase 1: Foundation</a></li>
+    </ul>
+  </div>
+
+  <h2 id="v2-12">v2.12.0 — Phase 6: Vibe Coder Optimization <span class="badge badge-done">Shipped</span></h2>
+  <p>Phase 6 was pulled forward from a planned <code>v3.1.0</code> slot because all six features are pure enhancements to the existing MCP profile loop — none depend on the Phase 5 protocol work (ACP/A2A). The theme is tighter developer-agent alignment: positive signals, scoped rules, real-time telemetry, smarter inference, and fast onboarding for new agents.</p>
+
+  <h3>Tiered Profiling</h3>
+  <p><strong>Tag:</strong> Core &nbsp;|&nbsp; <strong>PR:</strong> <a href="https://github.com/hlan-net/jfyi-just-for-your-information/pull/40">#40</a></p>
+  <p>Adds a <code>scope</code> column (<code>'global'</code> or <code>'project'</code>), an optional <code>project_id</code>, and a <code>confidence</code> score to the <code>profile_rules</code> table. The <code>get_developer_profile</code> tool accepts a <code>project_context</code> argument — when provided, it returns global rules plus any project-scoped rules whose <code>project_id</code> matches, with project rules sorted first and taking precedence in any category overlap.</p>
+  <p><strong>Why it matters:</strong> A developer may prefer quick-and-dirty scripting on a side project but strict type safety on a production codebase. Without scope, the agent applies enterprise norms to prototypes and vice versa. Tiered profiling prevents that context pollution.</p>
+  <p><strong>Schema migration:</strong> v11 — adds <code>scope TEXT DEFAULT 'global'</code>, <code>project_id TEXT</code>, <code>confidence REAL DEFAULT 0.5</code> to <code>profile_rules</code>; adds index on <code>(user_id, scope, project_id)</code>.</p>
+
+  <h3>Positive Reinforcement</h3>
+  <p><strong>Tag:</strong> Core &nbsp;|&nbsp; <strong>PR:</strong> <a href="https://github.com/hlan-net/jfyi-just-for-your-information/pull/41">#41</a></p>
+  <p>Balances JFYI's negative-first feedback loop by tracking "Vibe Matches" — interactions that were accepted with zero corrections and a response length ≥ 500 characters. When a vibe match is detected via <code>record_interaction</code>, the analytics engine boosts the confidence of curated rules that were active in that session by 0.05 (capped at 1.0).</p>
+  <p>A "Best Matches" section in the dashboard analytics view shows recent vibe matches, giving the developer visibility into what the agent is getting right.</p>
+  <p><strong>Why it matters:</strong> A system that only learns from failures does not tell the agent what to keep doing. Vibe matches let high-confidence patterns strengthen and surface as few-shot examples for synthesis.</p>
+  <p><strong>Schema migration:</strong> v12 — new <code>vibe_matches</code> table with <code>(user_id, agent_id, interaction_id, response_length, created_at)</code>.</p>
+
+  <h3>Semantic Rule Inference</h3>
+  <p><strong>Tag:</strong> Core &nbsp;|&nbsp; <strong>PR:</strong> <a href="https://github.com/hlan-net/jfyi-just-for-your-information/pull/42">#42</a></p>
+  <p>A background <code>InferenceEngine</code> processes corrected interactions on a configurable interval (default 600 s). For each correction event, it passes the prompt and response to an LLM and asks it to identify the underlying principle that was violated. The inferred observation is written to <code>profile_notes</code> with <code>source='inferred'</code> and <code>confidence=0.3</code>, where the developer can review it and optionally promote it to a curated rule via the existing synthesis flow.</p>
+  <p><strong>Implementation note:</strong> The spec proposed a separate <code>pending</code> rule state, but the shipped implementation writes to <code>profile_notes</code> instead. This preserves the write-raw/curate/read-curated asymmetry: the LLM files low-confidence raw observations; the developer promotes them to rules via the human curation step. Inferred notes show a badge and a "Promote" shortcut in the dashboard.</p>
+  <p><strong>Configuration:</strong> <code>JFYI_INFERENCE_ENABLED=true</code> (default: true) and <code>JFYI_ANTHROPIC_API_KEY</code>. When no API key is set, the engine is a no-op. Respects a daily token cap to avoid runaway LLM costs.</p>
+  <p><strong>Schema migration:</strong> v13 — new <code>inference_log</code> table for idempotency tracking (prevents reprocessing the same friction event).</p>
+
+  <h3>Vibe Telemetry</h3>
+  <p><strong>Tag:</strong> Core &nbsp;|&nbsp; <strong>PR:</strong> <a href="https://github.com/hlan-net/jfyi-just-for-your-information/pull/43">#43</a></p>
+  <p>Exposes the first MCP Resource in JFYI: <code>jfyi://sessions/{session_id}/telemetry</code>. The resource provides a rolling alignment score and corrective hints for the current session window (last 10 interactions). An agent that reads this resource mid-session can detect its own drift and self-correct before the developer needs to intervene.</p>
+  <p>The alignment score is computed as <code>100 × (1 − correction_rate)</code> over the session window. The friction trend (<code>"improving"</code>, <code>"stable"</code>, <code>"worsening"</code>) compares the first and second halves of the window. Corrective hints are the <code>description</code> fields of the three most recent friction events in the session.</p>
+  <p><strong>Why it matters:</strong> Without telemetry, the agent only receives feedback when the developer makes an explicit correction. Telemetry enables proactive alignment — the agent can pause and confirm direction when its score is falling rather than continuing down a wrong path.</p>
+
+  <h3>Friction Clustering</h3>
+  <p><strong>Tag:</strong> Supplementary &nbsp;|&nbsp; <strong>PR:</strong> <a href="https://github.com/hlan-net/jfyi-just-for-your-information/pull/44">#44</a></p>
+  <p>Groups similar friction events into semantic clusters using scikit-learn TF-IDF vectorisation and K-Means clustering. For each cluster, an optional LLM generates a "Gap Summary" — a concise description of the recurring pattern (e.g., "Consistent corrections around async context manager usage"). The dashboard surfaces clusters as a "Vibe Map."</p>
+  <p><strong>Implementation note:</strong> The spec assumed ChromaDB embeddings for clustering, but the shipped implementation uses TF-IDF over event descriptions. This keeps clustering self-contained and independent of the <code>vector</code> optional extra — two separate optional features don't compose their dependencies.</p>
+  <p>Cluster results are cached in a <code>friction_clusters</code> database table and recomputed on demand when friction event count grows by more than 20% since the last computation.</p>
+  <p><strong>Configuration:</strong> <code>JFYI_ENABLE_CLUSTERING=true</code> (default: false). Requires the <code>cluster</code> optional extra (<code>pip install -e ".[cluster]"</code>) for scikit-learn. Degrades gracefully without an LLM API key (clusters are labelled with representative event text instead of a synthesised summary).</p>
+
+  <h3>Agent Warming</h3>
+  <p><strong>Tag:</strong> Core &nbsp;|&nbsp; <strong>PR:</strong> <a href="https://github.com/hlan-net/jfyi-just-for-your-information/pull/45">#45</a></p>
+  <p>Adds the <code>warm_agent</code> MCP tool (discoverable, token cost 300). It queries the database for the developer's five best past sessions — sessions where every single recorded interaction had <code>was_corrected=false</code> — and synthesises a "Vibe Brief" from their episodic summaries.</p>
+  <p>The brief is a concise style sample: 3–5 examples that illustrate how the developer thinks, communicates, and expects code to be structured. A new agent that reads this brief before its first response can skip the cold-start period where it has to learn the developer's preferences through trial and correction.</p>
+  <p><strong>SQL correctness note:</strong> Session selection uses <code>HAVING SUM(was_corrected) = 0</code> (filtering after grouping) rather than <code>WHERE was_corrected = 0</code> (filtering before grouping). The WHERE approach would include sessions with mixed corrections by discarding corrected rows before the GROUP BY, incorrectly classifying them as zero-friction.</p>
+  <p><strong>Configuration:</strong> Requires at least one zero-friction session to return a result. With <code>JFYI_ANTHROPIC_API_KEY</code> set, the brief is LLM-synthesised from episodic summaries; without it, the tool returns session statistics and representative prompts as a fallback.</p>
+
+  <hr style="border-color:var(--border);margin:2.5rem 0" />
+
+  <h2 id="v2-11">v2.11.0 — Evidence &amp; Traceability <span class="badge badge-done">Shipped</span></h2>
+
+  <h3>Per-rule provenance in synthesis</h3>
+  <p>When the LLM synthesis flow proposes a new rule, the response now includes the IDs of the source notes that contributed to each rule. The dashboard's Synthesize preview panel shows these source notes alongside the proposed rule text, so the developer can verify the evidence before promoting the rule to the constitution.</p>
+  <p>This closes the "where did this rule come from?" question that emerged after the Notes vs Rules split shipped in v2.9.0. Rules are conclusions; notes are evidence; the link between them is now visible.</p>
+
+  <h3>Durable architecture &amp; mission doc</h3>
+  <p>Formally documents the write-raw/curate/read-curated pattern, the core/supplementary distinction, the three anti-patterns, and the decision rules for new features in <a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/architecture.md"><code>docs/architecture.md</code></a>. This document is the canonical reference for evaluating new feature proposals.</p>
+
+  <hr style="border-color:var(--border);margin:2.5rem 0" />
+
+  <h2 id="v2-9">v2.9.0 — Profile Architecture <span class="badge badge-done">Shipped</span></h2>
+
+  <h3>Notes vs Rules — two-tier developer profile</h3>
+  <p>Splits the original single <code>profile_rules</code> table into two tiers:</p>
+  <ul>
+    <li><strong>Notes</strong> (<code>profile_notes</code>) — cheap, frequent, agent-captured raw observations. Agents write notes via <code>add_profile_note</code>. Notes have text, category, confidence, and source.</li>
+    <li><strong>Rules</strong> (<code>profile_rules</code>) — the curated constitution. Rules are few, deliberate, and composed by the developer from one or more notes using the dashboard's synthesis flow. Agents read rules via <code>get_developer_profile</code>.</li>
+  </ul>
+  <p>The key insight: <code>get_developer_profile</code> returns only curated rules, never raw notes. This keeps the agent's "constitution" small and high-signal, regardless of how many notes have been filed.</p>
+  <p><strong>Retrospective (v2.10.0 correction):</strong> The initial synthesis implementation wrote new notes from existing notes, staying within a single tier. This was corrected within 90 minutes of v2.9.0 shipping — synthesis now draws rules from notes, crossing the tier boundary as intended. Notes are evidence; rules are conclusions; one note can support many rules and is never consumed by the rules derived from it.</p>
+
+  <hr style="border-color:var(--border);margin:2.5rem 0" />
+
+  <h2 id="v2-6">v2.6.0 — Phase 4: Security &amp; Hardening <span class="badge badge-done">Shipped</span></h2>
+
+  <h3>Inline DLP / PII Redaction</h3>
+  <p>A self-contained <code>dlp.py</code> module (no new dependencies beyond the already-required httpx) scrubs secrets and personal data at every storage boundary. Patterns include email addresses, API keys, tokens, credit card numbers, and other common PII patterns. Applied on write to both notes and interaction records.</p>
+
+  <h3>Developer Behavior Analytics</h3>
+  <p>Adds the <code>/developer</code> dashboard section with correction rates over time, friction score trends, rule confidence accumulation, and per-category breakdown. These analytics are supplementary — they surface patterns for the developer to reflect on, not artifacts that agents read directly.</p>
+
+  <h3>Rule Synthesis</h3>
+  <p>LLM-backed synthesis that proposes new curated rules from the raw notes corpus. The developer selects notes, triggers synthesis, reviews the LLM-proposed rules in a preview, and approves or discards each. Approved rules enter the curated tier; source notes are retained as evidence. Not in the original Phase 4 spec but emerged from the operational need to manage a growing notes corpus.</p>
+
+  <h3>Agent Provenance Tracking</h3>
+  <p>Adds an <code>agent_name TEXT</code> column to the interactions and friction events tables. Records which AI agent model produced each interaction, enabling per-agent friction breakdown in analytics. Uses a text column rather than an integer FK to avoid confusion with the existing <code>agent_id</code> FK used in other tables.</p>
+
+  <hr style="border-color:var(--border);margin:2.5rem 0" />
+
+  <h2 id="v2-5">v2.5.0 — Phase 3: Advanced Retrieval <span class="badge badge-done">Shipped</span></h2>
+
+  <h3>Vector Embeddings Core</h3>
+  <p>Integrates ChromaDB and sentence-transformers (<code>all-MiniLM-L6-v2</code>) as an optional extra (<code>vector</code>) gated behind <code>JFYI_ENABLE_VECTOR_DB=true</code>. Provides semantic similarity search over notes, rules, and episodic memories. Models download at runtime to a persisted volume path and are never baked into the container image.</p>
+
+  <h3>Instruction-Tool Retrieval (ITR)</h3>
+  <p>Dynamically selects the minimal relevant subset of tools for each task using dense retrieval (embeddings) and greedy knapsack budget selection. Agents pass a <code>query</code> to <code>discover_tools</code> to receive only the tools most relevant to their current task, reducing schema injection cost. Off by default; requires 10+ rules in the corpus to outperform showing everything.</p>
+
+  <hr style="border-color:var(--border);margin:2.5rem 0" />
+
+  <h2 id="v2-4">v2.4.0 — Phase 2: Memory Architecture <span class="badge badge-done">Shipped</span></h2>
+
+  <h3>Three-Tiered Memory</h3>
+  <p>Formalises the short-term (session scratchpad), long-term (profile notes), and episodic (session summaries) memory tiers under a unified <code>MemoryFacade</code> interface. Each tier has distinct retrieval semantics and a different lifespan. Adds the curated tier as a fourth logical tier (accessed only by the human curation path, not by the facade).</p>
+
+  <h3>Background Summarization</h3>
+  <p>An async background loop (<code>BackgroundSummarizer</code>) runs on a configurable interval (default 300 s) and distils recent interactions into episodic summaries using a lightweight LLM. Respects a daily token cap. Identified as the primary value driver in Phase 3's post-evaluation: it is the mechanism that turns raw interactions into durable profile signal.</p>
+
+  <h3>Compiled View Memory</h3>
+  <p>Artifacts (logs, diffs, terminal output) can be stored via <code>store_artifact</code> and referenced by handle rather than injected as raw text. The <code>run_local_script</code> tool executes focused extraction scripts against the stored artifact, returning only the relevant excerpt. Prevents large outputs from consuming context window budget.</p>
+
+  <h3>Context Compaction</h3>
+  <p>Rolling summaries and prefix-cache-aware prompt structure reduce the effective context footprint of repeated operations. The background summarizer writes session summaries that can replace full interaction transcripts when an agent needs historical context.</p>
+
+  <hr style="border-color:var(--border);margin:2.5rem 0" />
+
+  <h2 id="v2-3">v2.3.0 — Phase 1: Foundation <span class="badge badge-done">Shipped</span></h2>
+
+  <h3>Progressive Disclosure</h3>
+  <p>Exposes a single <code>discover_tools</code> router tool upfront. Agents call it to enumerate capabilities and fetch full schemas on demand. This keeps the initial context injection to just two tools (the two always-on ones), rather than injecting every tool schema at session start.</p>
+
+  <h3>Payload Minification</h3>
+  <p>Compact JSON formatting and TOON (Token-Optimised Object Notation) serialisation at the prompt boundary. Profile responses are formatted for minimum token consumption while remaining human-readable for debugging.</p>
+
+  <h3>Read-only Injection Zone</h3>
+  <p>Injected profile data (developer constitution) is fenced to prevent prompt injection attacks from corrupting the developer's profile. External content (file diffs, terminal output) is stored as artifacts and never injected inline with the profile context.</p>
+
+  <h3>OAuth 2.1 + RBAC</h3>
+  <p>Multi-user authentication using JWT bearer tokens. The dashboard and REST API require a valid token. Scope-based role access control distinguishes read-only consumers (agents via MCP) from read-write users (the developer via the dashboard). JWT secret persists across Helm upgrades and can be explicitly rotated via <code>scripts/rotate-jwt.sh</code>.</p>
+
+  <footer>
+    <a href="index.html">&larr; Overview</a> &mdash;
+    Licensed under Apache-2.0. &mdash;
+    <a href="https://github.com/hlan-net/jfyi-just-for-your-information">GitHub</a>
+  </footer>
+</main>
+</body>
+</html>

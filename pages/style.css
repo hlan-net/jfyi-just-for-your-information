@@ -1,0 +1,90 @@
+:root {
+  --bg: #0e1116;
+  --fg: #e6edf3;
+  --muted: #8b949e;
+  --accent: #7ee787;
+  --card: #161b22;
+  --border: #30363d;
+  --tag-bg: #1c2128;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --accent: #1a7f37;
+    --card: #f6f8fa;
+    --border: #d0d7de;
+    --tag-bg: #eaeef2;
+  }
+}
+* { box-sizing: border-box }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--fg);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+main { max-width: 860px; margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+h1 { font-size: 2.2rem; margin: 0 0 .25rem; letter-spacing: -0.02em; }
+h2 { font-size: 1.35rem; margin: 2.75rem 0 .75rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; }
+h3 { font-size: 1.05rem; margin: 1.5rem 0 .4rem; }
+h4 { font-size: .95rem; margin: 1.25rem 0 .3rem; color: var(--muted); font-weight: 600; }
+p { color: var(--fg); margin: 0 0 .9rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+pre {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 1rem; overflow-x: auto; font-size: .88rem; margin: 1rem 0;
+}
+code { background: var(--tag-bg); padding: 1px 5px; border-radius: 4px; font-size: .9em; }
+pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .9rem; }
+th { text-align: left; padding: .5rem .75rem; border-bottom: 2px solid var(--border); color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+td { padding: .5rem .75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+.pill {
+  display: inline-block; padding: 2px 10px;
+  border: 1px solid var(--border); border-radius: 999px;
+  color: var(--muted); font-size: .82rem; margin-right: .35rem; margin-bottom: .25rem;
+}
+.pill-green { border-color: var(--accent); color: var(--accent); }
+.cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: .85rem; margin: 1rem 0;
+}
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 1rem 1.1rem; text-decoration: none; display: block; color: inherit;
+}
+.card:hover { border-color: var(--accent); text-decoration: none; }
+.card h3 { margin: 0 0 .3rem; font-size: 1rem; color: var(--fg); }
+.card p { color: var(--muted); margin: 0; font-size: .88rem; }
+.callout {
+  background: var(--card); border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0; padding: .8rem 1rem; margin: 1.25rem 0;
+  font-size: .92rem;
+}
+.callout p { margin: 0; }
+.tagline { color: var(--muted); font-size: 1.05rem; margin-top: 0; }
+nav { margin-bottom: 2.5rem; font-size: .9rem; }
+nav a { color: var(--muted); margin-right: 1.25rem; }
+nav a:hover { color: var(--accent); }
+nav a.active { color: var(--fg); font-weight: 600; }
+.badge {
+  display: inline-block; padding: 1px 7px; font-size: .75rem; font-weight: 600;
+  border-radius: 999px; margin-left: .4rem; vertical-align: middle;
+}
+.badge-done { background: #1a4731; color: var(--accent); }
+.badge-shelved { background: var(--tag-bg); color: var(--muted); }
+.badge-always-on { background: #1c3048; color: #79c0ff; }
+.badge-discoverable { background: var(--tag-bg); color: var(--muted); }
+.toc { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin: 1.5rem 0; }
+.toc p { margin: 0 0 .5rem; font-size: .82rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+.toc ul { margin: 0; padding-left: 1.25rem; }
+.toc li { font-size: .92rem; margin-bottom: .2rem; }
+ul li, ol li { margin-bottom: .3rem; }
+footer {
+  margin-top: 4rem; color: var(--muted); font-size: .85rem;
+  border-top: 1px solid var(--border); padding-top: 1rem;
+}

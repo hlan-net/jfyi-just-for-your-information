@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MCP Tools &amp; API — JFYI</title>
+<meta name="description" content="Complete reference for all JFYI MCP tools, MCP resources, and REST API endpoints." />
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<main>
+  <nav>
+    <a href="index.html">Overview</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="tools.html" class="active">MCP Tools</a>
+    <a href="features.html">Features</a>
+  </nav>
+
+  <h1>MCP Tools &amp; API</h1>
+  <p class="tagline">Complete reference for all tools, resources, and REST endpoints exposed by the JFYI server.</p>
+
+  <div class="toc">
+    <p>Contents</p>
+    <ul>
+      <li><a href="#always-on">Always-on MCP tools</a></li>
+      <li><a href="#discoverable">Discoverable MCP tools</a></li>
+      <li><a href="#resources">MCP Resources</a></li>
+      <li><a href="#rest">REST API</a></li>
+      <li><a href="#token-costs">Token cost reference</a></li>
+    </ul>
+  </div>
+
+  <p>JFYI exposes its capabilities through the <a href="https://spec.modelcontextprotocol.io/">Model Context Protocol (MCP)</a>. Tools are split into two tiers to manage context injection cost:</p>
+  <ul>
+    <li><strong>Always-on tools</strong> — schemas are injected into the agent's context automatically on every session start. Only the highest-value, most-called tools are always-on.</li>
+    <li><strong>Discoverable tools</strong> — schemas are available on demand via <code>discover_tools</code>. This keeps the initial context footprint small. Agents call <code>discover_tools(tool_name="X")</code> to get the full schema and invoke it.</li>
+  </ul>
+
+  <h2 id="always-on">Always-on MCP tools</h2>
+  <p>These two tools are registered directly in the MCP tool list and their schemas are always present in the agent's context.</p>
+
+  <h3><code>record_interaction</code> <span class="badge badge-always-on">always-on</span></h3>
+  <p><strong>Token cost:</strong> 120 &nbsp;|&nbsp; <strong>Purpose:</strong> write (raw analytics tier)</p>
+  <p>Records an AI-agent interaction for friction analysis. Call this after each generation to track whether the output was corrected. The analytics engine computes a friction score from <code>was_corrected</code>, <code>correction_latency_s</code>, and <code>num_edits</code>. If the response is long (≥ 500 characters) and uncorrected, a vibe match is also recorded and the confidence of relevant curated rules is boosted.</p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>agent_name</code></td><td>string</td><td>Yes</td><td>Name or ID of the AI agent (e.g. <code>'claude-sonnet-4-6'</code>, <code>'gpt-4o'</code>)</td></tr>
+      <tr><td><code>prompt</code></td><td>string</td><td>Yes</td><td>The prompt sent to the agent</td></tr>
+      <tr><td><code>response</code></td><td>string</td><td>Yes</td><td>The agent's full response</td></tr>
+      <tr><td><code>session_id</code></td><td>string</td><td>No</td><td>Session identifier; auto-generated UUID if omitted</td></tr>
+      <tr><td><code>was_corrected</code></td><td>boolean</td><td>No</td><td>Whether the output was modified within the correction window</td></tr>
+      <tr><td><code>correction_latency_s</code></td><td>number</td><td>No</td><td>Seconds between generation and first correction</td></tr>
+      <tr><td><code>num_edits</code></td><td>integer</td><td>No</td><td>Number of edits made to the output</td></tr>
+      <tr><td><code>model</code></td><td>string</td><td>No</td><td>Underlying model identifier (e.g. <code>'claude-sonnet-4-6-20251101'</code>)</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Returns:</strong> Confirmation text with the agent name and computed friction score.</p>
+  <pre><code>record_interaction(
+  agent_name="claude-sonnet-4-6",
+  prompt="Refactor the auth module",
+  response="...",
+  was_corrected=False,
+  session_id="my-session-001"
+)</code></pre>
+
+  <h3><code>get_developer_profile</code> <span class="badge badge-always-on">always-on</span></h3>
+  <p><strong>Token cost:</strong> 40 &nbsp;|&nbsp; <strong>Purpose:</strong> read (curated profile tier)</p>
+  <p>Returns the developer's curated rule constitution — rules that the developer has explicitly authored or promoted from notes. These rules describe the developer's coding preferences, communication style, and technical principles. Always call this at session start to ground the agent's behaviour before the first response.</p>
+  <p>Pass <code>project_context</code> (the git remote URL or directory basename of the current project) to receive project-scoped rules in addition to global ones. Project rules sort first and override global rules in the same category.</p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>category</code></td><td>string</td><td>No</td><td>Filter by category (e.g. <code>'style'</code>, <code>'architecture'</code>). Omit for all categories.</td></tr>
+      <tr><td><code>project_context</code></td><td>string</td><td>No</td><td>Git remote URL or directory basename. When provided, includes project-scoped rules in addition to global rules.</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Returns:</strong> Formatted list of curated rules grouped by category, or a message indicating no rules yet.</p>
+  <pre><code># Global profile only
+get_developer_profile()
+
+# Include project-scoped rules for "jfyi"
+get_developer_profile(project_context="jfyi")</code></pre>
+
+  <h2 id="discoverable">Discoverable MCP tools</h2>
+  <p>These tools are available via <code>discover_tools</code>. To use a discoverable tool, call <code>discover_tools(tool_name="X")</code> to see its schema, then call it via <code>discover_tools(tool_name="X", arguments={...})</code> or directly if the MCP client has fetched the schema.</p>
+
+  <h3><code>discover_tools</code> <span class="badge badge-always-on">always-on</span></h3>
+  <p><strong>Purpose:</strong> meta-tool for exploring and invoking the full tool catalogue</p>
+  <p>Lists all available tools and their token costs, or returns the full schema and usage example for a specific tool. Can also invoke a tool directly when <code>arguments</code> is provided alongside <code>tool_name</code>. Supports an optional <code>query</code> for semantic filtering (requires ITR to be enabled server-side).</p>
+  <pre><code># List all tools
+discover_tools()
+
+# Get full schema for a specific tool
+discover_tools(tool_name="warm_agent")
+
+# Invoke a discoverable tool directly
+discover_tools(tool_name="add_profile_note", arguments={"text": "Prefers early returns", "category": "style"})</code></pre>
+
+  <h3><code>add_profile_note</code> <span class="badge badge-discoverable">discoverable</span></h3>
+  <p><strong>Token cost:</strong> 60 &nbsp;|&nbsp; <strong>Purpose:</strong> write (raw notes tier)</p>
+  <p>Files a raw observation about the developer's coding habits or preferences. Notes land in the long-term notes tier, where the developer reviews them and may promote them into curated rules. Write notes at the same level of generality as rules — developer patterns and principles, not implementation details specific to the current project (those belong in <code>CLAUDE.md</code> / <code>GEMINI.md</code> files).</p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>text</code></td><td>string</td><td>Yes</td><td>The observation text</td></tr>
+      <tr><td><code>category</code></td><td>string</td><td>No</td><td>Category label (e.g. <code>'style'</code>, <code>'architecture'</code>, <code>'testing'</code>)</td></tr>
+      <tr><td><code>confidence</code></td><td>number</td><td>No</td><td>Confidence score 0.0–1.0 (default 1.0)</td></tr>
+      <tr><td><code>agent_name</code></td><td>string</td><td>No</td><td>Identifier of the authoring agent (e.g. <code>'claude-sonnet-4-6'</code>)</td></tr>
+    </tbody>
+  </table>
+
+  <h3><code>get_agent_analytics</code> <span class="badge badge-discoverable">discoverable</span></h3>
+  <p><strong>Token cost:</strong> 30 &nbsp;|&nbsp; <strong>Purpose:</strong> read (curated analytics tier)</p>
+  <p>Retrieves comparative friction analytics for all tracked AI agents. Returns correction rates, latency aggregates, and alignment scores per agent. Useful for comparing how different models perform on this developer's workload.</p>
+
+  <h3><code>remember_short_term</code> <span class="badge badge-discoverable">discoverable</span></h3>
+  <p><strong>Token cost:</strong> 25 &nbsp;|&nbsp; <strong>Purpose:</strong> write (session scratchpad)</p>
+  <p>Stores a scratchpad value scoped to the current session. Expires automatically after the TTL (default 3600 s). Useful for passing context between tool calls within a session without consuming permanent profile storage. Values are isolated per (session_id, user_id, key) tuple.</p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>session_id</code></td><td>string</td><td>Yes</td><td>Session identifier (use same id as in <code>record_interaction</code>)</td></tr>
+      <tr><td><code>key</code></td><td>string</td><td>Yes</td><td>Key to store the value under</td></tr>
+      <tr><td><code>value</code></td><td>string</td><td>Yes</td><td>Value to store (string)</td></tr>
+      <tr><td><code>ttl_seconds</code></td><td>integer</td><td>No</td><td>Time-to-live in seconds (default 3600)</td></tr>
+    </tbody>
+  </table>
+
+  <h3><code>recall_episodic</code> <span class="badge badge-discoverable">discoverable</span></h3>
+  <p><strong>Token cost:</strong> 40 &nbsp;|&nbsp; <strong>Purpose:</strong> read (curated episodic tier)</p>
+  <p>Retrieves episodic memory summaries written for a session by the background summarizer. Returns interaction summaries and friction event records, ordered by recency. Useful for reconstructing the context of a previous session without re-reading the full interaction transcript.</p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>session_id</code></td><td>string</td><td>Yes</td><td>Session identifier to recall memories for</td></tr>
+      <tr><td><code>limit</code></td><td>integer</td><td>No</td><td>Maximum number of entries to return (default 20)</td></tr>
+    </tbody>
+  </table>
+
+  <h3><code>store_artifact</code> <span class="badge badge-discoverable">discoverable</span></h3>
+  <p><strong>Token cost:</strong> 20 &nbsp;|&nbsp; <strong>Purpose:</strong> context footprint reduction</p>
+  <p>Stores a large text artifact (crash log, diff, terminal output) on disk and returns a compact handle. Pass the handle to <code>run_local_script</code> to extract focused summaries without loading the full content into the context window. Implements the Compiled View Memory pattern from Phase 1.</p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>content</code></td><td>string</td><td>Yes</td><td>Full text content to store</td></tr>
+      <tr><td><code>type</code></td><td>string</td><td>Yes</td><td>Artifact type label (e.g. <code>'log'</code>, <code>'diff'</code>, <code>'profile'</code>)</td></tr>
+      <tr><td><code>session_id</code></td><td>string</td><td>No</td><td>Associate artifact with a session (optional)</td></tr>
+      <tr><td><code>compiled_view</code></td><td>string</td><td>No</td><td>Pre-computed summary to cache with the artifact</td></tr>
+    </tbody>
+  </table>
+
+  <h3><code>run_local_script</code> <span class="badge badge-discoverable">discoverable</span></h3>
+  <p><strong>Token cost:</strong> 30 &nbsp;|&nbsp; <strong>Purpose:</strong> context footprint reduction</p>
+  <p>Executes a short Python script against a stored artifact. The artifact's file path is available as the pre-defined variable <code>artifact_path</code>. Returns up to 50 lines of stdout. Use this to extract a focused summary from a large artifact without injecting the full content into context.</p>
+  <pre><code>discover_tools(tool_name="run_local_script", arguments={
+  "artifact_id": "abc123",
+  "script": "with open(artifact_path) as f: print(f.read()[:500])"
+})</code></pre>
+
+  <h3><code>warm_agent</code> <span class="badge badge-discoverable">discoverable</span></h3>
+  <p><strong>Token cost:</strong> 300 &nbsp;|&nbsp; <strong>Purpose:</strong> cold-start acceleration</p>
+  <p>Generates a Vibe Brief for a new agent session. Synthesises the developer's best past interactions (sessions with zero corrections) into 3–5 concise style examples that give the agent an immediate working model of how the developer thinks and communicates. Call once at the start of a fresh session to bootstrap alignment before the first interaction.</p>
+  <p>If an Anthropic API key is configured (<code>JFYI_ANTHROPIC_API_KEY</code>), the brief is synthesised by an LLM from episodic session summaries. Without a key, it falls back to session statistics and representative interaction excerpts.</p>
+  <p>Requires at least one session where every recorded interaction had <code>was_corrected=false</code>.</p>
+  <table>
+    <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>agent_name</code></td><td>string</td><td>No</td><td>Name of the agent being warmed (informational label only)</td></tr>
+    </tbody>
+  </table>
+  <pre><code>discover_tools(tool_name="warm_agent", arguments={"agent_name": "claude-opus-4-7"})</code></pre>
+
+  <h2 id="resources">MCP Resources</h2>
+  <p>MCP Resources are read-only data streams that agents can poll or subscribe to. JFYI exposes one resource.</p>
+
+  <h3><code>jfyi://sessions/{session_id}/telemetry</code></h3>
+  <p><strong>MIME type:</strong> <code>application/json</code> &nbsp;|&nbsp; <strong>Feature:</strong> Vibe Telemetry (v2.12.0)</p>
+  <p>Returns a live alignment snapshot for the specified session. Computes a rolling alignment score over the last 10 interactions and lists recent corrective hints from friction events. Agents can read this resource mid-session to check whether they are drifting and self-correct before the developer needs to intervene.</p>
+  <p>Payload shape:</p>
+  <pre><code>{
+  "session_id": "my-session-001",
+  "alignment_score": 87.5,        // 0–100, higher is better
+  "friction_trend": "stable",     // "improving" | "stable" | "worsening"
+  "recent_corrections": 1,
+  "window_interactions": 8,
+  "corrective_hints": [
+    "Output was too verbose — developer prefers concise responses"
+  ]
+}</code></pre>
+  <p>An empty or unknown session returns <code>alignment_score: 100.0</code>, <code>window_interactions: 0</code>, and an empty hints array.</p>
+
+  <h2 id="rest">REST API</h2>
+  <p>The web dashboard is backed by a FastAPI REST API that mirrors the MCP tool surface. All endpoints are served from the same port as the MCP SSE endpoint (default 8080). Authentication uses JWT bearer tokens.</p>
+
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>GET</td><td><code>/api/profile/rules</code></td><td>List curated rules. Accepts <code>?project_context=</code> and <code>?category=</code>.</td></tr>
+      <tr><td>POST</td><td><code>/api/profile/rules</code></td><td>Create a curated rule. Body: <code>{text, category, scope, project_id}</code>.</td></tr>
+      <tr><td>DELETE</td><td><code>/api/profile/rules/{id}</code></td><td>Archive a curated rule.</td></tr>
+      <tr><td>GET</td><td><code>/api/profile/notes</code></td><td>List raw profile notes. Accepts <code>?category=</code>.</td></tr>
+      <tr><td>POST</td><td><code>/api/profile/notes</code></td><td>Create a raw note. Body: <code>{text, category, confidence}</code>.</td></tr>
+      <tr><td>DELETE</td><td><code>/api/profile/notes/{id}</code></td><td>Delete a raw note.</td></tr>
+      <tr><td>POST</td><td><code>/api/profile/synthesize</code></td><td>Synthesize rules from selected note IDs (LLM-backed preview).</td></tr>
+      <tr><td>GET</td><td><code>/api/analytics/interactions</code></td><td>Recent interactions with friction scores.</td></tr>
+      <tr><td>GET</td><td><code>/api/analytics/agents</code></td><td>Per-agent friction and alignment aggregates.</td></tr>
+      <tr><td>GET</td><td><code>/api/analytics/vibe-matches</code></td><td>List of zero-friction / vibe-match interactions.</td></tr>
+      <tr><td>GET</td><td><code>/api/analytics/friction-clusters</code></td><td>Semantic friction clusters (requires <code>JFYI_ENABLE_CLUSTERING=true</code>).</td></tr>
+      <tr><td>GET</td><td><code>/api/health</code></td><td>Server health and version info.</td></tr>
+      <tr><td>GET</td><td><code>/api/about</code></td><td>Version, build info, feature flags.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="token-costs">Token cost reference</h2>
+  <p>Token costs represent the approximate number of tokens each tool call consumes in the agent's context window (schema + response). This is used by the <code>discover_tools</code> budget selector when ITR is enabled.</p>
+
+  <table>
+    <thead><tr><th>Tool</th><th>Cost (tokens)</th><th>Always-on</th></tr></thead>
+    <tbody>
+      <tr><td><code>record_interaction</code></td><td>120</td><td>Yes</td></tr>
+      <tr><td><code>get_developer_profile</code></td><td>40</td><td>Yes</td></tr>
+      <tr><td><code>warm_agent</code></td><td>300</td><td>No</td></tr>
+      <tr><td><code>add_profile_note</code></td><td>60</td><td>No</td></tr>
+      <tr><td><code>recall_episodic</code></td><td>40</td><td>No</td></tr>
+      <tr><td><code>get_agent_analytics</code></td><td>30</td><td>No</td></tr>
+      <tr><td><code>run_local_script</code></td><td>30</td><td>No</td></tr>
+      <tr><td><code>remember_short_term</code></td><td>25</td><td>No</td></tr>
+      <tr><td><code>store_artifact</code></td><td>20</td><td>No</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    <a href="index.html">&larr; Overview</a> &mdash;
+    Licensed under Apache-2.0. &mdash;
+    <a href="https://github.com/hlan-net/jfyi-just-for-your-information">GitHub</a>
+  </footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Architecture — JFYI</title>
+<meta name="description" content="JFYI architecture: mission, the write-raw/curate/read-curated pattern, memory tiers, anti-patterns, and decision rules for new features." />
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<main>
+  <nav>
+    <a href="index.html">Overview</a>
+    <a href="architecture.html" class="active">Architecture</a>
+    <a href="tools.html">MCP Tools</a>
+    <a href="features.html">Features</a>
+  </nav>
+
+  <h1>Architecture</h1>
+  <p class="tagline">How JFYI is structured, why it is structured that way, and the rules that govern how it should grow.</p>
+
+  <div class="toc">
+    <p>Contents</p>
+    <ul>
+      <li><a href="#mission">Mission</a></li>
+      <li><a href="#asymmetry">Core asymmetry: write raw, read curated</a></li>
+      <li><a href="#tiers">Memory tiers</a></li>
+      <li><a href="#data-flow">Data flow</a></li>
+      <li><a href="#core-vs-supplementary">Core vs supplementary</a></li>
+      <li><a href="#anti-patterns">Anti-patterns</a></li>
+      <li><a href="#decision-rules">Decision rules for new features</a></li>
+      <li><a href="#deployment">Deployment architecture</a></li>
+    </ul>
+  </div>
+
+  <h2 id="mission">Mission</h2>
+  <p>JFYI exists to give an AI agent useful information about the human user — their behaviour, expectations, and preferences — at the start of every interaction, so the agent can act usefully on the first try and reduce the volume of corrections, errors, and rework that would otherwise consume the user's time.</p>
+  <p>The system is one-purpose: <strong>profile the human; serve the profile back to the agent at session start.</strong></p>
+  <p>This is distinct from general-purpose agent memory (storing facts about the world) and from per-project instructions (CLAUDE.md / GEMINI.md files that describe the codebase). JFYI captures the <em>developer as a person</em> — their preferences, patterns, communication style, and technical opinions — not the specifics of any one project.</p>
+
+  <div class="callout">
+    <p><strong>Test for any new feature:</strong> Does this serve the agent reading better-curated info about the user? Yes → core. Maybe/opportunistic → supplementary. No → out of scope.</p>
+  </div>
+
+  <h2 id="asymmetry">Core asymmetry: write raw, read curated</h2>
+  <p>The MCP surface follows the same shape at every tier. The agent <strong>writes raw observations</strong> during a session. A <strong>curation step</strong> (a human in the dashboard, or an automated aggregation) distils those raw observations into low-volume, high-signal artifacts. The agent <strong>reads only the curated artifacts</strong> at the start of the next session.</p>
+
+  <table>
+    <thead>
+      <tr><th>Tier</th><th>Agent writes (raw)</th><th>Curator</th><th>Agent reads (curated)</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Profile</strong></td>
+        <td><code>add_profile_note</code> — opportunistic observations about the developer's preferences and patterns</td>
+        <td>Human in the <code>/notes</code> dashboard UX — composes notes into rules; deletes noise</td>
+        <td><code>get_developer_profile</code> — the curated rules constitution</td>
+      </tr>
+      <tr>
+        <td><strong>Analytics</strong></td>
+        <td><code>record_interaction</code> — friction signals after each generation (was_corrected, latency, edit count)</td>
+        <td><code>AnalyticsEngine</code> — computes correction rate, friction score, latency aggregates, vibe matches</td>
+        <td><code>get_agent_analytics</code> — comparative friction rates by agent model</td>
+      </tr>
+      <tr>
+        <td><strong>Episodic</strong></td>
+        <td>(background summarizer writes; agents do not write to this tier directly)</td>
+        <td>Background summarizer — distils session interactions into durable summaries</td>
+        <td><code>recall_episodic</code> — session summaries on demand</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>The asymmetry is the value: agents see only what the curation step has approved. This keeps the "developer's constitution" small and high-signal, rather than accumulating every observation verbatim.</p>
+
+  <p>The curation step typically <em>crosses tiers</em> — it transforms evidence (notes) into conclusions (rules), leaving the evidence in place. Intra-tier curation (notes → notes) loses this value because nothing gets elevated to a trusted, curated form.</p>
+
+  <h2 id="tiers">Memory tiers</h2>
+
+  <h3>Short-term (session scratchpad)</h3>
+  <p>TTL-evicted key/value store scoped to a session. Agents can pass context between tool calls within a session without writing to permanent storage. Does not appear in the developer profile. Accessed via <code>remember_short_term</code> (discoverable tool).</p>
+
+  <h3>Long-term (profile notes)</h3>
+  <p>Raw observations filed by agents via <code>add_profile_note</code>. Each note has a text, category, confidence score, and source identifier. Notes are never read back to agents directly — they exist for the human to review and promote into curated rules. The <code>profile_notes</code> table holds notes from multiple sources: manual agent filings, automated inferences (source='inferred', confidence=0.3 from Semantic Rule Inference), and any other raw observation channel.</p>
+
+  <h3>Curated (rules — the constitution)</h3>
+  <p>The developer's explicit preferences and principles. Every rule has been either directly authored by the developer or promoted from a note after human review. Rules have a scope (<code>global</code> or <code>project</code>), an optional <code>project_id</code>, and a confidence score that rises when vibe matches occur in sessions where that rule was active. Agents read curated rules via <code>get_developer_profile</code>, optionally scoped by project context.</p>
+
+  <h3>Episodic (session summaries)</h3>
+  <p>Distilled session records written by the background summarizer. Each record stores an event type, a summary string, and optional context JSON. Supports semantic search (vector embeddings when the <code>vector</code> extra is enabled). Used by <code>recall_episodic</code> and by the Agent Warming feature when selecting best sessions.</p>
+
+  <h2 id="data-flow">Data flow</h2>
+  <p>A typical session proceeds as follows:</p>
+  <ol>
+    <li>Agent calls <code>get_developer_profile(project_context="myproject")</code> at session start to load the developer's constitution (curated rules) and any project-scoped overrides.</li>
+    <li>Agent optionally calls <code>warm_agent()</code> for a Vibe Brief — a synthesised style sample from the developer's best past sessions — to accelerate cold-start alignment.</li>
+    <li>During the session, after each generation, the agent calls <code>record_interaction</code> with the prompt, response, and correction signal (<code>was_corrected</code>, latency, edit count). The analytics engine computes a friction score and updates running aggregates. If the response is long and uncorrected, a vibe match is recorded and relevant rule confidence scores are boosted.</li>
+    <li>When the agent observes a pattern worth noting, it files it via <code>add_profile_note</code>. These land in the raw notes tier for human review.</li>
+    <li>The background summarizer runs on an interval (default 300 s), distilling recent interactions into episodic summaries that persist across sessions.</li>
+    <li>If Semantic Rule Inference is enabled, a separate background engine (default 600 s interval) processes corrected interactions, calls an LLM to identify the violated principle, and files low-confidence inferred notes (confidence=0.3, source='inferred') for the developer to review.</li>
+    <li>In the dashboard, the developer reviews raw notes, composes rules from one or more notes via the synthesis flow, and deletes noise. Composed rules enter the curated tier and appear in the next <code>get_developer_profile</code> call.</li>
+  </ol>
+
+  <h2 id="core-vs-supplementary">Core vs supplementary</h2>
+
+  <h3>Core</h3>
+  <p>Features that serve the agent reading better-curated info about the user. The read-curated path runs on every session start, so improvements here compound directly with every agent call.</p>
+  <ul>
+    <li>The <code>/notes</code> and <code>/profile</code> dashboard surfaces</li>
+    <li><code>add_profile_note</code> and <code>get_developer_profile</code> MCP tools</li>
+    <li>Note → rule synthesis flow (preview, compose-into-rule modal)</li>
+    <li>Rule confidence, scope, and provenance</li>
+    <li>Vibe Telemetry (real-time alignment signal for agent self-correction)</li>
+    <li>Agent Warming (cold-start acceleration)</li>
+    <li>Tiered Profiling (global vs project-scoped rules)</li>
+  </ul>
+
+  <h3>Supplementary</h3>
+  <p>Emergent analysis surfaces. Useful when patterns emerge, but not load-bearing. The user can ignore them and the core mission is still served.</p>
+  <ul>
+    <li><strong>Friction Clustering</strong> — groups similar friction events into semantic clusters, surfaces a "Vibe Map" of recurring gaps. Supplementary because it does not change what the agent reads; it surfaces signals for the human to act on.</li>
+    <li><strong>Developer Analytics</strong> — correction rates, friction by agent, latency trends, rule-confidence accumulation. Supplementary diagnostic value.</li>
+    <li><strong>Agent Analytics</strong> — comparative agent performance across the fleet. Supplementary diagnostic value.</li>
+    <li><strong>Positive Reinforcement</strong> — vibe matches, confidence boosting. Bridges supplementary → core by feeding confidence signals back into the curated rules tier.</li>
+    <li><strong>Semantic Rule Inference</strong> — bridges supplementary → core by filing inferred notes that the developer can promote to rules.</li>
+  </ul>
+
+  <h2 id="anti-patterns">Anti-patterns</h2>
+  <p>Three patterns that have come up in implementation history and should be actively avoided.</p>
+
+  <h3>1. Inverted asymmetry</h3>
+  <p>Letting the agent author the <em>curated</em> form directly. Example: an MCP tool that lets agents propose rules and have them appear in the constitution without explicit human approval. This bypasses the curation step — the agent grades its own homework.</p>
+  <p>The dashboard's Synthesize feature is LLM-driven, but it is initiated by the human and produces a preview requiring explicit approval. That is curation. An MCP tool that authored rules directly would not be. Any propose-style MCP tool must land in a draft queue requiring human ratification, never in the rules table directly.</p>
+
+  <h3>2. Dormant artifact drift</h3>
+  <p>Shipping schemas, columns, and endpoints as "forward-compat" for features that never materialise. Example: <code>profile_notes.archived</code> was carried from the pre-split schema for a bulk-archive flow that was never built. It was pruned in v2.10.1 once the dormancy was clear. When a write path stops, prune the supporting structure on a deliberate cadence. Don't accumulate columns "just in case."</p>
+
+  <h3>3. Curation-bypass through volume</h3>
+  <p>Adding many low-signal artifacts to the curated tier. Example: a synthesis exercise that proposed 10 rules of which 5 were near-duplicates of existing rules added noise, not information. The rules tier must stay small to do its job — maintained, not appended to.</p>
+
+  <h2 id="decision-rules">Decision rules for new features</h2>
+  <p>Before adding any new feature, route, MCP tool, or schema column, apply these three checks:</p>
+  <ol>
+    <li><strong>Does it serve the agent reading better-curated info about the user?</strong>
+      <ul>
+        <li><em>Yes</em> → core. Prioritise.</li>
+        <li><em>Maybe</em> → supplementary. Earn its place by either (a) producing signal that flows back into the curation step, or (b) producing diagnostic value the user actively consumes.</li>
+        <li><em>No</em> → out of scope. Keep it out.</li>
+      </ul>
+    </li>
+    <li><strong>For MCP tool surface specifically:</strong> agent-writable tools should produce raw observations; agent-readable tools should return curated artifacts. Tools that let agents author curated artifacts directly invert the asymmetry.</li>
+    <li><strong>Avoid forward-compat speculation:</strong> don't ship columns, endpoints, or routes for features that aren't being built right now. Add them when they earn their place; prune them when they go dormant.</li>
+  </ol>
+
+  <h2 id="deployment">Deployment architecture</h2>
+  <p>JFYI is a single Python package (<code>src/jfyi/</code>) serving three roles from one process on port 8080:</p>
+  <ul>
+    <li><strong>MCP Server</strong> (<code>server.py</code>) — exposes the tool catalogue over stdio or SSE. Always-on tools (<code>record_interaction</code>, <code>get_developer_profile</code>) are registered directly. Discoverable tools are exposed via <code>discover_tools</code> to reduce initial schema injection cost.</li>
+    <li><strong>Web Dashboard</strong> (<code>web/app.py</code>) — FastAPI REST API mirroring MCP tools, plus a vanilla HTML/JS/CSS SPA (no Node.js build step). Serves the notes review, rule composition, analytics, and memory explorer UIs.</li>
+    <li><strong>Background Engines</strong> — async loops running inside the same process: <code>BackgroundSummarizer</code> (session distillation) and optionally <code>InferenceEngine</code> (semantic rule inference). Both respect daily token caps and degrade gracefully when no LLM API key is configured.</li>
+  </ul>
+  <p><strong>Persistence:</strong> SQLite at <code>JFYI_DB_PATH</code> (default <code>/data/jfyi.db</code>). Schema migrations tracked by <code>PRAGMA user_version</code>; forward-only; inline <code>_run_migrations()</code> at startup. Optional ChromaDB vector store for semantic search, gated behind the <code>vector</code> extra and <code>JFYI_ENABLE_VECTOR_DB=true</code>.</p>
+  <p><strong>Kubernetes deployment:</strong> Helm chart in <code>helm/jfyi-mcp-server/</code>, published as OCI artifact to GHCR. Data persists on a PVC mounted at <code>/data</code>. ML embedding models download at runtime to a persisted path (<code>SENTENCE_TRANSFORMERS_HOME=/data/models</code>) — never baked into the container image.</p>
+  <p><strong>Multi-arch:</strong> container image builds for <code>linux/amd64</code> and <code>linux/arm64</code> (Raspberry Pi 5). The arm64 build runs on a self-hosted Pi runner in GitHub Actions.</p>
+
+  <footer>
+    <a href="index.html">&larr; Overview</a> &mdash;
+    Licensed under Apache-2.0. &mdash;
+    <a href="https://github.com/hlan-net/jfyi-just-for-your-information">GitHub</a>
+  </footer>
+</main>
+</body>
+</html>
