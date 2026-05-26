@@ -642,9 +642,85 @@
 
 <script type="text/x-template" id="analytics-template">
   <div>
-    <div class="card">
-      <h2>Agent Analytics</h2>
-      <div class="empty"><div class="icon">📊</div>Analytics module coming soon.</div>
+    <div v-if="loading" class="loading-screen" style="height:200px;"><div class="spinner"></div></div>
+    <div v-else>
+
+      <!-- Empty state -->
+      <div v-if="!agents.length" class="card">
+        <h2>Agent Analytics</h2>
+        <div class="empty">
+          <div class="icon">📊</div>
+          No agent data yet. Call <code>record_interaction</code> from your AI agent to start tracking.
+        </div>
+      </div>
+
+      <div v-else>
+        <!-- Summary stat row -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;">
+          <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+            <div style="font-size:2rem;font-weight:700;color:var(--accent);">{{ totalAgents }}</div>
+            <div style="color:var(--muted);font-size:0.85rem;">Agents Tracked</div>
+          </div>
+          <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+            <div style="font-size:2rem;font-weight:700;" :style="{color: corrColor(overallCorrFraction)}">{{ overallAlignment }}%</div>
+            <div style="color:var(--muted);font-size:0.85rem;">Overall Alignment</div>
+          </div>
+          <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+            <div style="font-size:2rem;font-weight:700;" :style="{color: corrColor(overallCorrFraction)}">{{ overallCorrRate }}%</div>
+            <div style="color:var(--muted);font-size:0.85rem;">Correction Rate</div>
+          </div>
+          <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+            <div style="font-size:2rem;font-weight:700;color:var(--fg);">{{ totalInteractions }}</div>
+            <div style="color:var(--muted);font-size:0.85rem;">Total Interactions</div>
+          </div>
+        </div>
+
+        <!-- Per-agent comparison table -->
+        <div class="card" style="margin-bottom:1.5rem;">
+          <h2>Agent Comparison</h2>
+          <table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;">Agent</th>
+                <th style="text-align:left;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;">Model</th>
+                <th style="text-align:right;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;">Calls</th>
+                <th style="text-align:right;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;">Sessions</th>
+                <th style="text-align:right;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;">Alignment</th>
+                <th style="text-align:right;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;">Correction Rate</th>
+                <th style="text-align:right;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;">Avg Friction</th>
+                <th style="text-align:right;padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;">Avg Latency</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="a in agents" :key="a.name">
+                <td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);font-weight:500;">{{ a.name }}</td>
+                <td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);color:var(--muted);font-family:monospace;font-size:0.8rem;">{{ a.model || '—' }}</td>
+                <td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">{{ a.total_interactions }}</td>
+                <td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;">{{ a.sessions }}</td>
+                <td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;font-weight:500;" :style="{color: corrColor(a.correction_rate_pct / 100)}">{{ a.alignment_score.toFixed(1) }}%</td>
+                <td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;" :style="{color: corrColor(a.correction_rate_pct / 100)}">{{ a.correction_rate_pct.toFixed(1) }}%</td>
+                <td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;" :style="{color: frictionColor(a.avg_friction_score)}">{{ (a.avg_friction_score || 0).toFixed(2) }}</td>
+                <td style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:right;color:var(--muted);">{{ a.avg_correction_latency_s ? a.avg_correction_latency_s.toFixed(1) + 's' : '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Alignment bar chart -->
+        <div class="card">
+          <h2>Alignment Score by Agent</h2>
+          <div v-for="a in agents" :key="a.name" style="margin-bottom:0.75rem;">
+            <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.25rem;">
+              <span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;">{{ a.name }}</span>
+              <span style="flex-shrink:0;margin-left:0.5rem;" :style="{color: corrColor(a.correction_rate_pct / 100)}">{{ a.alignment_score.toFixed(1) }}% · {{ a.total_interactions }} calls</span>
+            </div>
+            <div style="height:10px;background:#21262d;border-radius:4px;overflow:hidden;">
+              <div :style="{width: barPct(a.alignment_score, 100), background: corrColor(a.correction_rate_pct / 100), height:'100%', borderRadius:'4px', transition:'width 0.3s'}"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </script>
@@ -1532,7 +1608,55 @@ const Admin = {
   }
 };
 
-const Analytics = { template: '#analytics-template' };
+const Analytics = {
+  template: '#analytics-template',
+  setup() {
+    const agents   = ref([]);
+    const loading  = ref(true);
+
+    const totalAgents        = computed(() => agents.value.length);
+    const totalInteractions  = computed(() => agents.value.reduce((s, a) => s + a.total_interactions, 0));
+    const overallCorrFraction = computed(() => agents.value.length
+      ? agents.value.reduce((s, a) => s + a.correction_rate_pct, 0) / agents.value.length / 100
+      : 0);
+    const overallAlignment   = computed(() => agents.value.length
+      ? (agents.value.reduce((s, a) => s + a.alignment_score, 0) / agents.value.length).toFixed(1)
+      : '—');
+    const overallCorrRate    = computed(() => agents.value.length
+      ? (agents.value.reduce((s, a) => s + a.correction_rate_pct, 0) / agents.value.length).toFixed(1)
+      : '—');
+
+    const barPct = (v, max) => (v / max * 100).toFixed(1) + '%';
+    function corrColor(v) {
+      if (!v) return 'var(--muted)';
+      if (v < 0.2) return 'var(--green)';
+      if (v < 0.5) return 'var(--orange)';
+      return 'var(--red)';
+    }
+    function frictionColor(v) {
+      if (!v) return 'var(--muted)';
+      if (v < 0.3) return 'var(--green)';
+      if (v < 0.6) return 'var(--orange)';
+      return 'var(--red)';
+    }
+
+    async function loadAll() {
+      try {
+        const r = await fetch(API + '/api/analytics/agents');
+        agents.value = await r.json();
+      } finally {
+        loading.value = false;
+      }
+    }
+    onMounted(loadAll);
+
+    return {
+      agents, loading, totalAgents, totalInteractions,
+      overallCorrFraction, overallAlignment, overallCorrRate,
+      barPct, corrColor, frictionColor,
+    };
+  }
+};
 
 const DeveloperAnalytics = {
   template: '#developer-template',
