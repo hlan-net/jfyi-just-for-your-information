@@ -160,3 +160,15 @@ All six items shipped in `v2.12.0` across PRs [#40](https://github.com/hlan-net/
 - **Semantic Rule Inference writes to `profile_notes` (`source='inferred'`, confidence 0.3), not a `pending` rule state.** This preserves the *write-raw / curate / read-curated* asymmetry: the LLM files low-confidence raw observations; the developer promotes them to rules via the existing synthesis flow rather than a separate promotion queue.
 
 LLM-backed features (Semantic Rule Inference, Friction Clustering gap summaries, Agent Warming briefs) all degrade gracefully when no `JFYI_ANTHROPIC_API_KEY` is set — they fall back to heuristic or representative-sample output rather than failing.
+
+---
+
+## ✓ Dashboard Hardening — `v2.13.0`
+
+Standalone improvements to the web dashboard that do not require new MCP tools or schema migrations.
+
+| Item | Tag | Status | Commit |
+|------|-----|--------|--------|
+| [Agent Analytics Page](docs/agent-analytics.md) | Supplementary | Done | `b3380a2` |
+
+**Agent Analytics Page** was a stub since the dashboard was first built. The backend (`GET /api/analytics/agents`) was always fully implemented. The page now shows a 4-stat summary row (agents tracked, overall alignment, overall correction rate, total interactions), a per-agent comparison table (alignment, correction rate, avg friction, avg latency — all colour-coded), and an alignment bar chart ordered by score. No backend changes; one file changed (`web/static/index.html`).

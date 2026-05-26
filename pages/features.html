@@ -144,6 +144,15 @@
 
   <hr style="border-color:var(--border);margin:2.5rem 0" />
 
+  <h2 id="v2-13">v2.13.0 — Dashboard Hardening <span class="badge badge-done">Shipped</span></h2>
+
+  <h3>Agent Analytics Page</h3>
+  <p><strong>Tag:</strong> Supplementary &nbsp;|&nbsp; <strong>Commit:</strong> b3380a2</p>
+  <p>Replaces the "Analytics module coming soon" stub that had existed since the dashboard was first built. The backend (<code>GET /api/analytics/agents</code>) was always fully implemented — the page just needed a frontend component.</p>
+  <p>The page shows a 4-stat summary row (agents tracked, overall alignment, correction rate, total interactions), a per-agent comparison table with alignment, correction rate, avg friction, and avg latency (all colour-coded), and an alignment bar chart ordered by score. No backend changes; one file changed.</p>
+
+  <hr style="border-color:var(--border);margin:2.5rem 0" />
+
   <h2 id="v2-3">v2.3.0 — Phase 1: Foundation <span class="badge badge-done">Shipped</span></h2>
 
   <h3>Progressive Disclosure</h3>
