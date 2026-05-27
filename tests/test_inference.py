@@ -135,6 +135,36 @@ async def test_infer_from_friction_writes_note(engine, db):
 
 
 @pytest.mark.asyncio
+async def test_infer_from_friction_parses_markdown_fenced_json(engine, db):
+    """Models often wrap the object in a ```json fence; it must still parse."""
+    agent_id = db.get_or_create_agent(1, "claude")
+    interaction_id = db.record_interaction(
+        1, agent_id=agent_id, session_id="s1", was_corrected=True, friction_score=0.8
+    )
+    db.add_friction_event(
+        1,
+        agent_id=agent_id,
+        event_type="correction",
+        description="Output corrected",
+        interaction_id=interaction_id,
+    )
+    events = db.get_uninferred_friction_events(1)
+    fenced = (
+        "```json\n"
+        + json.dumps({"text": "Prefer explicit types", "category": "style", "confidence": 0.3})
+        + "\n```"
+    )
+    engine._client.messages.create = AsyncMock(return_value=_make_llm_response(fenced))
+
+    await engine._infer_from_friction(1, events[0])
+
+    notes = db.get_notes(1, category="style")
+    assert len(notes) == 1
+    assert notes[0]["text"] == "Prefer explicit types"
+    assert notes[0]["source"] == "inferred"
+
+
+@pytest.mark.asyncio
 async def test_infer_from_friction_marks_event_processed(engine, db):
     agent_id = db.get_or_create_agent(1, "claude")
     interaction_id = db.record_interaction(

@@ -131,6 +131,12 @@ class InferenceEngine:
         self._tokens_used_today += tokens
 
         raw = response.content[0].text.strip()
+        # Models sometimes wrap the payload in a ```json fence; unwrap it before
+        # parsing. Only the fence markers are stripped — a bare JSON array still
+        # parses to a list and is rejected below, preserving the "object only"
+        # contract. Plain string ops (no regex) avoid any backtracking risk.
+        if raw.startswith("```"):
+            raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
             note_dict = json.loads(raw)
         except json.JSONDecodeError:
