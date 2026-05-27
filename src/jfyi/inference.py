@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -131,6 +132,12 @@ class InferenceEngine:
         self._tokens_used_today += tokens
 
         raw = response.content[0].text.strip()
+        # Models sometimes wrap the payload in a ```json fence; unwrap it before
+        # parsing. Only the fence is stripped — a bare JSON array still parses to a
+        # list and is rejected below, preserving the "object only" contract.
+        fence = re.search(r"```(?:json)?\s*(.*?)\s*```", raw, re.DOTALL)
+        if fence:
+            raw = fence.group(1).strip()
         try:
             note_dict = json.loads(raw)
         except json.JSONDecodeError:
