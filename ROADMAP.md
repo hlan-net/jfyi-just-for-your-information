@@ -172,3 +172,18 @@ Standalone improvements to the web dashboard that do not require new MCP tools o
 | [Agent Analytics Page](docs/agent-analytics.md) | Supplementary | Done | `b3380a2` |
 
 **Agent Analytics Page** was a stub since the dashboard was first built. The backend (`GET /api/analytics/agents`) was always fully implemented. The page now shows a 4-stat summary row (agents tracked, overall alignment, overall correction rate, total interactions), a per-agent comparison table (alignment, correction rate, avg friction, avg latency — all colour-coded), and an alignment bar chart ordered by score. No backend changes; one file changed (`web/static/index.html`).
+
+---
+
+## v2.14.0 — Reporting & Export 🔭 Planned
+
+Surfaces the data JFYI holds in two forms: raw (machine-readable) and synthesised (human-readable). Both are pure read-side features — no schema changes, no new core dependencies. The flagship is the **Vibe Coder Profile Report**: a narrative portrait of the developer as a coder, turning the profile JFYI builds for the agent back around to show the human.
+
+| Item | Tag | Status | Spec |
+|------|-----|--------|------|
+| [Vibe Coder Profile Report](docs/vibe-profile-report.md) | Supplementary | Planned | [docs/vibe-profile-report.md](docs/vibe-profile-report.md) |
+| [Structured Data Export](docs/data-export.md) | Supplementary | Planned | [docs/data-export.md](docs/data-export.md) |
+
+**Vibe Coder Profile Report** synthesises every tier — constitution, signature patterns, friction profile, agent affinity, best work — into a styled, human-readable document answering *"who am I as a vibe coder?"*. An LLM (the already-configured `claude-haiku-4-5`) writes a second-person prose portrait grounded strictly in the data; without an API key the structured sections still render. Delivered as a print-styled HTML report (`GET /reports/vibe-profile`) that the browser saves to PDF — no PDF library, no image bloat. A downloadable `.pdf` via `fpdf2` is a deliberate later step. Supplementary, but with a real feedback loop into Core: reading your own profile is the most natural trigger to refine it.
+
+**Structured Data Export** adds auth-gated `GET /api/export/*` endpoints serialising profile, interactions, and analytics to JSON and CSV, plus an `all` JSON bundle for backup/migration. Python stdlib only. Deliberately excludes the `identity_providers` table (OAuth secrets are deployment config, not developer profile, and must never leave the cluster). The machine-readable counterpart to the Vibe Coder Profile Report — raw data vs. the story.
