@@ -17,7 +17,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 RUN mkdir -p src/jfyi && touch src/jfyi/__init__.py && \
     pip install --upgrade pip && \
-    pip install --no-cache-dir ".[vector]" && \
+    pip install --no-cache-dir ".[vector,harness]" && \
     rm -rf src/ build/ *.egg-info
 
 # 3. Copy the actual source code
