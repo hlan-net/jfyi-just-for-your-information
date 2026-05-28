@@ -40,7 +40,10 @@ _NARRATIVE_SYSTEM_PROMPT = (
     "Keep the portrait to 3-4 short paragraphs. Cover: working style and values "
     "(from the constitution and signature patterns), where alignment is strongest "
     "or weakest (friction profile, agent affinity), and what your best work looks "
-    "like. Write in clear, plain English — no marketing voice, no hype."
+    "like. Write in clear, plain English — no marketing voice, no hype. "
+    "Output plain text only: no markdown formatting of any kind — no asterisks "
+    "for bold or italics, no headers, no bullet lists, no code fences. Separate "
+    "paragraphs with a blank line."
 )
 
 

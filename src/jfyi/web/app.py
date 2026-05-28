@@ -1021,7 +1021,11 @@ def create_app(
             synthesise_narrative,
         )
 
-        sections = build_vibe_profile(current_user["id"], db, analytics)
+        # build_vibe_profile runs several synchronous DB queries; offload to a
+        # thread so it doesn't block the event loop.
+        sections = await asyncio.to_thread(
+            build_vibe_profile, current_user["id"], db, analytics
+        )
         narrative = await synthesise_narrative(sections)
         return render_vibe_profile_html(current_user, sections, narrative)
 
