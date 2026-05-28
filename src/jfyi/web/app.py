@@ -823,6 +823,7 @@ def _register_export_api(app: FastAPI) -> None:
         all_bundle,
         analytics_bundle,
         filename,
+        parse_json_field,
         profile_bundle,
         rows_to_csv,
         to_json,
@@ -873,6 +874,9 @@ def _register_export_api(app: FastAPI) -> None:
         )
         if format == "csv":
             return _csv_response(rows_to_csv(rows, INTERACTION_FIELDS), "interactions")
+        # Parse the JSON-stringified `metadata` column so the JSON export is
+        # single-encoded throughout (avoids a JSON string inside a JSON payload).
+        parse_json_field(rows, "metadata")
         return _json_response(rows, "interactions")
 
     @app.get("/api/export/analytics")

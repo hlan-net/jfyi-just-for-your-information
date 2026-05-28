@@ -87,6 +87,24 @@ def to_json(payload: Any) -> str:
     return json.dumps(payload, indent=2, sort_keys=False, default=str)
 
 
+def parse_json_field(rows: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
+    """Parse a JSON-string field on each row into a Python value, in place.
+
+    Several DB columns (interactions.metadata, friction_clusters.event_ids,
+    friction_events.context) store JSON as TEXT. Without parsing, those values
+    would be emitted as JSON strings inside a JSON payload — double-encoded
+    and ugly to consume. Invalid or empty JSON degrades to None.
+    """
+    for row in rows:
+        raw = row.get(field)
+        if isinstance(raw, str) and raw:
+            try:
+                row[field] = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                row[field] = None
+    return rows
+
+
 # ── Bundle builders ───────────────────────────────────────────────────────────
 
 
@@ -106,7 +124,9 @@ def analytics_bundle(
     vibe_matches: list[dict[str, Any]],
     friction_clusters: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Compose the JSON analytics bundle."""
+    """Compose the JSON analytics bundle. friction_clusters.event_ids is
+    parsed from its TEXT-JSON storage shape into a native list."""
+    parse_json_field(friction_clusters, "event_ids")
     return {
         "agents": agents,
         "vibe_matches": vibe_matches,
@@ -128,7 +148,13 @@ def all_bundle(
     Note: `identity_providers` is deliberately excluded — OAuth client secrets
     are deployment config, not developer profile, and must never leave the
     cluster in an export.
+
+    JSON-stringified DB columns (interactions.metadata, friction_events.context)
+    are parsed back to native values so the bundle is single-encoded throughout.
+    friction_clusters.event_ids is parsed inside analytics_bundle.
     """
+    parse_json_field(interactions, "metadata")
+    parse_json_field(friction_events, "context")
     return {
         "exported_at": datetime.now(UTC).isoformat(),
         "schema_version": 1,

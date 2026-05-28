@@ -17,6 +17,7 @@ from jfyi.exports import (
     all_bundle,
     analytics_bundle,
     filename,
+    parse_json_field,
     profile_bundle,
     rows_to_csv,
     to_json,
@@ -104,6 +105,40 @@ def test_profile_bundle_builds_links_from_source_note_ids():
 def test_analytics_bundle_groups_three_tables():
     bundle = analytics_bundle([{"a": 1}], [{"v": 1}], [{"c": 1}])
     assert set(bundle.keys()) == {"agents", "vibe_matches", "friction_clusters"}
+
+
+def test_parse_json_field_parses_strings_in_place():
+    rows = [
+        {"id": 1, "metadata": '{"factors": {"x": 1}}'},
+        {"id": 2, "metadata": None},
+        {"id": 3, "metadata": "not json"},
+    ]
+    parse_json_field(rows, "metadata")
+    assert rows[0]["metadata"] == {"factors": {"x": 1}}
+    assert rows[1]["metadata"] is None
+    assert rows[2]["metadata"] is None  # invalid JSON degrades to None
+
+
+def test_analytics_bundle_parses_event_ids_in_clusters():
+    clusters = [{"id": 1, "label": "x", "event_ids": "[10, 11, 12]"}]
+    bundle = analytics_bundle([], [], clusters)
+    assert bundle["friction_clusters"][0]["event_ids"] == [10, 11, 12]
+
+
+def test_all_bundle_parses_jsonified_columns():
+    interactions = [{"id": 1, "metadata": '{"factors": {"a": 1}}'}]
+    friction_events = [{"id": 5, "context": '{"detail": "x"}'}]
+    clusters = [{"id": 9, "event_ids": "[1, 2]"}]
+    bundle = all_bundle(
+        rules=[], notes=[],
+        interactions=interactions,
+        agents=[], vibe_matches=[],
+        friction_clusters=clusters,
+        friction_events=friction_events,
+    )
+    assert bundle["interactions"][0]["metadata"] == {"factors": {"a": 1}}
+    assert bundle["friction_events"][0]["context"] == {"detail": "x"}
+    assert bundle["analytics"]["friction_clusters"][0]["event_ids"] == [1, 2]
 
 
 def test_all_bundle_excludes_identity_providers_implicitly():
