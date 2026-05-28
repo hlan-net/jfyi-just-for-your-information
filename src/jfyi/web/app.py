@@ -1011,4 +1011,18 @@ def create_app(
             return index.read_text()
         return "<h1>JFYI Dashboard</h1><p>Static files not found.</p>"
 
+    @app.get("/reports/vibe-profile", response_class=HTMLResponse)
+    async def vibe_profile_report(
+        current_user: CurrentUser, db: DBDep, analytics: AnalyticsDep
+    ) -> str:
+        from ..reports import (
+            build_vibe_profile,
+            render_vibe_profile_html,
+            synthesise_narrative,
+        )
+
+        sections = build_vibe_profile(current_user["id"], db, analytics)
+        narrative = await synthesise_narrative(sections)
+        return render_vibe_profile_html(current_user, sections, narrative)
+
     return app
