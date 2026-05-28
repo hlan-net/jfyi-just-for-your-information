@@ -1090,6 +1090,37 @@ class Database:
                 (user_id, friction_event_id, note_id, now),
             )
 
+    # ── Export ────────────────────────────────────────────────────────────
+
+    def export_interactions(
+        self, user_id: int, since: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return all interactions for a user (with agent name), newest first.
+
+        Joins the agents table to surface a human-readable agent_name alongside
+        the raw interaction record. Pass `since` (ISO-8601 timestamp) to only
+        return interactions created at or after that time — useful for
+        incremental exports.
+
+        Prompt and response are stored only as hashes on the interactions table,
+        so this export does not leak raw prompt/response text.
+        """
+        sql = (
+            "SELECT i.id, a.name AS agent_name, i.session_id, i.was_corrected,"
+            " i.correction_latency_s, i.friction_score, i.prompt_hash,"
+            " i.response_hash, i.metadata, i.created_at"
+            " FROM interactions i"
+            " LEFT JOIN agents a ON a.id = i.agent_id"
+            " WHERE i.user_id = ?"
+        )
+        params: list[Any] = [user_id]
+        if since is not None:
+            sql += " AND i.created_at >= ?"
+            params.append(since)
+        sql += " ORDER BY i.created_at DESC"
+        with self._conn() as conn:
+            return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
     # ── Vibe Telemetry ────────────────────────────────────────────────────
 
     def get_best_sessions(self, user_id: int, limit: int = 5) -> list[dict[str, Any]]:
