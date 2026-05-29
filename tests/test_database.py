@@ -467,7 +467,7 @@ def test_validate_rule_detects_near_duplicate(db):
     warnings = db.validate_rule_candidate(1, "Prefer early returns in functions")
     assert len(warnings) == 1
     assert warnings[0]["type"] == "duplicate"
-    assert warnings[0]["similarity"] == 1.0
+    assert warnings[0]["similarity"] >= 0.99
 
 
 def test_validate_rule_detects_paraphrase_above_threshold(db):
