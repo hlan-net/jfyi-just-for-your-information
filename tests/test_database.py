@@ -492,3 +492,78 @@ def test_validate_rule_custom_threshold(db):
         1, "Prefer early returns in long functions", duplicate_threshold=0.99
     )
     assert warnings == []
+
+
+# ── Rule injections / decay / effectiveness ──────────────────────────────────
+
+
+def test_record_rule_injections_stores_entries(db):
+    db.add_rule(1, "Rule A", category="style")
+    db.add_rule(1, "Rule B", category="style")
+    rule_ids = [r["id"] for r in db.get_rules(1)]
+    db.record_rule_injections(1, "ses-1", rule_ids)
+    with db._conn() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM rule_injections WHERE user_id = 1").fetchone()[0]
+    assert count == 2
+
+
+def test_record_rule_injections_deduplicates(db):
+    db.add_rule(1, "Rule A")
+    rule_id = db.get_rules(1)[0]["id"]
+    db.record_rule_injections(1, "ses-1", [rule_id])
+    db.record_rule_injections(1, "ses-1", [rule_id])  # duplicate — should not insert
+    with db._conn() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM rule_injections WHERE user_id = 1").fetchone()[0]
+    assert count == 1
+
+
+def test_run_rule_decay_skips_insufficient_data(db):
+    db.add_rule(1, "Rule A")
+    rule_id = db.get_rules(1)[0]["id"]
+    db.record_rule_injections(1, "ses-1", [rule_id])
+    # Only 1 session — below default window of 20; no decay should run
+    decayed = db.run_rule_decay(1, delta=0.1, window=20, min_confidence=0.1)
+    assert decayed == []
+
+
+def test_run_rule_decay_decrements_stale_rule(db):
+    db.add_rule(1, "Active rule", confidence=0.9)
+    db.add_rule(1, "Stale rule", confidence=0.9)
+    active_id = db.get_rules(1)[0]["id"]
+    stale_id = db.get_rules(1)[1]["id"]
+
+    # Create 5 sessions; only inject active rule in them
+    for i in range(5):
+        db.record_rule_injections(1, f"ses-{i}", [active_id])
+
+    decayed = db.run_rule_decay(1, delta=0.1, window=5, min_confidence=0.1)
+    assert stale_id in decayed
+
+    rules = {r["id"]: r for r in db.get_rules(1)}
+    assert rules[stale_id]["confidence"] < 0.9
+    assert rules[active_id]["confidence"] == pytest.approx(0.9)
+
+
+def test_run_rule_decay_respects_min_confidence_floor(db):
+    db.add_rule(1, "Stale rule", confidence=0.15)
+    for i in range(5):
+        db.record_rule_injections(1, f"ses-{i}", [])  # no rule injected
+    db.run_rule_decay(1, delta=0.1, window=5, min_confidence=0.1)
+    rules = db.get_rules(1)
+    assert rules[0]["confidence"] >= 0.1
+
+
+def test_get_retirement_queue_returns_low_confidence_rules(db):
+    db.add_rule(1, "Healthy rule", confidence=0.8)
+    db.add_rule(1, "Weak rule", confidence=0.2)
+    queue = db.get_retirement_queue(1, threshold=0.25)
+    assert len(queue) == 1
+    assert queue[0]["text"] == "Weak rule"
+
+
+def test_get_rule_effectiveness_defaults_to_one_for_unserved(db):
+    db.add_rule(1, "Rule A")
+    effectiveness = db.get_rule_effectiveness(1)
+    assert len(effectiveness) == 1
+    assert effectiveness[0]["effectiveness_factor"] == pytest.approx(1.0)
+    assert effectiveness[0]["served_sessions"] == 0

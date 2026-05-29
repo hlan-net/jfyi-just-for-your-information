@@ -885,6 +885,57 @@
         </table>
       </div>
 
+      <!-- Rule effectiveness -->
+      <div class="card" v-if="ruleEffectiveness.length">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <h2 style="margin:0;">Rule Effectiveness</h2>
+          <span style="font-size:0.78rem;color:var(--muted);">lower friction when loaded = more effective</span>
+        </div>
+        <table>
+          <thead><tr><th>Rule</th><th>Sessions served</th><th>Avg friction (served)</th><th>Effectiveness</th></tr></thead>
+          <tbody>
+            <tr v-for="r in ruleEffectiveness" :key="r.rule_id">
+              <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="r.rule_text">{{ r.rule_text }}</td>
+              <td>{{ r.served_sessions }}</td>
+              <td :style="{color: frictionColor(r.avg_friction_served)}">{{ r.served_sessions > 0 ? (r.avg_friction_served * 100).toFixed(1) + '%' : '—' }}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                  <div style="height:8px;background:#21262d;border-radius:4px;overflow:hidden;width:80px;">
+                    <div :style="{width: (r.effectiveness_factor * 100).toFixed(0) + '%', background: confColor(r.effectiveness_factor), height:'100%', borderRadius:'4px'}"></div>
+                  </div>
+                  <span style="font-size:0.8rem;" :style="{color: confColor(r.effectiveness_factor)}">{{ (r.effectiveness_factor * 100).toFixed(0) }}%</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Retirement queue -->
+      <div class="card" v-if="retirementQueue.length || decayRunning">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <h2 style="margin:0;">Retirement Queue</h2>
+          <button @click="runDecay" class="btn btn-outline" :disabled="decayRunning" style="font-size:0.8rem;padding:0.3rem 0.8rem;">
+            {{ decayRunning ? 'Running…' : 'Run decay check' }}
+          </button>
+        </div>
+        <div style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem;">
+          Rules whose confidence has decayed below {{ (retirementThreshold * 100).toFixed(0) }}%. Retire, rewrite, or refresh them.
+        </div>
+        <div v-if="!retirementQueue.length" class="empty" style="padding:1rem;">No rules in the retirement queue — constitution is healthy.</div>
+        <table v-else>
+          <thead><tr><th>Rule</th><th>Category</th><th>Scope</th><th>Confidence</th></tr></thead>
+          <tbody>
+            <tr v-for="r in retirementQueue" :key="r.id">
+              <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="r.text">{{ r.text }}</td>
+              <td><span :class="'pill pill-' + catColor(r.category)">{{ r.category }}</span></td>
+              <td><span style="font-size:0.8rem;color:var(--muted);">{{ r.scope }}{{ r.project_id ? ' · ' + r.project_id : '' }}</span></td>
+              <td :style="{color: confColor(r.confidence)}">{{ (r.confidence * 100).toFixed(0) }}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <!-- Rule accumulation -->
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
@@ -1747,6 +1798,10 @@ const DeveloperAnalytics = {
     const vibeMatches = ref([]);
     const frictionClusters = ref([]);
     const constitutionBudget = ref({ rule_count: 0, token_count: 0, trend: [] });
+    const ruleEffectiveness = ref([]);
+    const retirementQueue = ref([]);
+    const retirementThreshold = ref(0.25);
+    const decayRunning = ref(false);
     const trendDays = ref(30);
     const accumWeeks = ref(12);
 
@@ -1840,7 +1895,7 @@ const DeveloperAnalytics = {
     const loadAll = async () => {
       loading.value = true;
       try {
-        const [s, t, f, l, c, a, vm, fc, cb] = await Promise.all([
+        const [s, t, f, l, c, a, vm, fc, cb, re, rq] = await Promise.all([
           fetch(API + '/api/developer/summary').then(r => r.json()),
           fetch(API + `/api/developer/trend?days=${trendDays.value}`).then(r => r.json()),
           fetch(API + '/api/developer/friction-by-agent').then(r => r.json()),
@@ -1850,6 +1905,8 @@ const DeveloperAnalytics = {
           fetch(API + '/api/developer/vibe-matches').then(r => r.json()),
           fetch(API + '/api/analytics/friction-clusters').then(r => r.json()),
           fetch(API + '/api/developer/constitution-budget').then(r => r.json()),
+          fetch(API + '/api/developer/rule-effectiveness').then(r => r.json()),
+          fetch(API + '/api/developer/retirement-queue').then(r => r.json()),
         ]);
         summary.value = s;
         trend.value = t;
@@ -1860,6 +1917,8 @@ const DeveloperAnalytics = {
         vibeMatches.value = Array.isArray(vm) ? vm : [];
         frictionClusters.value = Array.isArray(fc) ? fc : [];
         constitutionBudget.value = cb ?? { rule_count: 0, token_count: 0, trend: [] };
+        ruleEffectiveness.value = Array.isArray(re) ? re : [];
+        retirementQueue.value = Array.isArray(rq) ? rq : [];
       } finally { loading.value = false; }
     };
 
@@ -1872,11 +1931,21 @@ const DeveloperAnalytics = {
       ruleAccum.value = a;
     };
 
+    const runDecay = async () => {
+      decayRunning.value = true;
+      try {
+        await fetch(API + '/api/developer/run-decay', { method: 'POST' });
+        retirementQueue.value = await fetch(API + '/api/developer/retirement-queue').then(r => r.json());
+        ruleEffectiveness.value = await fetch(API + '/api/developer/rule-effectiveness').then(r => r.json());
+      } finally { decayRunning.value = false; }
+    };
+
     onMounted(loadAll);
 
     return {
       loading, summary, trend, frictionByAgent, latencyDist, ruleConfidence, ruleAccum,
       vibeMatches, frictionClusters, constitutionBudget,
+      ruleEffectiveness, retirementQueue, retirementThreshold, decayRunning, runDecay,
       trendDays, accumWeeks, tY,
       trendPoints, trendPath, trendArea, trendXLabels,
       budgetPoints, budgetPath, budgetArea, bY, budgetGridlines,

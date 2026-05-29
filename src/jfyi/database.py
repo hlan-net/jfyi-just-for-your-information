@@ -469,6 +469,155 @@ class Database:
 
                     PRAGMA user_version = 14;
                 """)
+            if version < 15:
+                # Rule Injections: record which rules were served per
+                # get_developer_profile call, enabling confidence decay gated
+                # on served sessions and per-rule effectiveness scoring.
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS rule_injections (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        rule_id INTEGER NOT NULL REFERENCES profile_rules(id) ON DELETE CASCADE,
+                        session_id TEXT NOT NULL,
+                        served_at TEXT NOT NULL,
+                        UNIQUE(user_id, rule_id, session_id)
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_rule_injections_user_rule
+                        ON rule_injections(user_id, rule_id);
+
+                    CREATE INDEX IF NOT EXISTS idx_rule_injections_user_session
+                        ON rule_injections(user_id, session_id);
+
+                    PRAGMA user_version = 15;
+                """)
+
+    # ── Rule Injections (Decay + Effectiveness) ───────────────────────────
+
+    def record_rule_injections(self, user_id: int, session_id: str, rule_ids: list[int]) -> None:
+        """Record which rule IDs were injected in a given get_developer_profile call."""
+        if not rule_ids:
+            return
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO rule_injections"
+                " (user_id, rule_id, session_id, served_at) VALUES (?, ?, ?, ?)",
+                [(user_id, rid, session_id, now) for rid in rule_ids],
+            )
+
+    def run_rule_decay(
+        self,
+        user_id: int,
+        delta: float = 0.05,
+        window: int = 20,
+        min_confidence: float = 0.1,
+    ) -> list[int]:
+        """Decrement confidence on stale rules; return IDs of rules that were decayed.
+
+        A rule is stale if it has not appeared in rule_injections across the last
+        `window` distinct sessions where get_developer_profile was called. Rules
+        with insufficient history (< window sessions total) are not touched.
+        """
+        with self._conn() as conn:
+            # Total distinct sessions in rule_injections for this user
+            total_sessions = conn.execute(
+                "SELECT COUNT(DISTINCT session_id) FROM rule_injections WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()[0]
+            if total_sessions < window:
+                return []
+
+            # Most recent `window` sessions
+            recent_sids = {
+                r["session_id"]
+                for r in conn.execute(
+                    "SELECT DISTINCT session_id FROM rule_injections"
+                    " WHERE user_id = ? GROUP BY session_id"
+                    " ORDER BY MAX(served_at) DESC LIMIT ?",
+                    (user_id, window),
+                ).fetchall()
+            }
+
+            # Rules served at least once in recent window
+            placeholders = ",".join("?" * len(recent_sids))
+            served_ids = {
+                r["rule_id"]
+                for r in conn.execute(
+                    f"SELECT DISTINCT rule_id FROM rule_injections"
+                    f" WHERE user_id = ? AND session_id IN ({placeholders})",
+                    [user_id, *recent_sids],
+                ).fetchall()
+            }
+
+            # Active rules not served in window — decrement confidence
+            all_rules = conn.execute(
+                "SELECT id, confidence FROM profile_rules WHERE user_id = ? AND archived = 0",
+                (user_id,),
+            ).fetchall()
+            stale = [r for r in all_rules if r["id"] not in served_ids]
+            now = datetime.now(UTC).isoformat()
+            decayed: list[int] = []
+            for rule in stale:
+                new_conf = max(min_confidence, round(rule["confidence"] - delta, 4))
+                if new_conf != rule["confidence"]:
+                    conn.execute(
+                        "UPDATE profile_rules SET confidence = ?, updated_at = ?"
+                        " WHERE id = ? AND user_id = ?",
+                        (new_conf, now, rule["id"], user_id),
+                    )
+                    decayed.append(rule["id"])
+        return decayed
+
+    def get_retirement_queue(self, user_id: int, threshold: float = 0.25) -> list[dict[str, Any]]:
+        """Return active rules with confidence below `threshold`, oldest first."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT id, text, category, scope, project_id, confidence, updated_at"
+                " FROM profile_rules"
+                " WHERE user_id = ? AND archived = 0 AND confidence < ?"
+                " ORDER BY confidence ASC, updated_at ASC",
+                (user_id, threshold),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_rule_effectiveness(self, user_id: int) -> list[dict[str, Any]]:
+        """Return per-rule effectiveness: avg friction in sessions where the rule was served.
+
+        effectiveness_factor = 1.0 - avg_friction_when_served (lower friction = more effective).
+        Rules with no injection history default to effectiveness_factor 1.0.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    r.id AS rule_id,
+                    r.text AS rule_text,
+                    r.confidence,
+                    COUNT(DISTINCT ri.session_id) AS served_sessions,
+                    ROUND(
+                        COALESCE(AVG(i.friction_score), 0.0),
+                        3
+                    ) AS avg_friction_served
+                FROM profile_rules r
+                LEFT JOIN rule_injections ri
+                    ON ri.rule_id = r.id AND ri.user_id = r.user_id
+                LEFT JOIN interactions i
+                    ON i.session_id = ri.session_id AND i.user_id = r.user_id
+                WHERE r.user_id = ? AND r.archived = 0
+                GROUP BY r.id
+                ORDER BY avg_friction_served ASC
+                """,
+                (user_id,),
+            ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["effectiveness_factor"] = round(
+                1.0 - d["avg_friction_served"] if d["served_sessions"] > 0 else 1.0, 3
+            )
+            result.append(d)
+        return result
 
     # ── Constitution Budget Telemetry ─────────────────────────────────────
 

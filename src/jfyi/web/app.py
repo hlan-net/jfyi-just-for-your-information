@@ -803,6 +803,35 @@ def _register_developer_api(app: FastAPI) -> None:
     ) -> list[dict[str, Any]]:
         return db.developer_rule_confidence(current_user["id"])
 
+    @app.get("/api/developer/retirement-queue")
+    async def developer_retirement_queue(
+        current_user: CurrentUser, db: DBDep
+    ) -> list[dict[str, Any]]:
+        from ..config import settings
+
+        return await asyncio.to_thread(
+            db.get_retirement_queue, current_user["id"], settings.rule_retirement_threshold
+        )
+
+    @app.get("/api/developer/rule-effectiveness")
+    async def developer_rule_effectiveness(
+        current_user: CurrentUser, db: DBDep
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(db.get_rule_effectiveness, current_user["id"])
+
+    @app.post("/api/developer/run-decay")
+    async def developer_run_decay(current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
+        from ..config import settings
+
+        decayed = await asyncio.to_thread(
+            db.run_rule_decay,
+            current_user["id"],
+            settings.rule_decay_delta,
+            settings.rule_decay_window,
+            settings.rule_decay_min_confidence,
+        )
+        return {"decayed_count": len(decayed), "decayed_rule_ids": decayed}
+
     @app.get("/api/developer/constitution-budget")
     async def developer_constitution_budget(current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
         return await asyncio.to_thread(db.get_constitution_budget, current_user["id"])
