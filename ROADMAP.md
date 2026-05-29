@@ -190,43 +190,35 @@ Surfaces the data JFYI holds in two forms: raw (machine-readable) and synthesise
 
 ---
 
-## v2.15.0 — Constitution Token Budget 🔭 Planned
+## ✓ v2.15.0 — Constitution Token Budget
 
 Each item is evaluated against the test in [`docs/architecture.md`](docs/architecture.md): *does this serve the agent reading better-curated info about the user?* Full spec: [`docs/constitution-token-budget.md`](docs/constitution-token-budget.md).
 
-**Thesis: treat the curated rules constitution as a fixed token budget, not a growing corpus.** The constitution is served by `get_developer_profile` on *every* interaction initiation, so its real cost is **injected tokens × call frequency** — paid constantly, regardless of how often any given rule is relevant. Today nothing enforces a bound: the read path (`get_rules`) returns *every* non-archived rule (scope-filtered only when a `project_context` is supplied), and confidence is **boost-only** — Positive Reinforcement (`v2.12.0`) pushes it up on a match but nothing ever pulls it down. The architecture *says* "the rules tier has to stay small"; nothing in the code *makes* it. These items add the missing enforcement.
-
-The discipline splits two ways. **Supply-side** (items 1–3) keeps the corpus small: fewer rules exist. **Demand-side** keeps each *injection* small even as the store grows: scope-gating already ships (Tiered Profiling, `v2.12.0`) and ITR retrieval is built but deliberately shelved (per the post-Phase-3 notes, dense retrieval doesn't beat "show everything" below ~10 rules across domains — it's the scale-out valve, not a now-fix). At the current single-user scale we lean supply-side and add a hard cap; ITR comes off the shelf only when curation alone can no longer hold the budget. None of these invert the write-raw/curate/read-curated asymmetry — every item touching the rules tier routes through human curation.
-
 ### Primary thrust — bound the budget
 
-| # | Item | Tag | Role | Spec |
-|---|------|-----|------|------|
-| 0 | Constitution Budget Telemetry | Infrastructure | measure | [docs/constitution-token-budget.md](docs/constitution-token-budget.md) |
-| 1 | Read-Path Budget Cap | Core | enforce | [docs/constitution-token-budget.md](docs/constitution-token-budget.md) |
-| 2 | Rule Lifecycle & Confidence Decay | Core | shrink (supply) | [docs/constitution-token-budget.md](docs/constitution-token-budget.md) |
-| 3 | Rule Conflict & Duplicate Detection | Core | shrink (supply) | [docs/constitution-token-budget.md](docs/constitution-token-budget.md) |
-| 4 | Rule Effectiveness Scoring | Supplementary | allocate by value | [docs/constitution-token-budget.md](docs/constitution-token-budget.md) |
-
-**0. Constitution Budget Telemetry** — *Infrastructure. Foundation; do this first.* You can't manage what you don't measure. Expose the **injected-rule token count per `get_developer_profile` call** (and a rolling trend) on the existing per-session Vibe Telemetry resource (`v2.12.0`) and in `/developer`. This turns "is the constitution bloating?" from a hunch into a number, and it's the meter every item below is judged against. No schema change — token counting over the already-assembled payload.
-
-**1. Read-Path Budget Cap** — *Core. The forcing function.* Give the read path a ceiling — a token budget (or top-K) over which rules are selected by value, not returned wholesale. This is what makes the constitution an actual *budget* rather than a list: once slots are finite, every new rule must displace a weaker one, which forces the ROI question (does this rule prevent more rework than it costs every call?) instead of letting rules accumulate by inertia. Selection key starts as `confidence`, upgraded to confidence × effectiveness once item 4 lands. Scope-gating (already shipped) composes underneath the cap.
-
-**2. Rule Lifecycle & Confidence Decay** — *Core. Supply-side.* The inverse of boost-only confidence. Rules whose supporting notes and matches go stale for N interactions decay in confidence and surface in a dashboard **retirement queue** for the human to retire or refresh. Decay is a signal *to* the curator, never an automatic delete — the curation step stays human. Pairs with item 1: decay lowers a stale rule's selection score so it falls out of the budget naturally, then the queue prompts its removal from the store.
-
-**3. Rule Conflict & Duplicate Detection** — *Core. Supply-side.* Guards anti-pattern #3 (curation-bypass through volume) at the entry point. When the human composes or promotes a rule in the synthesis preview, run the candidate against existing rules — reusing the already-deployed embeddings — and flag near-duplicates and semantic contradictions *before* it lands. A guardrail on the curation surface, not a new agent-writable tool; it stops the corpus inflating from the write side.
-
-**4. Rule Effectiveness Scoring** — *Supplementary, with a feedback loop into Core. The allocator.* Confidence measures how often a rule is *reinforced*, not whether it actually *reduces friction* when loaded. Compare friction in sessions where a rule was served (`get_developer_profile` scope match) against sessions where it wasn't, and surface low-impact or counterproductive rules in `/developer`. This is the keystone: decay tells you what's *stale*, effectiveness tells you what's *worthless even when fresh* — and it gives item 1 a value signal to spend the budget by, rather than recency or raw confidence.
+| # | Item | Tag | Role | PR |
+|---|------|-----|------|-----|
+| 0 | Constitution Budget Telemetry | Infrastructure | measure | [#52](https://github.com/hlan-net/jfyi-just-for-your-information/pull/52) |
+| 1 | Read-Path Budget Cap | Core | enforce | [#53](https://github.com/hlan-net/jfyi-just-for-your-information/pull/53) |
+| 2 | Rule Lifecycle & Confidence Decay | Core | shrink (supply) | [#55](https://github.com/hlan-net/jfyi-just-for-your-information/pull/55) |
+| 3 | Rule Conflict & Duplicate Detection | Core | shrink (supply) | [#54](https://github.com/hlan-net/jfyi-just-for-your-information/pull/54) |
+| 4 | Rule Effectiveness Scoring | Supplementary | allocate by value | [#55](https://github.com/hlan-net/jfyi-just-for-your-information/pull/55) |
 
 ### Secondary track — profile reach
 
-Independent of the budget thesis: extend the read-curated artifact to surfaces and moments the MCP loop doesn't reach. Lower priority than the primary thrust.
+| # | Item | Tag | PR |
+|---|------|-----|-----|
+| 5 | Static Profile Snapshot (`AGENTS.md` export) | Core | [#56](https://github.com/hlan-net/jfyi-just-for-your-information/pull/56) |
+| 6 | Cold-Start Profile Interview | Core | [#57](https://github.com/hlan-net/jfyi-just-for-your-information/pull/57) |
 
-| # | Item | Tag | Spec |
-|---|------|-----|------|
-| 5 | Static Profile Snapshot (`AGENTS.md` export) | Core | [docs/constitution-token-budget.md](docs/constitution-token-budget.md) |
-| 6 | Cold-Start Profile Interview | Core | [docs/constitution-token-budget.md](docs/constitution-token-budget.md) |
+### v2.15.0 evaluation notes
 
-**5. Static Profile Snapshot (`AGENTS.md` export)** — *Core.* The read-curated path only reaches agents that speak MCP and connect at session start. Render the curated constitution to a committable `AGENTS.md` / `CLAUDE.md` block (a `GET /api/export/agents-md` endpoint, building on `v2.14.0`'s export work) so non-MCP agents and repo-init moments still get the profile. Same curated rules, serialised — no change to the asymmetry. Scope-aware (Tiered Profiling, `v2.12.0`) and budget-aware: it exports the *same* capped set item 1 would inject, so the snapshot can't become a token-bloat backdoor.
+All seven items (0–4 primary, 5–6 secondary) shipped across PRs [#52](https://github.com/hlan-net/jfyi-just-for-your-information/pull/52)–[#57](https://github.com/hlan-net/jfyi-just-for-your-information/pull/57). Several implementation choices deviated from or refined the original spec:
 
-**6. Cold-Start Profile Interview** — *Core.* The whole loop assumes accumulated friction; a brand-new deployment has an empty constitution and serves the agent nothing useful until interactions pile up. A dashboard-guided questionnaire seeds initial **notes** (not rules) — raw observations the human composes into rules through the existing flow. Preserves the asymmetry (interview writes raw, human curates) and solves the bootstrap gap so JFYI is useful on day one rather than day thirty.
+- **Items 2 and 4 share `rule_injections` (schema v15)**, implemented together in [#55](https://github.com/hlan-net/jfyi-just-for-your-information/pull/55). Decay is gated on served-session count (not global interaction count) to avoid penalising project-scoped rules during inactive periods, and skips rules newer than the decay window.
+- **Decay is human-triggered** (`POST /api/developer/run-decay`) rather than running in the background summarizer loop. This aligns with "decay is a signal to the curator, never automatic" and avoids coupling to the optional summarizer.
+- **`get_developer_profile` gained an optional `session_id` argument** (spec gap identified in PR [#50](https://github.com/hlan-net/jfyi-just-for-your-information/pull/50) Gemini review). Rule injections are recorded only when `session_id` is supplied; behaviour is unchanged without it.
+- **Effectiveness factor** is `1.0 - avg_friction_when_served`, defaulting to `1.0` for rules with no injection history. The budget cap selection key is `confidence × effectiveness_factor`; rules with no history get the benefit of the doubt.
+- **Duplicate detection uses difflib + optional ChromaDB** (two paths merged by rule_id, keeping the higher score). Contradiction detection was deferred — reliable detection requires LLM support to avoid false positives.
+- **`AGENTS.md` export is budget-aware** by construction: it applies the same sort and cap as `get_developer_profile`, so the snapshot can never export more rules than an MCP call would inject.
+- **Cold-start interview seeds notes, not rules**, preserving the write-raw/curate asymmetry. Five questions cover style, testing, architecture, workflow, and docs.
