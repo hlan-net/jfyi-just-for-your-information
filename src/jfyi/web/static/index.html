@@ -1496,12 +1496,18 @@ const Notes = {
     const startInterview = async () => {
       showInterview.value = true;
       interviewLoading.value = true;
+      interviewError.value = '';
       try {
         const res = await fetch(API + '/api/profile/interview');
         if (res.ok) {
           interviewQuestions.value = await res.json();
           interviewQuestions.value.forEach(q => { if (!(q.id in interviewAnswers)) interviewAnswers[q.id] = ''; });
+        } else {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.detail || 'Failed to load interview questions');
         }
+      } catch (e) {
+        interviewError.value = e.message || 'Failed to load interview questions';
       } finally { interviewLoading.value = false; }
     };
 
@@ -1511,11 +1517,16 @@ const Notes = {
       try {
         const answered = interviewQuestions.value.filter(q => interviewAnswers[q.id]?.trim());
         for (const q of answered) {
-          await fetch(API + '/api/profile/notes', {
+          const res = await fetch(API + '/api/profile/notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: interviewAnswers[q.id].trim(), category: q.category }),
           });
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            throw new Error(d.detail || `Failed to save answer for ${q.category}`);
+          }
+          interviewAnswers[q.id] = ''; // clear on success to prevent duplicate on retry
         }
         showInterview.value = false;
         loadNotes();
