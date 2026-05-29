@@ -1227,9 +1227,8 @@ class Database:
                 " WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
                 (user_id,),
             ).fetchone()
-
-        constitution_rule_count = snapshot_row["rule_count"] if snapshot_row else 0
-        constitution_token_count = snapshot_row["token_count"] if snapshot_row else 0
+            constitution_rule_count = snapshot_row["rule_count"] if snapshot_row else 0
+            constitution_token_count = snapshot_row["token_count"] if snapshot_row else 0
 
         interactions = [dict(r) for r in interactions]
         if not interactions:

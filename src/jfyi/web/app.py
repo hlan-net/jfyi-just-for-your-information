@@ -792,7 +792,7 @@ def _register_developer_api(app: FastAPI) -> None:
 
     @app.get("/api/developer/constitution-budget")
     async def developer_constitution_budget(current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
-        return db.get_constitution_budget(current_user["id"])
+        return await asyncio.to_thread(db.get_constitution_budget, current_user["id"])
 
     @app.get("/api/developer/vibe-matches")
     async def developer_vibe_matches(

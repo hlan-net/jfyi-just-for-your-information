@@ -504,7 +504,9 @@ async def dispatch_tool(
             "to the current codebase and take precedence when they overlap.\n\n"
         )
         payload = preamble + block
-        db.record_constitution_snapshot(user_id, len(rules), count_tokens(payload))
+        await asyncio.to_thread(
+            db.record_constitution_snapshot, user_id, len(rules), count_tokens(payload)
+        )
         return [TextContent(type="text", text=payload)]
 
     if name == "record_interaction":
