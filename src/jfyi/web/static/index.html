@@ -731,7 +731,7 @@
     <div v-else>
 
       <!-- Summary stat row -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;margin-bottom:1.5rem;">
         <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
           <div style="font-size:1.8rem;font-weight:700;color:var(--accent);">{{ summary.total_interactions ?? 0 }}</div>
           <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Total Interactions</div>
@@ -752,6 +752,30 @@
           <div style="font-size:1.8rem;font-weight:700;color:var(--purple);">{{ summary.total_rules ?? 0 }}</div>
           <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Active Rules</div>
         </div>
+        <div class="card" style="margin-bottom:0;text-align:center;padding:1rem;">
+          <div style="font-size:1.8rem;font-weight:700;" :style="{color: budgetColor(constitutionBudget.token_count)}">
+            {{ constitutionBudget.token_count > 0 ? constitutionBudget.token_count : '—' }}
+          </div>
+          <div style="color:var(--muted);font-size:0.8rem;margin-top:0.25rem;">Constitution Tokens</div>
+        </div>
+      </div>
+
+      <!-- Constitution budget trend -->
+      <div class="card" v-if="constitutionBudget.trend.length > 1">
+        <h2 style="margin-top:0;">Constitution Token Budget</h2>
+        <div style="color:var(--muted);font-size:0.82rem;margin-bottom:0.75rem;">
+          Token count injected per <code>get_developer_profile</code> call (last {{ constitutionBudget.trend.length }} calls).
+          {{ constitutionBudget.rule_count }} rule{{ constitutionBudget.rule_count !== 1 ? 's' : '' }} currently in constitution.
+        </div>
+        <svg viewBox="0 0 620 100" width="100%" style="display:block;overflow:visible;">
+          <g v-for="v in budgetGridlines" :key="'bg'+v.val">
+            <line x1="45" :y1="bY(v.val)" x2="610" :y2="bY(v.val)" stroke="#30363d" stroke-width="1" />
+            <text x="40" :y="bY(v.val)+4" text-anchor="end" fill="#8b949e" font-size="10">{{ v.label }}</text>
+          </g>
+          <path v-if="budgetArea" :d="budgetArea" fill="#a371f718" />
+          <path v-if="budgetPath" :d="budgetPath" fill="none" stroke="#a371f7" stroke-width="2" stroke-linejoin="round" />
+          <circle v-for="(p,i) in budgetPoints" :key="i" :cx="p.x" :cy="p.y" r="3" fill="#a371f7" />
+        </svg>
       </div>
 
       <!-- Correction rate trend -->
@@ -1658,6 +1682,13 @@ const Analytics = {
   }
 };
 
+function budgetColor(v) {
+  if (!v) return 'var(--muted)';
+  if (v < 200) return 'var(--green)';
+  if (v < 500) return 'var(--orange)';
+  return 'var(--red)';
+}
+
 const DeveloperAnalytics = {
   template: '#developer-template',
   setup() {
@@ -1670,6 +1701,7 @@ const DeveloperAnalytics = {
     const ruleAccum = ref([]);
     const vibeMatches = ref([]);
     const frictionClusters = ref([]);
+    const constitutionBudget = ref({ rule_count: 0, token_count: 0, trend: [] });
     const trendDays = ref(30);
     const accumWeeks = ref(12);
 
@@ -1717,6 +1749,43 @@ const DeveloperAnalytics = {
       if (v < 0.5) return 'var(--orange)';
       return 'var(--red)';
     }
+    // Constitution budget sparkline — viewBox "0 0 620 100", margins l=45 r=10 t=5 b=20
+    const BSX = 45, BEX = 610, BSY = 5, BEY = 80;
+    const budgetPoints = computed(() => {
+      const pts = constitutionBudget.value.trend;
+      if (!pts.length) return [];
+      const maxTok = Math.max(...pts.map(p => p.token_count), 1);
+      return pts.map((p, i) => ({
+        x: BSX + (pts.length > 1 ? (i / (pts.length - 1)) * (BEX - BSX) : (BEX - BSX) / 2),
+        y: BEY - (p.token_count / maxTok) * (BEY - BSY),
+      }));
+    });
+    const budgetPath = computed(() => {
+      const pts = budgetPoints.value;
+      if (pts.length < 2) return '';
+      return 'M ' + pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+    });
+    const budgetArea = computed(() => {
+      const pts = budgetPoints.value;
+      if (pts.length < 2) return '';
+      const line = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+      return `M ${pts[0].x.toFixed(1)},${BEY} L ${line} L ${pts[pts.length-1].x.toFixed(1)},${BEY} Z`;
+    });
+    const bY = (v) => {
+      const pts = constitutionBudget.value.trend;
+      const maxTok = Math.max(...pts.map(p => p.token_count), 1);
+      return BEY - (v / maxTok) * (BEY - BSY);
+    };
+    const budgetGridlines = computed(() => {
+      const pts = constitutionBudget.value.trend;
+      if (!pts.length) return [];
+      const maxTok = Math.max(...pts.map(p => p.token_count), 1);
+      const step = Math.ceil(maxTok / 3 / 50) * 50 || 50;
+      const lines = [];
+      for (let v = 0; v <= maxTok; v += step) lines.push({ val: v, label: v });
+      return lines;
+    });
+
     function confColor(v) {
       if (v >= 0.75) return 'var(--green)';
       if (v >= 0.4) return 'var(--orange)';
@@ -1726,7 +1795,7 @@ const DeveloperAnalytics = {
     const loadAll = async () => {
       loading.value = true;
       try {
-        const [s, t, f, l, c, a, vm, fc] = await Promise.all([
+        const [s, t, f, l, c, a, vm, fc, cb] = await Promise.all([
           fetch(API + '/api/developer/summary').then(r => r.json()),
           fetch(API + `/api/developer/trend?days=${trendDays.value}`).then(r => r.json()),
           fetch(API + '/api/developer/friction-by-agent').then(r => r.json()),
@@ -1735,6 +1804,7 @@ const DeveloperAnalytics = {
           fetch(API + `/api/developer/rule-accumulation?weeks=${accumWeeks.value}`).then(r => r.json()),
           fetch(API + '/api/developer/vibe-matches').then(r => r.json()),
           fetch(API + '/api/analytics/friction-clusters').then(r => r.json()),
+          fetch(API + '/api/developer/constitution-budget').then(r => r.json()),
         ]);
         summary.value = s;
         trend.value = t;
@@ -1744,6 +1814,7 @@ const DeveloperAnalytics = {
         ruleAccum.value = a;
         vibeMatches.value = Array.isArray(vm) ? vm : [];
         frictionClusters.value = Array.isArray(fc) ? fc : [];
+        constitutionBudget.value = cb ?? { rule_count: 0, token_count: 0, trend: [] };
       } finally { loading.value = false; }
     };
 
@@ -1760,11 +1831,12 @@ const DeveloperAnalytics = {
 
     return {
       loading, summary, trend, frictionByAgent, latencyDist, ruleConfidence, ruleAccum,
-      vibeMatches, frictionClusters,
+      vibeMatches, frictionClusters, constitutionBudget,
       trendDays, accumWeeks, tY,
       trendPoints, trendPath, trendArea, trendXLabels,
+      budgetPoints, budgetPath, budgetArea, bY, budgetGridlines,
       maxFriction, maxLatency, barPct,
-      catColor, frictionColor, corrColor, confColor,
+      catColor, frictionColor, corrColor, confColor, budgetColor,
       loadTrend, loadAccum,
     };
   }

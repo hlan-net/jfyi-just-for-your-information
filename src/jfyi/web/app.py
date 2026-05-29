@@ -790,6 +790,10 @@ def _register_developer_api(app: FastAPI) -> None:
     ) -> list[dict[str, Any]]:
         return db.developer_rule_confidence(current_user["id"])
 
+    @app.get("/api/developer/constitution-budget")
+    async def developer_constitution_budget(current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
+        return await asyncio.to_thread(db.get_constitution_budget, current_user["id"])
+
     @app.get("/api/developer/vibe-matches")
     async def developer_vibe_matches(
         current_user: CurrentUser, db: DBDep, limit: int = 20
@@ -833,22 +837,14 @@ def _register_export_api(app: FastAPI) -> None:
         return Response(
             content=content,
             media_type="text/csv",
-            headers={
-                "Content-Disposition": (
-                    f'attachment; filename="{filename(kind, "csv")}"'
-                )
-            },
+            headers={"Content-Disposition": (f'attachment; filename="{filename(kind, "csv")}"')},
         )
 
     def _json_response(payload: Any, kind: str) -> Response:
         return Response(
             content=to_json(payload),
             media_type="application/json",
-            headers={
-                "Content-Disposition": (
-                    f'attachment; filename="{filename(kind, "json")}"'
-                )
-            },
+            headers={"Content-Disposition": (f'attachment; filename="{filename(kind, "json")}"')},
         )
 
     @app.get("/api/export/profile")
@@ -1119,9 +1115,7 @@ def create_app(
 
         # build_vibe_profile runs several synchronous DB queries; offload to a
         # thread so it doesn't block the event loop.
-        sections = await asyncio.to_thread(
-            build_vibe_profile, current_user["id"], db, analytics
-        )
+        sections = await asyncio.to_thread(build_vibe_profile, current_user["id"], db, analytics)
         narrative = await synthesise_narrative(sections)
         return render_vibe_profile_html(current_user, sections, narrative)
 
