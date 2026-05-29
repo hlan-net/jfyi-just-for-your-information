@@ -25,7 +25,7 @@ from pydantic import AnyUrl
 from .analytics import AnalyticsEngine
 from .database import Database
 from .memory import MemoryFacade
-from .prompt import render_read_only_block
+from .prompt import count_tokens, render_read_only_block
 from .serializer import PayloadSerializer
 
 try:
@@ -503,7 +503,9 @@ async def dispatch_tool(
             "Global rules apply throughout this session. Project-scoped rules apply "
             "to the current codebase and take precedence when they overlap.\n\n"
         )
-        return [TextContent(type="text", text=preamble + block)]
+        payload = preamble + block
+        db.record_constitution_snapshot(user_id, len(rules), count_tokens(payload))
+        return [TextContent(type="text", text=payload)]
 
     if name == "record_interaction":
         session_id = arguments.get("session_id") or str(uuid.uuid4())

@@ -54,6 +54,48 @@ async def test_get_developer_profile_without_project_context_returns_all(ctx):
     assert "project rule" in text
 
 
+async def test_get_developer_profile_records_constitution_snapshot(ctx):
+    db, analytics = ctx
+    db.add_rule(1, "Prefers early returns", category="style")
+    db.add_rule(1, "No magic numbers", category="style")
+
+    budget_before = db.get_constitution_budget(1)
+    assert budget_before["token_count"] == 0
+
+    await dispatch_tool("get_developer_profile", {}, db, analytics)
+
+    budget = db.get_constitution_budget(1)
+    assert budget["rule_count"] == 2
+    assert budget["token_count"] > 0
+    assert len(budget["trend"]) == 1
+
+
+async def test_constitution_snapshot_token_count_grows_with_rules(ctx):
+    db, analytics = ctx
+    db.add_rule(1, "Short rule", category="style")
+    await dispatch_tool("get_developer_profile", {}, db, analytics)
+    small = db.get_constitution_budget(1)["token_count"]
+
+    db.add_rule(1, "A much longer rule with many more words to the payload", category="style")
+    await dispatch_tool("get_developer_profile", {}, db, analytics)
+    large = db.get_constitution_budget(1)["token_count"]
+
+    assert large > small
+    assert len(db.get_constitution_budget(1)["trend"]) == 2
+
+
+async def test_session_telemetry_includes_constitution_counts(ctx):
+    db, analytics = ctx
+    db.add_rule(1, "A rule", category="style")
+    await dispatch_tool("get_developer_profile", {}, db, analytics)
+
+    telemetry = db.get_session_telemetry(1, "any-session")
+    assert "constitution_rule_count" in telemetry
+    assert "constitution_token_count" in telemetry
+    assert telemetry["constitution_rule_count"] == 1
+    assert telemetry["constitution_token_count"] > 0
+
+
 async def test_add_profile_note(ctx):
     db, analytics = ctx
     result = await dispatch_tool(

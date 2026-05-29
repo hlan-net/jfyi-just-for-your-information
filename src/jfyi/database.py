@@ -450,6 +450,56 @@ class Database:
 
                     PRAGMA user_version = 13;
                 """)
+            if version < 14:
+                # Constitution Budget Telemetry: record rule count and
+                # estimated token count each time get_developer_profile is
+                # called, enabling trend tracking in /developer and the Vibe
+                # Telemetry resource.
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS constitution_snapshots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        rule_count INTEGER NOT NULL,
+                        token_count INTEGER NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_constitution_snapshots_user
+                        ON constitution_snapshots(user_id, created_at);
+
+                    PRAGMA user_version = 14;
+                """)
+
+    # ── Constitution Budget Telemetry ─────────────────────────────────────
+
+    def record_constitution_snapshot(self, user_id: int, rule_count: int, token_count: int) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO constitution_snapshots"
+                " (user_id, rule_count, token_count, created_at)"
+                " VALUES (?, ?, ?, ?)",
+                (user_id, rule_count, token_count, now),
+            )
+
+    def get_constitution_budget(self, user_id: int, lookback: int = 20) -> dict[str, Any]:
+        """Return the latest constitution size and a recent history for trend display."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT rule_count, token_count, created_at"
+                " FROM constitution_snapshots"
+                " WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+                (user_id, lookback),
+            ).fetchall()
+        snapshots = [dict(r) for r in reversed(rows)]  # oldest-first for charting
+        if not snapshots:
+            return {"rule_count": 0, "token_count": 0, "trend": []}
+        latest = snapshots[-1]
+        return {
+            "rule_count": latest["rule_count"],
+            "token_count": latest["token_count"],
+            "trend": snapshots,
+        }
 
     # ── Users & Identities ─────────────────────────────────────────────────
 
@@ -1092,9 +1142,7 @@ class Database:
 
     # ── Export ────────────────────────────────────────────────────────────
 
-    def export_interactions(
-        self, user_id: int, since: str | None = None
-    ) -> list[dict[str, Any]]:
+    def export_interactions(self, user_id: int, since: str | None = None) -> list[dict[str, Any]]:
         """Return all interactions for a user (with agent name), newest first.
 
         Joins the agents table to surface a human-readable agent_name alongside
@@ -1174,6 +1222,14 @@ class Database:
                 " ORDER BY fe.created_at DESC LIMIT 3",
                 (user_id, session_id),
             ).fetchall()
+            snapshot_row = conn.execute(
+                "SELECT rule_count, token_count FROM constitution_snapshots"
+                " WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
+
+        constitution_rule_count = snapshot_row["rule_count"] if snapshot_row else 0
+        constitution_token_count = snapshot_row["token_count"] if snapshot_row else 0
 
         interactions = [dict(r) for r in interactions]
         if not interactions:
@@ -1184,6 +1240,8 @@ class Database:
                 "recent_corrections": 0,
                 "window_interactions": 0,
                 "corrective_hints": [],
+                "constitution_rule_count": constitution_rule_count,
+                "constitution_token_count": constitution_token_count,
             }
 
         total = len(interactions)
@@ -1213,6 +1271,8 @@ class Database:
             "recent_corrections": corrected,
             "window_interactions": total,
             "corrective_hints": corrective_hints,
+            "constitution_rule_count": constitution_rule_count,
+            "constitution_token_count": constitution_token_count,
         }
 
     # ── Vibe Matches (Positive Reinforcement) ─────────────────────────────

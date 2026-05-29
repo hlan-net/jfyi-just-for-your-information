@@ -15,6 +15,11 @@ def sanitize_rule(text: str) -> str:
     return text.strip()
 
 
+def count_tokens(text: str) -> int:
+    """Estimate token count via whitespace split — rough but sufficient for budget tracking."""
+    return len(text.split())
+
+
 def render_read_only_block(rules: list[dict]) -> str:
     """Render profile rules in a structurally fenced, read-only injection block."""
     lines = [
