@@ -25,7 +25,7 @@ from pydantic import AnyUrl
 from .analytics import AnalyticsEngine
 from .database import Database
 from .memory import MemoryFacade
-from .prompt import count_tokens, render_read_only_block
+from .prompt import count_tokens, render_read_only_block, trim_rules_to_budget
 from .serializer import PayloadSerializer
 
 try:
@@ -496,10 +496,14 @@ async def dispatch_tool(
                     ),
                 )
             ]
+        from .config import settings
+
+        rules, omitted = trim_rules_to_budget(rules, settings.constitution_token_budget)
         block = render_read_only_block(rules)
         project_note = f" (+ project rules for '{project_context}')" if project_context else ""
+        omitted_note = f", {omitted} omitted (budget)" if omitted else ""
         preamble = (
-            f"Developer constitution ({len(rules)} rules{project_note}):\n"
+            f"Developer constitution ({len(rules)} rules{project_note}{omitted_note}):\n"
             "Global rules apply throughout this session. Project-scoped rules apply "
             "to the current codebase and take precedence when they overlap.\n\n"
         )
