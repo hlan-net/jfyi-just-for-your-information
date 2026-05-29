@@ -510,10 +510,11 @@ async def dispatch_tool(
         # Re-sort by confidence × effectiveness so the cap spends budget on
         # rules that demonstrably reduce work, not just recently reinforced ones.
         effectiveness_map = {
-            e["rule_id"]: e["effectiveness_factor"] for e in db.get_rule_effectiveness(user_id)
+            e["rule_id"]: e["effectiveness_factor"]
+            for e in await asyncio.to_thread(db.get_rule_effectiveness, user_id)
         }
 
-        def _selection_score(r: dict) -> float:
+        def _selection_score(r: dict) -> tuple[int, float]:
             scope_rank = {"project": 0, "agent": 1}.get(r.get("scope", "global"), 2)
             score = r.get("confidence", 0.5) * effectiveness_map.get(r["id"], 1.0)
             return (-scope_rank, score)

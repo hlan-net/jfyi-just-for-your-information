@@ -540,22 +540,38 @@ class Database:
             }
 
             # Rules served at least once in recent window
-            placeholders = ",".join("?" * len(recent_sids))
-            served_ids = {
-                r["rule_id"]
-                for r in conn.execute(
-                    f"SELECT DISTINCT rule_id FROM rule_injections"
-                    f" WHERE user_id = ? AND session_id IN ({placeholders})",
-                    [user_id, *recent_sids],
-                ).fetchall()
-            }
+            if recent_sids:
+                placeholders = ",".join("?" * len(recent_sids))
+                served_ids = {
+                    r["rule_id"]
+                    for r in conn.execute(
+                        f"SELECT DISTINCT rule_id FROM rule_injections"
+                        f" WHERE user_id = ? AND session_id IN ({placeholders})",
+                        [user_id, *recent_sids],
+                    ).fetchall()
+                }
+            else:
+                served_ids = set()
 
-            # Active rules not served in window — decrement confidence
+            # Active rules not served in window — only decay rules that existed
+            # before the window started (new rules get a grace period of `window`
+            # sessions before they're eligible for decay).
             all_rules = conn.execute(
-                "SELECT id, confidence FROM profile_rules WHERE user_id = ? AND archived = 0",
+                "SELECT id, confidence, created_at FROM profile_rules"
+                " WHERE user_id = ? AND archived = 0",
                 (user_id,),
             ).fetchall()
-            stale = [r for r in all_rules if r["id"] not in served_ids]
+            stale = []
+            for r in all_rules:
+                if r["id"] in served_ids:
+                    continue
+                sessions_since_creation = conn.execute(
+                    "SELECT COUNT(DISTINCT session_id) FROM rule_injections"
+                    " WHERE user_id = ? AND served_at >= ?",
+                    (user_id, r["created_at"]),
+                ).fetchone()[0]
+                if sessions_since_creation >= window:
+                    stale.append(r)
             now = datetime.now(UTC).isoformat()
             decayed: list[int] = []
             for rule in stale:
