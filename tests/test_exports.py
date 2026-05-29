@@ -130,9 +130,11 @@ def test_all_bundle_parses_jsonified_columns():
     friction_events = [{"id": 5, "context": '{"detail": "x"}'}]
     clusters = [{"id": 9, "event_ids": "[1, 2]"}]
     bundle = all_bundle(
-        rules=[], notes=[],
+        rules=[],
+        notes=[],
         interactions=interactions,
-        agents=[], vibe_matches=[],
+        agents=[],
+        vibe_matches=[],
         friction_clusters=clusters,
         friction_events=friction_events,
     )
@@ -143,8 +145,13 @@ def test_all_bundle_parses_jsonified_columns():
 
 def test_all_bundle_excludes_identity_providers_implicitly():
     bundle = all_bundle(
-        rules=[], notes=[], interactions=[], agents=[],
-        vibe_matches=[], friction_clusters=[], friction_events=[],
+        rules=[],
+        notes=[],
+        interactions=[],
+        agents=[],
+        vibe_matches=[],
+        friction_clusters=[],
+        friction_events=[],
     )
     # The bundle keys are fixed; identity_providers must never appear.
     assert "identity_providers" not in bundle
@@ -290,6 +297,7 @@ def test_export_endpoints_require_auth(ctx):
         "/api/export/interactions",
         "/api/export/analytics",
         "/api/export/all",
+        "/api/export/agents-md",
     ):
         resp = c.get(path)
         assert resp.status_code == 401, f"{path} should be auth-gated"
@@ -302,3 +310,58 @@ def test_export_content_disposition_attaches_dated_filename(client):
     # Filename has a YYYY-MM-DD date segment
     assert "jfyi-profile-" in cd
     assert ".json" in cd
+
+
+# ── /api/export/agents-md ──────────────────────────────────────────────────────
+
+
+def test_export_agents_md_returns_markdown(client, ctx):
+    db, _ = ctx
+    db.add_rule(1, "Prefer early returns", category="style")
+    db.add_rule(1, "No magic numbers", category="architecture")
+    resp = client.get("/api/export/agents-md")
+    assert resp.status_code == 200
+    assert "text/markdown" in resp.headers["content-type"]
+    assert 'filename="AGENTS.md"' in resp.headers["content-disposition"]
+    text = resp.text
+    assert "Developer Constitution" in text
+    assert "[style] Prefer early returns" in text
+    assert "[architecture] No magic numbers" in text
+
+
+def test_export_agents_md_empty_rules(client, ctx):
+    resp = client.get("/api/export/agents-md")
+    assert resp.status_code == 200
+    text = resp.text
+    assert "0 rule(s)" in text
+
+
+def test_export_agents_md_with_project_context(client, ctx):
+    db, _ = ctx
+    db.add_rule(1, "global rule", scope="global")
+    db.add_rule(1, "jfyi rule", scope="project", project_id="jfyi")
+    db.add_rule(1, "other rule", scope="project", project_id="other")
+    resp = client.get("/api/export/agents-md?project_context=jfyi")
+    assert resp.status_code == 200
+    text = resp.text
+    assert "global rule" in text
+    assert "jfyi rule" in text
+    assert "other rule" not in text
+    assert 'filename="AGENTS-jfyi.md"' in resp.headers["content-disposition"]
+
+
+def test_export_agents_md_includes_token_count(client, ctx):
+    db, _ = ctx
+    db.add_rule(1, "A rule with several words in it", category="style")
+    resp = client.get("/api/export/agents-md")
+    text = resp.text
+    # Token count comment should be present
+    assert "tokens" in text
+
+
+def test_export_agents_md_requires_auth(ctx):
+    db, analytics = ctx
+    app = create_app(db, analytics)
+    c = TestClient(app)
+    resp = c.get("/api/export/agents-md")
+    assert resp.status_code == 401

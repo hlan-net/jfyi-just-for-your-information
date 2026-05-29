@@ -860,6 +860,41 @@ class ClientRegistration(BaseModel):
     token_endpoint_auth_method: str = "none"
 
 
+def _agents_md_response(
+    rules: list[dict[str, Any]],
+    omitted: int,
+    project_context: str | None,
+) -> Response:
+    """Render budget-capped rules as a CLAUDE.md / AGENTS.md markdown block."""
+    from ..prompt import count_tokens, render_read_only_block
+
+    project_note = f" (+ project rules for '{project_context}')" if project_context else ""
+    lines = [
+        "<!-- JFYI Developer Constitution — auto-generated; do not edit manually -->",
+        "<!-- Regenerate: GET /api/export/agents-md -->",
+        f"<!-- {len(rules)} rule(s){project_note}"
+        f" · {count_tokens(render_read_only_block(rules))} tokens -->",
+    ]
+    if omitted:
+        lines.append(f"<!-- {omitted} rule(s) omitted by token budget -->")
+    lines.extend(["", "## Developer Constitution", ""])
+    for r in rules:
+        category = r.get("category", "general")
+        lines.append(f"- [{category}] {r.get('text', r.get('rule', ''))}")
+
+    safe_context = (
+        "".join(c for c in project_context if c.isalnum() or c in ("-", "_"))
+        if project_context
+        else ""
+    )
+    fname = "AGENTS.md" if not safe_context else f"AGENTS-{safe_context}.md"
+    return Response(
+        content="\n".join(lines),
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 def _register_export_api(app: FastAPI) -> None:
     """Routes that export user-scoped data to JSON or CSV for backup/analysis."""
     from ..exports import (
@@ -928,6 +963,32 @@ def _register_export_api(app: FastAPI) -> None:
         vibe = await asyncio.to_thread(db.get_vibe_matches, user_id=uid, limit=1000)
         clusters = await asyncio.to_thread(db.get_friction_clusters, user_id=uid)
         return _json_response(analytics_bundle(agents, vibe, clusters), "analytics")
+
+    @app.get("/api/export/agents-md")
+    async def export_agents_md(
+        current_user: CurrentUser,
+        db: DBDep,
+        project_context: str | None = None,
+    ) -> Response:
+        from ..config import settings
+        from ..prompt import trim_rules_to_budget
+
+        uid = current_user["id"]
+        rules = await asyncio.to_thread(db.get_rules, user_id=uid, project_context=project_context)
+        emap = {
+            e["rule_id"]: e["effectiveness_factor"]
+            for e in await asyncio.to_thread(db.get_rule_effectiveness, uid)
+        }
+        rules = sorted(
+            rules,
+            key=lambda r: (
+                -{"project": 0, "agent": 1}.get(r.get("scope", "global"), 2),
+                r.get("confidence", 0.5) * emap.get(r["id"], 1.0),
+            ),
+            reverse=True,
+        )
+        rules, omitted = trim_rules_to_budget(rules, settings.constitution_token_budget)
+        return _agents_md_response(rules, omitted, project_context)
 
     @app.get("/api/export/all")
     async def export_all(current_user: CurrentUser, db: DBDep) -> Response:
