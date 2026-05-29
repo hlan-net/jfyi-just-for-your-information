@@ -28,13 +28,14 @@ def trim_rules_to_budget(rules: list[dict], budget: int) -> tuple[list[dict], in
     is always included even if it alone exceeds the budget, so the constitution
     is never empty when rules exist.
     """
-    if not budget:
+    if budget <= 0:
         return rules, 0
     selected: list[dict] = []
     tokens = 0
     for r in rules:
+        category = r.get("category", "general")
         body = r.get("text", r.get("rule", ""))
-        rule_tokens = count_tokens(f"  - [{r['category']}] {body}")
+        rule_tokens = count_tokens(f"  - [{category}] {body}")
         if selected and tokens + rule_tokens > budget:
             break
         selected.append(r)
