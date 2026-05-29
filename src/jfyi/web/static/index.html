@@ -362,7 +362,7 @@
         <div v-if="composeError" style="color:var(--red);font-size:0.85rem;margin-bottom:0.5rem;">{{ composeError }}</div>
         <!-- Duplicate warnings -->
         <div v-if="composeWarnings.length" style="background:#2d2207;border:1px solid var(--orange);border-radius:6px;padding:0.75rem;margin-bottom:0.75rem;">
-          <div style="color:var(--orange);font-weight:600;font-size:0.85rem;margin-bottom:0.5rem;">⚠ Similar rule{{ composeWarnings.length > 1 ? 's' : '' }} already exist</div>
+          <div style="color:var(--orange);font-weight:600;font-size:0.85rem;margin-bottom:0.5rem;">⚠ Similar rule{{ composeWarnings.length > 1 ? 's already exist' : ' already exists' }}</div>
           <div v-for="w in composeWarnings" :key="w.rule_id" style="font-size:0.8rem;color:var(--text);margin-bottom:0.4rem;padding:0.4rem;background:#1c1c1c;border-radius:4px;">
             <span style="color:var(--muted);">{{ (w.similarity * 100).toFixed(0) }}% match · </span>{{ w.rule_text }}
           </div>

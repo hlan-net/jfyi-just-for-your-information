@@ -95,7 +95,7 @@ class VectorStore:
         )
         ids = results["ids"][0]
         distances = results["distances"][0]
-        return [(id_, round(1.0 / (1.0 + dist), 3)) for id_, dist in zip(ids, distances)]
+        return [(id_, round(1.0 / (1.0 + max(0.0, dist)), 3)) for id_, dist in zip(ids, distances)]
 
     def delete(
         self,
