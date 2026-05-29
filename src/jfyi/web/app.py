@@ -496,6 +496,62 @@ def _register_auth_api(app: FastAPI) -> None:
 
 def _register_profile_api(app: FastAPI) -> None:
     # ── Notes (raw observation tier) ──────────────────────────────────────────
+    @app.get("/api/profile/interview")
+    async def get_interview_questions(_: CurrentUser) -> list[dict[str, Any]]:
+        """Return the cold-start profile interview question set.
+
+        Each question maps to a profile note category. The dashboard posts each
+        answered question as a raw note via POST /api/profile/notes so the
+        developer can review and promote them into rules through the normal flow.
+        """
+        return [
+            {
+                "id": "style",
+                "category": "style",
+                "question": "How do you prefer code to be structured?",
+                "placeholder": (
+                    "e.g. prefer small functions, early returns, "
+                    "avoid deep nesting, functional over OOP…"
+                ),
+            },
+            {
+                "id": "testing",
+                "category": "testing",
+                "question": "What are your testing expectations?",
+                "placeholder": (
+                    "e.g. always write tests first, unit tests for all public "
+                    "functions, integration tests over mocks…"
+                ),
+            },
+            {
+                "id": "architecture",
+                "category": "architecture",
+                "question": "What architectural patterns do you value?",
+                "placeholder": (
+                    "e.g. single responsibility, thin controllers, "
+                    "explicit over implicit, avoid premature abstraction…"
+                ),
+            },
+            {
+                "id": "workflow",
+                "category": "workflow",
+                "question": "How do you like to work with an AI agent?",
+                "placeholder": (
+                    "e.g. small focused changes, always explain reasoning, "
+                    "ask before refactoring, no unsolicited cleanup…"
+                ),
+            },
+            {
+                "id": "docs",
+                "category": "docs",
+                "question": "What are your documentation preferences?",
+                "placeholder": (
+                    "e.g. comments only for non-obvious WHY, "
+                    "no docstrings on trivial functions, keep READMEs current…"
+                ),
+            },
+        ]
+
     @app.get("/api/profile/notes")
     async def get_notes(
         current_user: CurrentUser, db: DBDep, category: str | None = None
