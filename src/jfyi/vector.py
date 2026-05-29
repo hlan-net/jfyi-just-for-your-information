@@ -67,6 +67,36 @@ class VectorStore:
         )
         return results["ids"][0]
 
+    def query_with_scores(
+        self,
+        collection: str,
+        text: str,
+        k: int = 5,
+        where: dict[str, Any] | None = None,
+    ) -> list[tuple[str, float]]:
+        """Return up to k (id, cosine_similarity) pairs ranked by similarity.
+
+        ChromaDB returns L2 distances by default; we convert to a [0, 1]
+        similarity score via 1 / (1 + distance) so callers get a uniform scale.
+        """
+        col = self._col(collection)
+        if where:
+            matched = col.get(where=where, include=[])
+            n_results = min(k, len(matched["ids"]))
+        else:
+            n_results = min(k, col.count())
+        if n_results == 0:
+            return []
+        results = col.query(
+            query_texts=[text],
+            n_results=n_results,
+            where=where,
+            include=["distances"],
+        )
+        ids = results["ids"][0]
+        distances = results["distances"][0]
+        return [(id_, round(1.0 / (1.0 + max(0.0, dist)), 3)) for id_, dist in zip(ids, distances)]
+
     def delete(
         self,
         collection: str,

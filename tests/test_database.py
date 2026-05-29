@@ -446,3 +446,49 @@ def test_get_latest_session_id_returns_most_recent(db):
 
 def test_get_latest_session_id_returns_none_for_no_interactions(db):
     assert db.get_latest_session_id(1) is None
+
+
+# ── validate_rule_candidate ───────────────────────────────────────────────────
+
+
+def test_validate_rule_no_existing_rules_returns_empty(db):
+    warnings = db.validate_rule_candidate(1, "Prefer early returns")
+    assert warnings == []
+
+
+def test_validate_rule_no_near_duplicate_returns_empty(db):
+    db.add_rule(1, "Use descriptive variable names", category="style")
+    warnings = db.validate_rule_candidate(1, "Always write tests before code")
+    assert warnings == []
+
+
+def test_validate_rule_detects_near_duplicate(db):
+    db.add_rule(1, "Prefer early returns in functions", category="style")
+    warnings = db.validate_rule_candidate(1, "Prefer early returns in functions")
+    assert len(warnings) == 1
+    assert warnings[0]["type"] == "duplicate"
+    assert warnings[0]["similarity"] >= 0.99
+
+
+def test_validate_rule_detects_paraphrase_above_threshold(db):
+    db.add_rule(1, "Prefer early returns in functions", category="style")
+    # One word changed — ratio stays well above 0.75
+    warnings = db.validate_rule_candidate(1, "Prefer early returns in all functions")
+    assert any(w["type"] == "duplicate" for w in warnings)
+
+
+def test_validate_rule_returns_highest_similarity_first(db):
+    db.add_rule(1, "Prefer early returns", category="style")
+    db.add_rule(1, "Prefer early return statements in all functions", category="style")
+    warnings = db.validate_rule_candidate(1, "Prefer early returns")
+    sims = [w["similarity"] for w in warnings]
+    assert sims == sorted(sims, reverse=True)
+
+
+def test_validate_rule_custom_threshold(db):
+    db.add_rule(1, "Prefer early returns", category="style")
+    # High threshold — should not flag even similar text
+    warnings = db.validate_rule_candidate(
+        1, "Prefer early returns in long functions", duplicate_threshold=0.99
+    )
+    assert warnings == []

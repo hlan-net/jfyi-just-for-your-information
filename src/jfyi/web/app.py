@@ -89,6 +89,10 @@ class RuleCreate(BaseModel):
     confidence: float = 0.5
 
 
+class RuleValidateRequest(BaseModel):
+    text: str
+
+
 class RuleUpdate(BaseModel):
     text: str
     category: str
@@ -553,6 +557,15 @@ def _register_profile_api(app: FastAPI) -> None:
         return db.get_rules(
             user_id=current_user["id"], category=category, project_context=project_context
         )
+
+    @app.post("/api/profile/rules/validate")
+    async def validate_rule(
+        body: RuleValidateRequest, current_user: CurrentUser, db: DBDep
+    ) -> dict[str, Any]:
+        warnings = await asyncio.to_thread(
+            db.validate_rule_candidate, current_user["id"], body.text
+        )
+        return {"warnings": warnings}
 
     @app.post("/api/profile/rules", status_code=201)
     async def create_rule(body: RuleCreate, current_user: CurrentUser, db: DBDep) -> dict[str, Any]:

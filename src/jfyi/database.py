@@ -907,6 +907,86 @@ class Database:
             )
         return ok
 
+    def _rule_text(self, rule: dict[str, Any]) -> str:
+        return rule.get("text", rule.get("rule", ""))
+
+    def _apply_text_similarity(
+        self,
+        text: str,
+        existing: list[dict[str, Any]],
+        threshold: float,
+        warnings: dict[int, dict[str, Any]],
+    ) -> None:
+        from difflib import SequenceMatcher
+
+        for rule in existing:
+            rule_text = self._rule_text(rule)
+            ratio = round(SequenceMatcher(None, text.lower(), rule_text.lower()).ratio(), 2)
+            if ratio >= threshold:
+                warnings[rule["id"]] = {
+                    "type": "duplicate",
+                    "rule_id": rule["id"],
+                    "rule_text": rule_text,
+                    "similarity": ratio,
+                }
+
+    def _apply_vector_similarity(
+        self,
+        text: str,
+        user_id: int,
+        existing: list[dict[str, Any]],
+        threshold: float,
+        warnings: dict[int, dict[str, Any]],
+    ) -> None:
+        if not self._vs:
+            return
+        scored = self._vs.query_with_scores("rules", text, k=5, where={"user_id": user_id})
+        id_to_rule = {rule["id"]: rule for rule in existing}
+        for id_str, score in scored:
+            try:
+                rule_id = int(id_str)
+            except ValueError:
+                continue
+            if score < threshold:
+                continue
+            existing_score = warnings.get(rule_id, {}).get("similarity", 0.0)
+            if score > existing_score:
+                rule = id_to_rule.get(rule_id)
+                if rule:
+                    warnings[rule_id] = {
+                        "type": "duplicate",
+                        "rule_id": rule_id,
+                        "rule_text": self._rule_text(rule),
+                        "similarity": score,
+                    }
+
+    def validate_rule_candidate(
+        self,
+        user_id: int,
+        text: str,
+        duplicate_threshold: float = 0.75,
+    ) -> list[dict[str, Any]]:
+        """Check a candidate rule text for near-duplicates in the existing corpus.
+
+        Returns a list of warning dicts with keys: type, rule_id, rule_text,
+        similarity. Two detection paths run and are merged by rule_id, keeping
+        the higher similarity score:
+
+        1. Text similarity (always): difflib SequenceMatcher ratio.
+        2. Vector similarity (when ChromaDB is available): semantic similarity.
+
+        Contradiction detection (high similarity + opposing polarity) requires
+        LLM support to avoid false positives and is deferred to a future item.
+        """
+        existing = self.get_rules(user_id)
+        if not existing:
+            return []
+
+        warnings: dict[int, dict[str, Any]] = {}
+        self._apply_text_similarity(text, existing, duplicate_threshold, warnings)
+        self._apply_vector_similarity(text, user_id, existing, duplicate_threshold, warnings)
+        return sorted(warnings.values(), key=lambda w: w["similarity"], reverse=True)
+
     def delete_rule(self, user_id: int, rule_id: int) -> bool:
         """Hard-delete a curated rule.
 
