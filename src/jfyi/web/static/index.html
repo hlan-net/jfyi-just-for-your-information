@@ -393,6 +393,7 @@
           <button v-if="rules.length > 0" @click="copyRules" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">
             {{ copied ? 'Copied!' : 'Copy all' }}
           </button>
+          <a v-if="rules.length > 0" :href="API + '/api/export/agents-md'" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;text-decoration:none;">Export AGENTS.md</a>
         </div>
       </div>
       <p class="desc">Curated cross-project, cross-agent rules that describe how you work. This is what agents see at session start. Build it by promoting <router-link to="/notes">notes</router-link> agents have filed about you, or add rules directly.</p>

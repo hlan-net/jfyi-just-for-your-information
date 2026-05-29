@@ -929,6 +929,58 @@ def _register_export_api(app: FastAPI) -> None:
         clusters = await asyncio.to_thread(db.get_friction_clusters, user_id=uid)
         return _json_response(analytics_bundle(agents, vibe, clusters), "analytics")
 
+    @app.get("/api/export/agents-md")
+    async def export_agents_md(
+        current_user: CurrentUser,
+        db: DBDep,
+        project_context: str | None = None,
+    ) -> Response:
+        """Export the budget-capped constitution as a CLAUDE.md / AGENTS.md block.
+
+        Applies the same scope filter and token budget cap as get_developer_profile
+        so the snapshot can never contain more rules than an MCP call would inject.
+        """
+        from ..config import settings
+        from ..prompt import count_tokens, render_read_only_block, trim_rules_to_budget
+
+        uid = current_user["id"]
+
+        rules = await asyncio.to_thread(db.get_rules, user_id=uid, project_context=project_context)
+        effectiveness_map = {
+            e["rule_id"]: e["effectiveness_factor"]
+            for e in await asyncio.to_thread(db.get_rule_effectiveness, uid)
+        }
+
+        def _score(r: dict) -> tuple[int, float]:
+            scope_rank = {"project": 0, "agent": 1}.get(r.get("scope", "global"), 2)
+            return (-scope_rank, r.get("confidence", 0.5) * effectiveness_map.get(r["id"], 1.0))
+
+        rules = sorted(rules, key=_score, reverse=True)
+        rules, omitted = trim_rules_to_budget(rules, settings.constitution_token_budget)
+
+        project_note = f" (+ project rules for '{project_context}')" if project_context else ""
+        omitted_note = f"\n<!-- {omitted} rule(s) omitted by token budget -->" if omitted else ""
+        lines = [
+            "<!-- JFYI Developer Constitution — auto-generated; do not edit manually -->",
+            "<!-- Regenerate: GET /api/export/agents-md -->",
+            f"<!-- {len(rules)} rule(s){project_note}"
+            f" · {count_tokens(render_read_only_block(rules))} tokens -->",
+            omitted_note,
+            "",
+            "## Developer Constitution",
+            "",
+        ]
+        for r in rules:
+            lines.append(f"- [{r['category']}] {r.get('text', r.get('rule', ''))}")
+        content = "\n".join(line for line in lines if line is not None)
+
+        fname = "AGENTS.md" if not project_context else f"AGENTS-{project_context}.md"
+        return Response(
+            content=content,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+
     @app.get("/api/export/all")
     async def export_all(current_user: CurrentUser, db: DBDep) -> Response:
         uid = current_user["id"]
