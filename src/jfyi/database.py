@@ -907,6 +907,69 @@ class Database:
             )
         return ok
 
+    def validate_rule_candidate(
+        self,
+        user_id: int,
+        text: str,
+        duplicate_threshold: float = 0.75,
+    ) -> list[dict[str, Any]]:
+        """Check a candidate rule text for near-duplicates in the existing corpus.
+
+        Returns a list of warning dicts with keys: type, rule_id, rule_text,
+        similarity. Two detection paths run independently and are deduplicated
+        by rule_id before returning:
+
+        1. Text similarity (always): difflib SequenceMatcher ratio on lowercased
+           text. Catches near-literal duplicates regardless of vector availability.
+        2. Vector similarity (when ChromaDB is available): semantic similarity via
+           query_with_scores on the "rules" collection. Catches paraphrased
+           duplicates that differ in wording but share meaning.
+
+        Contradiction detection (high similarity + opposing polarity) requires
+        LLM support to avoid false positives and is deferred to a future item.
+        """
+        from difflib import SequenceMatcher
+
+        existing = self.get_rules(user_id)
+        if not existing:
+            return []
+
+        warnings: dict[int, dict[str, Any]] = {}
+
+        # Path 1: text similarity
+        for rule in existing:
+            rule_text = rule.get("text", rule.get("rule", ""))
+            ratio = SequenceMatcher(None, text.lower(), rule_text.lower()).ratio()
+            if ratio >= duplicate_threshold:
+                warnings[rule["id"]] = {
+                    "type": "duplicate",
+                    "rule_id": rule["id"],
+                    "rule_text": rule_text,
+                    "similarity": round(ratio, 2),
+                }
+
+        # Path 2: vector similarity (optional)
+        if self._vs:
+            scored = self._vs.query_with_scores("rules", text, k=5, where={"user_id": user_id})
+            id_to_rule = {rule["id"]: rule for rule in existing}
+            for id_str, score in scored:
+                try:
+                    rule_id = int(id_str)
+                except ValueError:
+                    continue
+                if score >= duplicate_threshold and rule_id not in warnings:
+                    rule = id_to_rule.get(rule_id)
+                    if rule:
+                        rule_text = rule.get("text", rule.get("rule", ""))
+                        warnings[rule_id] = {
+                            "type": "duplicate",
+                            "rule_id": rule_id,
+                            "rule_text": rule_text,
+                            "similarity": score,
+                        }
+
+        return sorted(warnings.values(), key=lambda w: w["similarity"], reverse=True)
+
     def delete_rule(self, user_id: int, rule_id: int) -> bool:
         """Hard-delete a curated rule.
 

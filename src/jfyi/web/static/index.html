@@ -360,9 +360,21 @@
           <option value="workflow">workflow</option>
         </select>
         <div v-if="composeError" style="color:var(--red);font-size:0.85rem;margin-bottom:0.5rem;">{{ composeError }}</div>
-        <div style="display:flex;justify-content:flex-end;gap:0.5rem;">
+        <!-- Duplicate warnings -->
+        <div v-if="composeWarnings.length" style="background:#2d2207;border:1px solid var(--orange);border-radius:6px;padding:0.75rem;margin-bottom:0.75rem;">
+          <div style="color:var(--orange);font-weight:600;font-size:0.85rem;margin-bottom:0.5rem;">⚠ Similar rule{{ composeWarnings.length > 1 ? 's' : '' }} already exist</div>
+          <div v-for="w in composeWarnings" :key="w.rule_id" style="font-size:0.8rem;color:var(--text);margin-bottom:0.4rem;padding:0.4rem;background:#1c1c1c;border-radius:4px;">
+            <span style="color:var(--muted);">{{ (w.similarity * 100).toFixed(0) }}% match · </span>{{ w.rule_text }}
+          </div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:0.5rem;">Proceed anyway to add as a separate rule, or cancel to merge/rewrite.</div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.6rem;">
+            <button @click="dismissWarnings" class="btn btn-outline" style="font-size:0.8rem;padding:0.3rem 0.8rem;">Cancel</button>
+            <button @click="acknowledgeWarnings" class="btn" style="font-size:0.8rem;padding:0.3rem 0.8rem;background:var(--orange);">Proceed anyway</button>
+          </div>
+        </div>
+        <div v-else style="display:flex;justify-content:flex-end;gap:0.5rem;">
           <button @click="showCompose = false" class="btn btn-outline">Cancel</button>
-          <button @click="composeRule" class="btn" :disabled="!composeText.trim() || composing">{{ composing ? 'Promoting…' : 'Promote' }}</button>
+          <button @click="composeRule" class="btn" :disabled="!composeText.trim() || composing">{{ composing ? 'Checking…' : 'Promote' }}</button>
         </div>
       </div>
     </div>
@@ -1389,6 +1401,8 @@ const Notes = {
     const composeCategory = ref('general');
     const composeError = ref('');
     const composing = ref(false);
+    const composeWarnings = ref([]);
+    const composeWarningsAcked = ref(false);
 
     const loadNotes = async () => {
       loading.value = true;
@@ -1425,6 +1439,22 @@ const Notes = {
       composing.value = true;
       composeError.value = '';
       try {
+        // Pre-flight: check for near-duplicates unless already acknowledged.
+        if (!composeWarningsAcked.value) {
+          const vRes = await fetch(API + '/api/profile/rules/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: composeText.value.trim() }),
+          });
+          if (vRes.ok) {
+            const vData = await vRes.json();
+            if (vData.warnings && vData.warnings.length > 0) {
+              composeWarnings.value = vData.warnings;
+              composing.value = false;
+              return; // pause — user must acknowledge or cancel
+            }
+          }
+        }
         const res = await fetch(API + '/api/profile/rules', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1438,6 +1468,8 @@ const Notes = {
         showCompose.value = false;
         composeText.value = '';
         composeCategory.value = 'general';
+        composeWarnings.value = [];
+        composeWarningsAcked.value = false;
         clearSelection();
         loadNotes();
       } catch (e) {
@@ -1447,6 +1479,17 @@ const Notes = {
       }
     };
 
+    const acknowledgeWarnings = () => {
+      composeWarningsAcked.value = true;
+      composeWarnings.value = [];
+      composeRule();
+    };
+
+    const dismissWarnings = () => {
+      composeWarnings.value = [];
+      composeWarningsAcked.value = false;
+    };
+
     const onApplied = () => { showSynthesis.value = false; loadNotes(); };
 
     onMounted(loadNotes);
@@ -1454,9 +1497,11 @@ const Notes = {
     return {
       notes, loading, showSynthesis, showCompose, selected,
       composeText, composeCategory, composeError, composing,
+      composeWarnings, composeWarningsAcked,
       selectedIds, selectedCount, categoryColor,
       toggle, selectAll, clearSelection, noteById,
       deleteNote, promoteNote, composeRule, onApplied,
+      acknowledgeWarnings, dismissWarnings,
     };
   }
 };
