@@ -860,6 +860,41 @@ class ClientRegistration(BaseModel):
     token_endpoint_auth_method: str = "none"
 
 
+def _agents_md_response(
+    rules: list[dict[str, Any]],
+    omitted: int,
+    project_context: str | None,
+) -> Response:
+    """Render budget-capped rules as a CLAUDE.md / AGENTS.md markdown block."""
+    from ..prompt import count_tokens, render_read_only_block
+
+    project_note = f" (+ project rules for '{project_context}')" if project_context else ""
+    lines = [
+        "<!-- JFYI Developer Constitution — auto-generated; do not edit manually -->",
+        "<!-- Regenerate: GET /api/export/agents-md -->",
+        f"<!-- {len(rules)} rule(s){project_note}"
+        f" · {count_tokens(render_read_only_block(rules))} tokens -->",
+    ]
+    if omitted:
+        lines.append(f"<!-- {omitted} rule(s) omitted by token budget -->")
+    lines.extend(["", "## Developer Constitution", ""])
+    for r in rules:
+        category = r.get("category", "general")
+        lines.append(f"- [{category}] {r.get('text', r.get('rule', ''))}")
+
+    safe_context = (
+        "".join(c for c in project_context if c.isalnum() or c in ("-", "_"))
+        if project_context
+        else ""
+    )
+    fname = "AGENTS.md" if not safe_context else f"AGENTS-{safe_context}.md"
+    return Response(
+        content="\n".join(lines),
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 def _register_export_api(app: FastAPI) -> None:
     """Routes that export user-scoped data to JSON or CSV for backup/analysis."""
     from ..exports import (
@@ -935,55 +970,25 @@ def _register_export_api(app: FastAPI) -> None:
         db: DBDep,
         project_context: str | None = None,
     ) -> Response:
-        """Export the budget-capped constitution as a CLAUDE.md / AGENTS.md block.
-
-        Applies the same scope filter and token budget cap as get_developer_profile
-        so the snapshot can never contain more rules than an MCP call would inject.
-        """
         from ..config import settings
-        from ..prompt import count_tokens, render_read_only_block, trim_rules_to_budget
+        from ..prompt import trim_rules_to_budget
 
         uid = current_user["id"]
-
         rules = await asyncio.to_thread(db.get_rules, user_id=uid, project_context=project_context)
-        effectiveness_map = {
+        emap = {
             e["rule_id"]: e["effectiveness_factor"]
             for e in await asyncio.to_thread(db.get_rule_effectiveness, uid)
         }
-
-        def _score(r: dict) -> tuple[int, float]:
-            scope_rank = {"project": 0, "agent": 1}.get(r.get("scope", "global"), 2)
-            return (-scope_rank, r.get("confidence", 0.5) * effectiveness_map.get(r["id"], 1.0))
-
-        rules = sorted(rules, key=_score, reverse=True)
+        rules = sorted(
+            rules,
+            key=lambda r: (
+                -{"project": 0, "agent": 1}.get(r.get("scope", "global"), 2),
+                r.get("confidence", 0.5) * emap.get(r["id"], 1.0),
+            ),
+            reverse=True,
+        )
         rules, omitted = trim_rules_to_budget(rules, settings.constitution_token_budget)
-
-        project_note = f" (+ project rules for '{project_context}')" if project_context else ""
-        lines = [
-            "<!-- JFYI Developer Constitution — auto-generated; do not edit manually -->",
-            "<!-- Regenerate: GET /api/export/agents-md -->",
-            f"<!-- {len(rules)} rule(s){project_note}"
-            f" · {count_tokens(render_read_only_block(rules))} tokens -->",
-        ]
-        if omitted:
-            lines.append(f"<!-- {omitted} rule(s) omitted by token budget -->")
-        lines.extend(["", "## Developer Constitution", ""])
-        for r in rules:
-            category = r.get("category", "general")
-            lines.append(f"- [{category}] {r.get('text', r.get('rule', ''))}")
-        content = "\n".join(lines)
-
-        safe_context = (
-            "".join(c for c in project_context if c.isalnum() or c in ("-", "_"))
-            if project_context
-            else ""
-        )
-        fname = "AGENTS.md" if not safe_context else f"AGENTS-{safe_context}.md"
-        return Response(
-            content=content,
-            media_type="text/markdown",
-            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-        )
+        return _agents_md_response(rules, omitted, project_context)
 
     @app.get("/api/export/all")
     async def export_all(current_user: CurrentUser, db: DBDep) -> Response:
