@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -814,6 +814,101 @@ class ClientRegistration(BaseModel):
     token_endpoint_auth_method: str = "none"
 
 
+def _register_export_api(app: FastAPI) -> None:
+    """Routes that export user-scoped data to JSON or CSV for backup/analysis."""
+    from ..exports import (
+        AGENT_STATS_FIELDS,
+        INTERACTION_FIELDS,
+        RULE_FIELDS,
+        all_bundle,
+        analytics_bundle,
+        filename,
+        parse_json_field,
+        profile_bundle,
+        rows_to_csv,
+        to_json,
+    )
+
+    def _csv_response(content: str, kind: str) -> Response:
+        return Response(
+            content=content,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{filename(kind, "csv")}"'
+                )
+            },
+        )
+
+    def _json_response(payload: Any, kind: str) -> Response:
+        return Response(
+            content=to_json(payload),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{filename(kind, "json")}"'
+                )
+            },
+        )
+
+    @app.get("/api/export/profile")
+    async def export_profile(
+        current_user: CurrentUser, db: DBDep, format: str = "json"
+    ) -> Response:
+        uid = current_user["id"]
+        rules = await asyncio.to_thread(db.get_rules, user_id=uid)
+        if format == "csv":
+            return _csv_response(rows_to_csv(rules, RULE_FIELDS), "profile")
+        notes = await asyncio.to_thread(db.get_notes, user_id=uid)
+        return _json_response(profile_bundle(rules, notes), "profile")
+
+    @app.get("/api/export/interactions")
+    async def export_interactions(
+        current_user: CurrentUser,
+        db: DBDep,
+        format: str = "json",
+        since: str | None = None,
+    ) -> Response:
+        rows = await asyncio.to_thread(
+            db.export_interactions, user_id=current_user["id"], since=since
+        )
+        if format == "csv":
+            return _csv_response(rows_to_csv(rows, INTERACTION_FIELDS), "interactions")
+        # Parse the JSON-stringified `metadata` column so the JSON export is
+        # single-encoded throughout (avoids a JSON string inside a JSON payload).
+        parse_json_field(rows, "metadata")
+        return _json_response(rows, "interactions")
+
+    @app.get("/api/export/analytics")
+    async def export_analytics(
+        current_user: CurrentUser, db: DBDep, format: str = "json"
+    ) -> Response:
+        uid = current_user["id"]
+        agents = await asyncio.to_thread(db.get_agent_stats, user_id=uid)
+        if format == "csv":
+            return _csv_response(rows_to_csv(agents, AGENT_STATS_FIELDS), "analytics")
+        vibe = await asyncio.to_thread(db.get_vibe_matches, user_id=uid, limit=1000)
+        clusters = await asyncio.to_thread(db.get_friction_clusters, user_id=uid)
+        return _json_response(analytics_bundle(agents, vibe, clusters), "analytics")
+
+    @app.get("/api/export/all")
+    async def export_all(current_user: CurrentUser, db: DBDep) -> Response:
+        uid = current_user["id"]
+        # Run all DB queries in a thread so the route doesn't block the loop.
+        bundle = await asyncio.to_thread(
+            lambda: all_bundle(
+                rules=db.get_rules(user_id=uid),
+                notes=db.get_notes(user_id=uid),
+                interactions=db.export_interactions(user_id=uid),
+                agents=db.get_agent_stats(user_id=uid),
+                vibe_matches=db.get_vibe_matches(user_id=uid, limit=10000),
+                friction_clusters=db.get_friction_clusters(user_id=uid),
+                friction_events=db.get_friction_events(user_id=uid, limit=10000),
+            )
+        )
+        return _json_response(bundle, "backup")
+
+
 def _register_oauth_server_api(app: FastAPI) -> None:
     import secrets
     from urllib.parse import urlencode, urlparse
@@ -999,6 +1094,7 @@ def create_app(
     _register_synthesis_api(app)
     _register_analytics_api(app)
     _register_developer_api(app)
+    _register_export_api(app)
     _register_oauth_server_api(app)
 
     if STATIC_DIR.exists():
