@@ -959,22 +959,26 @@ def _register_export_api(app: FastAPI) -> None:
         rules, omitted = trim_rules_to_budget(rules, settings.constitution_token_budget)
 
         project_note = f" (+ project rules for '{project_context}')" if project_context else ""
-        omitted_note = f"\n<!-- {omitted} rule(s) omitted by token budget -->" if omitted else ""
         lines = [
             "<!-- JFYI Developer Constitution — auto-generated; do not edit manually -->",
             "<!-- Regenerate: GET /api/export/agents-md -->",
             f"<!-- {len(rules)} rule(s){project_note}"
             f" · {count_tokens(render_read_only_block(rules))} tokens -->",
-            omitted_note,
-            "",
-            "## Developer Constitution",
-            "",
         ]
+        if omitted:
+            lines.append(f"<!-- {omitted} rule(s) omitted by token budget -->")
+        lines.extend(["", "## Developer Constitution", ""])
         for r in rules:
-            lines.append(f"- [{r['category']}] {r.get('text', r.get('rule', ''))}")
-        content = "\n".join(line for line in lines if line is not None)
+            category = r.get("category", "general")
+            lines.append(f"- [{category}] {r.get('text', r.get('rule', ''))}")
+        content = "\n".join(lines)
 
-        fname = "AGENTS.md" if not project_context else f"AGENTS-{project_context}.md"
+        safe_context = (
+            "".join(c for c in project_context if c.isalnum() or c in ("-", "_"))
+            if project_context
+            else ""
+        )
+        fname = "AGENTS.md" if not safe_context else f"AGENTS-{safe_context}.md"
         return Response(
             content=content,
             media_type="text/markdown",
