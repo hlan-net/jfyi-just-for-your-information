@@ -112,9 +112,17 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
                         "When provided, includes project-scoped rules in addition to global rules."
                     ),
                 },
+                "session_id": {
+                    "type": "string",
+                    "description": (
+                        "Current session identifier (same value used in record_interaction). "
+                        "When provided, JFYI tracks which rules were served to enable "
+                        "confidence decay and effectiveness scoring."
+                    ),
+                },
             },
         },
-        "example": "get_developer_profile(project_context='jfyi')  # or omit for global only",
+        "example": "get_developer_profile(project_context='jfyi', session_id='ses-abc123')",
     },
     "get_agent_analytics": {
         "description": (
@@ -483,6 +491,7 @@ async def dispatch_tool(
     if name == "get_developer_profile":
         category = arguments.get("category")
         project_context = arguments.get("project_context")
+        session_id = arguments.get("session_id")
         rules = db.get_rules(user_id=user_id, category=category, project_context=project_context)
         if not rules:
             return [
@@ -498,6 +507,19 @@ async def dispatch_tool(
             ]
         from .config import settings
 
+        # Re-sort by confidence × effectiveness so the cap spends budget on
+        # rules that demonstrably reduce work, not just recently reinforced ones.
+        effectiveness_map = {
+            e["rule_id"]: e["effectiveness_factor"]
+            for e in await asyncio.to_thread(db.get_rule_effectiveness, user_id)
+        }
+
+        def _selection_score(r: dict) -> tuple[int, float]:
+            scope_rank = {"project": 0, "agent": 1}.get(r.get("scope", "global"), 2)
+            score = r.get("confidence", 0.5) * effectiveness_map.get(r["id"], 1.0)
+            return (-scope_rank, score)
+
+        rules = sorted(rules, key=_selection_score, reverse=True)
         rules, omitted = trim_rules_to_budget(rules, settings.constitution_token_budget)
         block = render_read_only_block(rules)
         project_note = f" (+ project rules for '{project_context}')" if project_context else ""
@@ -511,6 +533,10 @@ async def dispatch_tool(
         await asyncio.to_thread(
             db.record_constitution_snapshot, user_id, len(rules), count_tokens(payload)
         )
+        if session_id:
+            await asyncio.to_thread(
+                db.record_rule_injections, user_id, session_id, [r["id"] for r in rules]
+            )
         return [TextContent(type="text", text=payload)]
 
     if name == "record_interaction":

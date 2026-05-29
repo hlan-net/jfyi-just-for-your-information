@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     # DLP / PII redaction
     dlp_enabled: bool = True  # Set to false in local dev to bypass redaction
 
+    # Rule confidence decay
+    rule_decay_delta: float = 0.05  # confidence decremented per unserved window
+    rule_decay_window: int = 20  # min served sessions before decay kicks in
+    rule_decay_min_confidence: float = 0.1  # floor — rules never decay below this
+    rule_retirement_threshold: float = 0.25  # surface in retirement queue below this
+
     # Constitution token budget — max tokens injected by get_developer_profile.
     # Rules are selected by confidence (highest first) until the budget is reached.
     # Set to 0 to disable the cap (inject all rules, old behaviour).
