@@ -45,7 +45,9 @@ The MCP response includes a `rules_omitted: N` field when the cap bites, so the 
 
 ### 2. Rule Lifecycle & Confidence Decay
 
-Add a background job (alongside the existing background summarizer) that runs after each session. For each rule, if no reinforcement event (`record_interaction` with a matching correction, or a Vibe Match hit on that rule) has occurred in the last N interactions, decrement confidence by a small fixed delta (floor: a configurable minimum above 0 so rules don't silently vanish). The delta and window N are configurable via `JFYI_RULE_DECAY_DELTA` and `JFYI_RULE_DECAY_WINDOW`.
+Add a background job (alongside the existing background summarizer) that runs after each session. For each rule, if no reinforcement event (`record_interaction` with a matching correction, or a Vibe Match hit on that rule) has occurred in the last N *sessions where the rule was actually served* (i.e. where `get_developer_profile` returned it), decrement confidence by a small fixed delta (floor: a configurable minimum above 0 so rules don't silently vanish). The delta and window N are configurable via `JFYI_RULE_DECAY_DELTA` and `JFYI_RULE_DECAY_WINDOW`.
+
+Critically, decay is gated on **served sessions**, not global interaction count. A project-scoped rule (Tiered Profiling, `v2.12.0`) is only injected when its `project_context` matches — so if the developer hasn't touched that project in N interactions, the rule was never served during those interactions and must not be penalised for them. The `rule_injections` table introduced by item 4 is the authoritative source of "was this rule served?" — items 2 and 4 share that dependency and should be implemented together.
 
 Rules whose confidence drops below a configurable threshold surface in a **retirement queue** in the dashboard. The queue shows the rule text, current confidence, and last-reinforced date. The human retires, rewrites, or explicitly refreshes (resetting decay). Decay is a signal *to* the curator — never an automatic delete.
 
@@ -58,13 +60,13 @@ When the human composes or promotes a rule via the synthesis preview, run the ca
 - **Near-duplicates**: cosine similarity above a configurable threshold — suggest merging rather than adding.
 - **Semantic contradictions**: embed both rules and check for high similarity with opposing sentiment — surface as a warning for human adjudication.
 
-The check is a guardrail on the curation surface, not a blocker — the human can override it. It runs client-side in the dashboard before the `POST /api/profile/rules` call completes. No new MCP tool; no change to the agent-writable surface.
+The check is a guardrail on the curation surface, not a blocker — the human can override it. Because vector embedding lookups require ChromaDB (server-side), the check is implemented as a server-side pre-flight: `POST /api/profile/rules/validate` accepts the candidate rule text and returns any duplicate/conflict warnings before the dashboard commits the rule via `POST /api/profile/rules`. The dashboard calls validate on compose, shows inline warnings, and lets the human proceed or discard. No new MCP tool; no change to the agent-writable surface.
 
 ### 4. Rule Effectiveness Scoring
 
 Track `profile_rules` against `friction_events` at the session level:
 
-- When `get_developer_profile` is called, record which rule IDs were served (a new `rule_injections` table: `session_id`, `rule_id`, `served_at`).
+- When `get_developer_profile` is called, record which rule IDs were served (a new `rule_injections` table: `session_id`, `rule_id`, `served_at`). Because the current tool schema (`src/jfyi/server.py:101`) does not accept a `session_id`, the tool signature must be updated to accept an optional `session_id` argument — or the SSE transport session context must be propagated into the tool handler so the server can resolve it without requiring the caller to supply it. The optional-argument approach is simpler and keeps the tool self-contained; the transport-propagation approach avoids a schema change but is more invasive. Implementation should pick one and document the choice.
 - At session end, join against `friction_events` for the same session.
 - Compute a per-rule **effectiveness delta**: the difference in friction rate between sessions where the rule was served and sessions where it was not. A negative delta (less friction when loaded) is good; positive or zero is a signal the rule may not be earning its slot.
 
