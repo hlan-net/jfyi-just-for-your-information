@@ -1682,6 +1682,13 @@ const Analytics = {
   }
 };
 
+function budgetColor(v) {
+  if (!v) return 'var(--muted)';
+  if (v < 200) return 'var(--green)';
+  if (v < 500) return 'var(--orange)';
+  return 'var(--red)';
+}
+
 const DeveloperAnalytics = {
   template: '#developer-template',
   setup() {
@@ -1742,13 +1749,6 @@ const DeveloperAnalytics = {
       if (v < 0.5) return 'var(--orange)';
       return 'var(--red)';
     }
-    function budgetColor(v) {
-      if (!v) return 'var(--muted)';
-      if (v < 200) return 'var(--green)';
-      if (v < 500) return 'var(--orange)';
-      return 'var(--red)';
-    }
-
     // Constitution budget sparkline — viewBox "0 0 620 100", margins l=45 r=10 t=5 b=20
     const BSX = 45, BEX = 610, BSY = 5, BEY = 80;
     const budgetPoints = computed(() => {
