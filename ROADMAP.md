@@ -175,14 +175,14 @@ Standalone improvements to the web dashboard that do not require new MCP tools o
 
 ---
 
-## v2.14.0 — Reporting & Export 🔭 Planned
+## ✓ v2.14.0 — Reporting & Export
 
 Surfaces the data JFYI holds in two forms: raw (machine-readable) and synthesised (human-readable). Both are pure read-side features — no schema changes, no new core dependencies. The flagship is the **Vibe Coder Profile Report**: a narrative portrait of the developer as a coder, turning the profile JFYI builds for the agent back around to show the human.
 
-| Item | Tag | Status | Spec |
-|------|-----|--------|------|
-| [Vibe Coder Profile Report](docs/vibe-profile-report.md) | Supplementary | Planned | [docs/vibe-profile-report.md](docs/vibe-profile-report.md) |
-| [Structured Data Export](docs/data-export.md) | Supplementary | Planned | [docs/data-export.md](docs/data-export.md) |
+| Item | Tag | Status | PR |
+|------|-----|--------|----|
+| [Vibe Coder Profile Report](docs/vibe-profile-report.md) | Supplementary | Done | [#48](https://github.com/hlan-net/jfyi-just-for-your-information/pull/48) |
+| [Structured Data Export](docs/data-export.md) | Supplementary | Done | [#49](https://github.com/hlan-net/jfyi-just-for-your-information/pull/49) |
 
 **Vibe Coder Profile Report** synthesises every tier — constitution, signature patterns, friction profile, agent affinity, best work — into a styled, human-readable document answering *"who am I as a vibe coder?"*. An LLM (the already-configured `claude-haiku-4-5`) writes a second-person prose portrait grounded strictly in the data; without an API key the structured sections still render. Delivered as a print-styled HTML report (`GET /reports/vibe-profile`) that the browser saves to PDF — no PDF library, no image bloat. A downloadable `.pdf` via `fpdf2` is a deliberate later step. Supplementary, but with a real feedback loop into Core: reading your own profile is the most natural trigger to refine it.
 
@@ -190,9 +190,9 @@ Surfaces the data JFYI holds in two forms: raw (machine-readable) and synthesise
 
 ---
 
-## Proposals — Constitution Token Budget 🔭 Unscheduled
+## v2.15.0 — Constitution Token Budget 🔭 Planned
 
-Candidate items for a future minor release (tentatively `v2.15.0`), proposed for discussion — not yet committed. Each is evaluated against the test in [`docs/architecture.md`](docs/architecture.md): *does this serve the agent reading better-curated info about the user?*
+Each item is evaluated against the test in [`docs/architecture.md`](docs/architecture.md): *does this serve the agent reading better-curated info about the user?* Full spec: [`docs/constitution-token-budget.md`](docs/constitution-token-budget.md).
 
 **Thesis: treat the curated rules constitution as a fixed token budget, not a growing corpus.** The constitution is served by `get_developer_profile` on *every* interaction initiation, so its real cost is **injected tokens × call frequency** — paid constantly, regardless of how often any given rule is relevant. Today nothing enforces a bound: the read path (`get_rules`) returns *every* non-archived rule (scope-filtered only when a `project_context` is supplied), and confidence is **boost-only** — Positive Reinforcement (`v2.12.0`) pushes it up on a match but nothing ever pulls it down. The architecture *says* "the rules tier has to stay small"; nothing in the code *makes* it. These items add the missing enforcement.
 
