@@ -297,8 +297,36 @@
       <p class="desc">Observations agents have filed about how you work. Review them, then promote useful patterns into your <router-link to="/profile">Developer Profile</router-link> (the curated constitution agents see).</p>
 
       <div v-if="loading" class="loading-screen" style="height: 100px;">Loading notes...</div>
-      <div v-else-if="notes.length === 0" class="empty">
+      <div v-else-if="notes.length === 0 && !showInterview" class="empty">
         <div class="icon">📝</div>No notes yet — agents will file observations here as you work.
+        <div style="margin-top:1rem;">
+          <button @click="startInterview" class="btn" style="font-size:0.85rem;">Start profile interview</button>
+        </div>
+        <div style="margin-top:0.5rem;font-size:0.8rem;color:var(--muted);">Answer a few questions to seed your profile before agents start observing.</div>
+      </div>
+      <!-- Cold-start interview -->
+      <div v-else-if="showInterview" class="card" style="margin-bottom:0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <h3 style="margin:0;">Profile Interview</h3>
+          <button @click="showInterview = false" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;">×</button>
+        </div>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1.25rem;">Answer whichever questions apply to you. Each answer becomes a raw note that you can promote into a rule later. Skip any that don't apply.</p>
+        <div v-if="interviewLoading" class="loading-screen" style="height:80px;"><div class="spinner"></div></div>
+        <div v-else>
+          <div v-for="q in interviewQuestions" :key="q.id" style="margin-bottom:1.25rem;">
+            <label style="display:block;font-weight:600;font-size:0.88rem;margin-bottom:0.4rem;">{{ q.question }}</label>
+            <textarea v-model="interviewAnswers[q.id]" :placeholder="q.placeholder" rows="2"
+              style="width:100%;padding:0.4rem 0.6rem;border:1px solid var(--border);border-radius:4px;font:inherit;background:#0d1117;color:var(--text);resize:vertical;">
+            </textarea>
+          </div>
+          <div v-if="interviewError" style="color:var(--red);font-size:0.85rem;margin-bottom:0.75rem;">{{ interviewError }}</div>
+          <div style="display:flex;justify-content:flex-end;gap:0.5rem;">
+            <button @click="showInterview = false" class="btn btn-outline">Cancel</button>
+            <button @click="submitInterview" class="btn" :disabled="interviewSubmitting || !hasAnyAnswer">
+              {{ interviewSubmitting ? 'Saving…' : 'Save answers as notes' }}
+            </button>
+          </div>
+        </div>
       </div>
       <div v-else>
         <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;">
@@ -1455,6 +1483,46 @@ const Notes = {
     const composing = ref(false);
     const composeWarnings = ref([]);
     const composeWarningsAcked = ref(false);
+    const showInterview = ref(false);
+    const interviewQuestions = ref([]);
+    const interviewAnswers = reactive({});
+    const interviewLoading = ref(false);
+    const interviewSubmitting = ref(false);
+    const interviewError = ref('');
+    const hasAnyAnswer = computed(() =>
+      Object.values(interviewAnswers).some(v => v && v.trim().length > 0)
+    );
+
+    const startInterview = async () => {
+      showInterview.value = true;
+      interviewLoading.value = true;
+      try {
+        const res = await fetch(API + '/api/profile/interview');
+        if (res.ok) {
+          interviewQuestions.value = await res.json();
+          interviewQuestions.value.forEach(q => { if (!(q.id in interviewAnswers)) interviewAnswers[q.id] = ''; });
+        }
+      } finally { interviewLoading.value = false; }
+    };
+
+    const submitInterview = async () => {
+      interviewSubmitting.value = true;
+      interviewError.value = '';
+      try {
+        const answered = interviewQuestions.value.filter(q => interviewAnswers[q.id]?.trim());
+        for (const q of answered) {
+          await fetch(API + '/api/profile/notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: interviewAnswers[q.id].trim(), category: q.category }),
+          });
+        }
+        showInterview.value = false;
+        loadNotes();
+      } catch (e) {
+        interviewError.value = e.message || 'Failed to save answers';
+      } finally { interviewSubmitting.value = false; }
+    };
 
     const loadNotes = async () => {
       loading.value = true;
@@ -1550,6 +1618,9 @@ const Notes = {
       notes, loading, showSynthesis, showCompose, selected,
       composeText, composeCategory, composeError, composing,
       composeWarnings, composeWarningsAcked,
+      showInterview, interviewQuestions, interviewAnswers,
+      interviewLoading, interviewSubmitting, interviewError, hasAnyAnswer,
+      startInterview, submitInterview,
       selectedIds, selectedCount, categoryColor,
       toggle, selectAll, clearSelection, noteById,
       deleteNote, promoteNote, composeRule, onApplied,

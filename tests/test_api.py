@@ -361,3 +361,37 @@ def test_synthesize_apply_model_id_outside_batch_is_rejected(client):
     rules = client.get("/api/profile/rules").json()
     assert rogue_id not in rules[0]["source_note_ids"]
     assert n1 in rules[0]["source_note_ids"]
+
+
+# ── Cold-start interview ───────────────────────────────────────────────────────
+
+
+def test_get_interview_returns_questions(client):
+    resp = client.get("/api/profile/interview")
+    assert resp.status_code == 200
+    questions = resp.json()
+    assert len(questions) >= 3
+    for q in questions:
+        assert "id" in q
+        assert "category" in q
+        assert "question" in q
+        assert "placeholder" in q
+
+
+def test_interview_questions_cover_expected_categories(client):
+    resp = client.get("/api/profile/interview")
+    categories = {q["category"] for q in resp.json()}
+    assert "style" in categories
+    assert "testing" in categories
+    assert "architecture" in categories
+
+
+def test_interview_requires_auth(tmp_path, monkeypatch):
+    monkeypatch.setattr("jfyi.web.app.settings.single_user_mode", False)
+    db = Database(tmp_path / "test.db")
+    db.create_user("test@example.com")
+    analytics = AnalyticsEngine(db)
+    app = create_app(db, analytics)
+    c = TestClient(app)
+    resp = c.get("/api/profile/interview")
+    assert resp.status_code == 401
