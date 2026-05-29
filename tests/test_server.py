@@ -1,5 +1,7 @@
 """Tests for the MCP tool dispatch layer in jfyi.server."""
 
+from unittest.mock import patch
+
 import pytest
 
 from jfyi.analytics import AnalyticsEngine
@@ -94,6 +96,41 @@ async def test_session_telemetry_includes_constitution_counts(ctx):
     assert "constitution_token_count" in telemetry
     assert telemetry["constitution_rule_count"] == 1
     assert telemetry["constitution_token_count"] > 0
+
+
+async def test_get_developer_profile_budget_cap_omits_low_confidence_rules(ctx):
+    db, analytics = ctx
+    # Add rules with varying confidence — get_rules returns highest confidence first.
+    db.add_rule(1, "High confidence rule", category="style", confidence=0.9)
+    db.add_rule(1, "Medium confidence rule", category="style", confidence=0.5)
+    db.add_rule(1, "Low confidence rule that should be cut", category="style", confidence=0.1)
+
+    # Set a tight budget (15 tokens) that fits ~2 rules but not all 3.
+    with patch("jfyi.config.settings") as mock_settings:
+        mock_settings.constitution_token_budget = 15
+        result = await dispatch_tool("get_developer_profile", {}, db, analytics)
+
+    text = result[0].text
+    assert "High confidence rule" in text
+    assert "omitted (budget)" in text
+    assert "Low confidence rule that should be cut" not in text
+
+
+async def test_get_developer_profile_no_cap_when_budget_zero(ctx):
+    db, analytics = ctx
+    db.add_rule(1, "Rule one", category="style")
+    db.add_rule(1, "Rule two", category="style")
+    db.add_rule(1, "Rule three", category="style")
+
+    with patch("jfyi.config.settings") as mock_settings:
+        mock_settings.constitution_token_budget = 0
+        result = await dispatch_tool("get_developer_profile", {}, db, analytics)
+
+    text = result[0].text
+    assert "Rule one" in text
+    assert "Rule two" in text
+    assert "Rule three" in text
+    assert "omitted" not in text
 
 
 async def test_add_profile_note(ctx):

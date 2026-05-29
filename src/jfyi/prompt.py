@@ -20,6 +20,28 @@ def count_tokens(text: str) -> int:
     return len(text.split())
 
 
+def trim_rules_to_budget(rules: list[dict], budget: int) -> tuple[list[dict], int]:
+    """Select rules greedily by token count, highest-confidence first.
+
+    Returns (selected_rules, omitted_count). Rules are assumed to already be
+    sorted by the caller (confidence DESC within scope tiers). The first rule
+    is always included even if it alone exceeds the budget, so the constitution
+    is never empty when rules exist.
+    """
+    if not budget:
+        return rules, 0
+    selected: list[dict] = []
+    tokens = 0
+    for r in rules:
+        body = r.get("text", r.get("rule", ""))
+        rule_tokens = count_tokens(f"  - [{r['category']}] {body}")
+        if selected and tokens + rule_tokens > budget:
+            break
+        selected.append(r)
+        tokens += rule_tokens
+    return selected, len(rules) - len(selected)
+
+
 def render_read_only_block(rules: list[dict]) -> str:
     """Render profile rules in a structurally fenced, read-only injection block."""
     lines = [

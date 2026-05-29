@@ -853,7 +853,7 @@ class Database:
                 + scope_clause
                 + category_clause
                 + " ORDER BY CASE scope WHEN 'project' THEN 0 WHEN 'agent' THEN 1 ELSE 2 END,"
-                " id DESC",
+                " confidence DESC, id DESC",
                 params,
             ).fetchall()
             results: list[dict[str, Any]] = []

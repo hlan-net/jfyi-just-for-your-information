@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     # DLP / PII redaction
     dlp_enabled: bool = True  # Set to false in local dev to bypass redaction
 
+    # Constitution token budget — max tokens injected by get_developer_profile.
+    # Rules are selected by confidence (highest first) until the budget is reached.
+    # Set to 0 to disable the cap (inject all rules, old behaviour).
+    constitution_token_budget: int = 500
+
     # Instruction-Tool Retrieval (requires enable_vector_db=true)
     itr_enabled: bool = False  # semantic tool selection on discover_tools(query=...)
     itr_token_budget: int = 2000  # max combined token cost for retrieved tools
