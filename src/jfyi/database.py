@@ -803,6 +803,114 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def merge_accounts(self, source_user_id: int, target_user_id: int) -> None:
+        """Transfer all data from source_user_id to target_user_id and delete source.
+
+        Performs an atomic transaction to update all user-linked tables.
+        """
+        if source_user_id == target_user_id:
+            return
+
+        with self._conn() as conn:
+            # Transfer all data rows
+            tables = [
+                "user_identities",
+                "profile_rules",
+                "profile_notes",
+                "agents",
+                "interactions",
+                "friction_events",
+                "friction_clusters",
+                "inference_log",
+                "constitution_snapshots",
+                "rule_injections",
+                "short_term_memory",
+                "episodic_memory",
+                "artifacts",
+                "vibe_matches",
+                "synthesis_config",
+            ]
+
+            for table in tables:
+                # Handle unique constraint collisions for agents (user_id, name)
+                if table == "agents":
+                    # Get source agents
+                    src_agents = conn.execute(
+                        "SELECT id, name, model FROM agents WHERE user_id = ?", (source_user_id,)
+                    ).fetchall()
+                    for agent in src_agents:
+                        # Check if target already has an agent with this name
+                        existing = conn.execute(
+                            "SELECT id FROM agents WHERE user_id = ? AND name = ?",
+                            (target_user_id, agent["name"]),
+                        ).fetchone()
+                        if existing:
+                            # Transfer interactions/events to existing target agent
+                            conn.execute(
+                                "UPDATE interactions SET agent_id = ? WHERE agent_id = ?",
+                                (existing["id"], agent["id"]),
+                            )
+                            conn.execute(
+                                "UPDATE friction_events SET agent_id = ? WHERE agent_id = ?",
+                                (existing["id"], agent["id"]),
+                            )
+                            conn.execute(
+                                "UPDATE vibe_matches SET agent_id = ? WHERE agent_id = ?",
+                                (existing["id"], agent["id"]),
+                            )
+                            # Delete the source agent record
+                            conn.execute("DELETE FROM agents WHERE id = ?", (agent["id"],))
+                        else:
+                            # Just reassign the agent to target user
+                            conn.execute(
+                                "UPDATE agents SET user_id = ? WHERE id = ?",
+                                (target_user_id, agent["id"]),
+                            )
+                # Handle user_identities (provider, sub) collisions
+                elif table == "user_identities":
+                    src_idents = conn.execute(
+                        "SELECT id, provider, sub FROM user_identities WHERE user_id = ?",
+                        (source_user_id,),
+                    ).fetchall()
+                    for ident in src_idents:
+                        # Check if target already has this identity
+                        existing = conn.execute(
+                            "SELECT id FROM user_identities WHERE provider = ? AND sub = ?",
+                            (ident["provider"], ident["sub"]),
+                        ).fetchone()
+                        if existing:
+                            # Drop the redundant identity record
+                            conn.execute("DELETE FROM user_identities WHERE id = ?", (ident["id"],))
+                        else:
+                            # Reassign
+                            conn.execute(
+                                "UPDATE user_identities SET user_id = ? WHERE id = ?",
+                                (target_user_id, ident["id"]),
+                            )
+                # Synthesis config is 1:1 user
+                elif table == "synthesis_config":
+                    existing = conn.execute(
+                        "SELECT id FROM synthesis_config WHERE user_id = ?", (target_user_id,)
+                    ).fetchone()
+                    if existing:
+                        conn.execute(
+                            "DELETE FROM synthesis_config WHERE user_id = ?", (source_user_id,)
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE synthesis_config SET user_id = ? WHERE user_id = ?",
+                            (target_user_id, source_user_id),
+                        )
+                # Bulk update for simple user_id linked tables
+                else:
+                    conn.execute(
+                        f"UPDATE {table} SET user_id = ? WHERE user_id = ?",
+                        (target_user_id, source_user_id),
+                    )
+
+            # Finally delete the source user
+            conn.execute("DELETE FROM users WHERE id = ?", (source_user_id,))
+
     def unlink_identity(self, user_id: int, provider: str) -> bool:
         with self._conn() as conn:
             cur = conn.execute(

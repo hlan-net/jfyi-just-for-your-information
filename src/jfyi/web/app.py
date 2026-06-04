@@ -397,7 +397,7 @@ def _register_system_api(app: FastAPI) -> None:
 
 def _register_auth_api(app: FastAPI) -> None:
     @app.get("/auth/login/{provider}", responses={404: {"description": "Provider not found"}})
-    async def login(request: Request, provider: str, db: DBDep):
+    async def login(request: Request, provider: str, db: DBDep, merge: bool = False):
         register_oauth_clients(db)
         client = oauth.create_client(provider)
         if not client:
@@ -407,7 +407,24 @@ def _register_auth_api(app: FastAPI) -> None:
         if settings.base_url:
             redirect_uri = settings.base_url.rstrip("/") + f"/auth/callback/{provider}"
 
-        return await client.authorize_redirect(request, redirect_uri)
+        response = await client.authorize_redirect(request, redirect_uri)
+
+        # If a merge was requested, set a secure short-lived cookie to track intent.
+        # This prevents CSRF-style merge attacks.
+        if merge:
+            session_cookie = request.cookies.get("jfyi_session")
+            if session_cookie:
+                payload = verify_session_cookie(session_cookie)
+                if payload:
+                    response.set_cookie(
+                        "jfyi_merge_intent",
+                        str(payload["user_id"]),
+                        httponly=True,
+                        secure=True,
+                        max_age=300,  # 5 minutes
+                        samesite="Lax",
+                    )
+        return response
 
     @app.get("/auth/callback/{provider}", responses={404: {"description": "Provider not found"}})
     async def auth_callback(request: Request, provider: str, db: DBDep):
@@ -431,36 +448,59 @@ def _register_auth_api(app: FastAPI) -> None:
             email = userinfo.get("email") or f"{sub}@{provider}.local"
             name = userinfo.get("name", "")
 
+        # 1. Identify the JFYI account tied to this login identity
+        auth_user = db.get_user_by_identity(provider, sub)
+
+        # 2. Check for an active session (user is already logged in)
         session_cookie = request.cookies.get("jfyi_session")
+        session_user_id = None
         if session_cookie:
             payload = verify_session_cookie(session_cookie)
             if payload:
-                try:
-                    db.link_identity(payload["user_id"], provider, sub)
-                except Exception:
-                    pass
-                return RedirectResponse(url="/")
+                session_user_id = int(payload["user_id"])
 
-        user = db.get_user_by_identity(provider, sub)
-        if not user:
-            # Check if a user with this email already exists to map the new identity
-            existing_user = db.get_user_by_email(email)
-            if existing_user:
-                db.link_identity(existing_user["id"], provider, sub)
-                user_id = existing_user["id"]
+        # 3. Check for a secure merge intent
+        merge_intent_id = None
+        merge_cookie = request.cookies.get("jfyi_merge_intent")
+        if merge_cookie:
+            merge_intent_id = int(merge_cookie)
+
+        # CASE A: User is logged in AND explicitly requested a merge
+        if session_user_id and merge_intent_id == session_user_id:
+            if auth_user:
+                # Merge the newly authenticated account (auth_user) into the session account
+                if auth_user["id"] != session_user_id:
+                    db.merge_accounts(auth_user["id"], session_user_id)
             else:
-                init_status = db.is_initialized()
-                # Always allow the very first user through so an admin can be created.
-                # After that, respect the registration_open setting.
-                if init_status["has_admin"]:
-                    reg_open = db.get_setting(SETTING_REGISTRATION_OPEN, "true") == "true"
-                    if not reg_open:
-                        return RedirectResponse(url="/login?error=registration_closed")
-                is_admin = not init_status["has_admin"]
-                user_id = db.create_user(email=email, name=name, is_admin=is_admin)
-                db.link_identity(user_id, provider, sub)
+                # This identity isn't tied to any JFYI user yet; just link it.
+                db.link_identity(session_user_id, provider, sub)
+
+            response = RedirectResponse(url="/")
+            response.delete_cookie("jfyi_merge_intent")
+            return response
+
+        # CASE B: Identity linking (user is logged in but no merge parameter)
+        if session_user_id and not auth_user:
+            try:
+                db.link_identity(session_user_id, provider, sub)
+            except Exception:
+                pass  # Already linked or collision
+            return RedirectResponse(url="/")
+
+        # CASE C: Normal login or new registration
+        if auth_user:
+            user_id = auth_user["id"]
         else:
-            user_id = user["id"]
+            # We NO LONGER auto-link by email alone (security risk).
+            # If the user isn't found by identity, they must register a new account.
+            init_status = db.is_initialized()
+            if init_status["has_admin"]:
+                reg_open = db.get_setting(SETTING_REGISTRATION_OPEN, "true") == "true"
+                if not reg_open:
+                    return RedirectResponse(url="/login?error=registration_closed")
+            is_admin = not init_status["has_admin"]
+            user_id = db.create_user(email=email, name=name, is_admin=is_admin)
+            db.link_identity(user_id, provider, sub)
 
         response = RedirectResponse(url="/")
         cookie_val = create_session_cookie(user_id)
@@ -472,6 +512,7 @@ def _register_auth_api(app: FastAPI) -> None:
             max_age=settings.session_ttl_seconds,
             samesite="Lax",
         )
+        response.delete_cookie("jfyi_merge_intent")
         next_url = request.cookies.get("oauth_next")
         if next_url:
             response.headers["Location"] = next_url
@@ -487,6 +528,10 @@ def _register_auth_api(app: FastAPI) -> None:
     @app.get("/api/me")
     async def get_me(user: CurrentUser):
         return user
+
+    @app.get("/api/me/identities")
+    async def get_my_identities(user: CurrentUser, db: DBDep):
+        return {"identities": db.list_user_identities(user["id"])}
 
     @app.post("/api/keys")
     async def generate_mcp_key(user: CurrentUser):
