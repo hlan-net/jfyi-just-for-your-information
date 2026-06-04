@@ -868,25 +868,14 @@ class Database:
                             )
                 # Handle user_identities (provider, sub) collisions
                 elif table == "user_identities":
-                    src_idents = conn.execute(
-                        "SELECT id, provider, sub FROM user_identities WHERE user_id = ?",
-                        (source_user_id,),
-                    ).fetchall()
-                    for ident in src_idents:
-                        # Check if target already has this identity
-                        existing = conn.execute(
-                            "SELECT id FROM user_identities WHERE provider = ? AND sub = ?",
-                            (ident["provider"], ident["sub"]),
-                        ).fetchone()
-                        if existing:
-                            # Drop the redundant identity record
-                            conn.execute("DELETE FROM user_identities WHERE id = ?", (ident["id"],))
-                        else:
-                            # Reassign
-                            conn.execute(
-                                "UPDATE user_identities SET user_id = ? WHERE id = ?",
-                                (target_user_id, ident["id"]),
-                            )
+                    # Since (provider, sub) is globally unique across all users,
+                    # we can simply reassign all identities of the source user
+                    # to the target user. Any collision here would imply the
+                    # database is already in an inconsistent state.
+                    conn.execute(
+                        "UPDATE user_identities SET user_id = ? WHERE user_id = ?",
+                        (target_user_id, source_user_id),
+                    )
                 # Synthesis config is 1:1 user
                 elif table == "synthesis_config":
                     existing = conn.execute(
@@ -903,8 +892,10 @@ class Database:
                         )
                 # Bulk update for simple user_id linked tables
                 else:
+                    # Use OR IGNORE to handle tables with unique constraints (e.g. short_term_memory)
+                    # Any skipped source rows will be cleaned up by ON DELETE CASCADE.
                     conn.execute(
-                        f"UPDATE {table} SET user_id = ? WHERE user_id = ?",
+                        f"UPDATE OR IGNORE {table} SET user_id = ? WHERE user_id = ?",
                         (target_user_id, source_user_id),
                     )
 

@@ -470,7 +470,7 @@ def _register_auth_api(app: FastAPI) -> None:
             if auth_user:
                 # Merge the newly authenticated account (auth_user) into the session account
                 if auth_user["id"] != session_user_id:
-                    db.merge_accounts(auth_user["id"], session_user_id)
+                    await asyncio.to_thread(db.merge_accounts, auth_user["id"], session_user_id)
             else:
                 # This identity isn't tied to any JFYI user yet; just link it.
                 db.link_identity(session_user_id, provider, sub)
