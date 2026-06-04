@@ -892,8 +892,9 @@ class Database:
                         )
                 # Bulk update for simple user_id linked tables
                 else:
-                    # Use OR IGNORE to handle tables with unique constraints (e.g. short_term_memory)
-                    # Any skipped source rows will be cleaned up by ON DELETE CASCADE.
+                    # Use OR IGNORE to handle tables with unique constraints
+                    # (e.g. short_term_memory). Any skipped source rows will
+                    # be cleaned up by ON DELETE CASCADE.
                     conn.execute(
                         f"UPDATE OR IGNORE {table} SET user_id = ? WHERE user_id = ?",
                         (target_user_id, source_user_id),
