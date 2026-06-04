@@ -415,6 +415,40 @@
   <div>
     <div class="card">
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:0.5rem;">
+        <h2 style="margin:0;">Account & Identities</h2>
+      </div>
+      <p class="desc">Manage your linked login methods. You can merge another account into this one by logging in with its credentials.</p>
+      
+      <div v-if="loadingIdentities" style="margin-bottom:1rem; color:var(--muted); font-size:0.9rem;">Loading identities...</div>
+      <div v-else>
+        <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1.5rem;">
+          <span v-for="idp in myIdentities" :key="idp.provider" class="pill pill-orange" style="display:flex; align-items:center; gap:0.4rem; padding: 0.3rem 0.7rem;">
+            <span v-if="idp.provider === 'github'">🐙</span>
+            <span v-if="idp.provider === 'google'">🌐</span>
+            <span v-if="idp.provider === 'entra'">🏢</span>
+            <span v-if="idp.provider === 'custom_oidc'">🔐</span>
+            {{ idp.provider }}
+          </span>
+        </div>
+        
+        <div style="border-top:1px solid var(--border); padding-top:1rem;">
+          <h3 style="font-size:0.9rem; margin-bottom:0.75rem; color:var(--text);">Link / Merge another account</h3>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <a v-for="p in system.providers" :key="p.id" :href="'/auth/login/' + p.auth_key + '?merge=true'" class="btn btn-outline btn-sm" style="display:flex; align-items:center; gap:0.4rem; padding: 0.4rem 0.8rem;">
+              <span v-if="p.provider === 'github'">🐙</span>
+              <span v-if="p.provider === 'google'">🌐</span>
+              <span v-if="p.provider === 'entra'">🏢</span>
+              <span v-if="p.provider === 'custom_oidc'">🔐</span>
+              {{ p.name }}
+            </a>
+          </div>
+          <p style="font-size:0.75rem; color:var(--muted); margin-top:0.75rem;">Note: Logging in with a different account will merge all its data (rules, notes, interactions) into your current profile.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:0.5rem;">
         <h2 style="margin:0;">Your Developer Constitution</h2>
         <div style="display:flex;gap:0.5rem;">
           <button @click="showAdd = true" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">Add rule</button>
@@ -1654,6 +1688,20 @@ const Profile = {
     const addError = ref('');
     const adding = ref(false);
 
+    const myIdentities = ref([]);
+    const loadingIdentities = ref(true);
+
+    const loadIdentities = async () => {
+      loadingIdentities.value = true;
+      try {
+        const res = await fetch(API + '/api/me/identities');
+        if (res.ok) {
+          const data = await res.json();
+          myIdentities.value = data.identities;
+        }
+      } finally { loadingIdentities.value = false; }
+    };
+
     const loadRules = async () => {
       loading.value = true;
       try {
@@ -1714,11 +1762,15 @@ const Profile = {
       }).catch(() => alert('Failed to copy to clipboard.'));
     };
 
-    onMounted(loadRules);
+    onMounted(() => {
+      loadRules();
+      loadIdentities();
+    });
 
     return {
       rules, loading, copied, showAdd, newText, newCategory, newScope, newProjectId, addError, adding,
       categoryColor, deleteRule, createRule, copyRules,
+      myIdentities, loadingIdentities, system: globalState.system
     };
   }
 };
