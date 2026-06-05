@@ -168,14 +168,13 @@ def get_current_user(request: Request, db: Database = Depends(get_db)) -> dict[s
         if not token:
             token = request.headers.get("X-Agy-Token")
 
-        # 4. query param ?token=<token>
-        if not token:
-            token = request.query_params.get("token")
-
         if token:
             payload = verify_mcp_jwt(token)
-            if payload:
-                user_id = int(payload["sub"])
+            if payload and "sub" in payload:
+                try:
+                    user_id = int(payload["sub"])
+                except (ValueError, TypeError):
+                    pass
 
     if not user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")

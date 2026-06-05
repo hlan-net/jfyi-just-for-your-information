@@ -55,14 +55,13 @@ def _authenticate(request, db, settings, verify_mcp_jwt) -> int | None:
     if not token:
         token = request.headers.get("x-agy-token")
 
-    # 4. query param ?token=<token>
-    if not token:
-        token = request.query_params.get("token")
-
     if token:
         payload = verify_mcp_jwt(token)
-        if payload:
-            return int(payload["sub"])
+        if payload and "sub" in payload:
+            try:
+                return int(payload["sub"])
+            except (ValueError, TypeError):
+                pass
     return None
 
 
