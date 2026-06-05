@@ -108,9 +108,7 @@ def parse_json_field(rows: list[dict[str, Any]], field: str) -> list[dict[str, A
 # ── Bundle builders ───────────────────────────────────────────────────────────
 
 
-def profile_bundle(
-    rules: list[dict[str, Any]], notes: list[dict[str, Any]]
-) -> dict[str, Any]:
+def profile_bundle(rules: list[dict[str, Any]], notes: list[dict[str, Any]]) -> dict[str, Any]:
     """Compose the JSON profile bundle: rules + notes + rule-note links."""
     links: list[dict[str, int]] = []
     for r in rules:
