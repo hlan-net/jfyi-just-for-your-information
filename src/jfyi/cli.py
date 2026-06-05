@@ -37,9 +37,29 @@ def _authenticate(request, db, settings, verify_mcp_jwt) -> int | None:
     if settings.single_user_mode:
         user = db.get_user_by_email("local@jfyi.internal")
         return user["id"] if user else None
+
+    token = None
+
+    # 1. Authorization: Bearer <token> (case-insensitive scheme check)
     auth_header = request.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header.split(" ", 1)[1]
+    if auth_header.lower().startswith("bearer "):
+        parts = auth_header.split(" ", 1)
+        if len(parts) > 1:
+            token = parts[1].strip()
+
+    # 2. X-MCP-Token: <token>
+    if not token:
+        token = request.headers.get("x-mcp-token")
+
+    # 3. X-Agy-Token: <token> (Support for the new Antigravity CLI)
+    if not token:
+        token = request.headers.get("x-agy-token")
+
+    # 4. query param ?token=<token>
+    if not token:
+        token = request.query_params.get("token")
+
+    if token:
         payload = verify_mcp_jwt(token)
         if payload:
             return int(payload["sub"])

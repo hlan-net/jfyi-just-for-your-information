@@ -47,18 +47,14 @@ _NARRATIVE_SYSTEM_PROMPT = (
 )
 
 
-def build_vibe_profile(
-    user_id: int, db: Database, analytics: AnalyticsEngine
-) -> dict[str, Any]:
+def build_vibe_profile(user_id: int, db: Database, analytics: AnalyticsEngine) -> dict[str, Any]:
     """Gather the six sections of the Vibe Coder Profile from existing getters."""
     rules = db.get_rules(user_id=user_id)
     constitution: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in rules:
         constitution[r.get("category") or "general"].append(r)
 
-    high_conf_rules = [
-        r for r in rules if (r.get("confidence") or 0) >= _HIGH_CONFIDENCE_THRESHOLD
-    ]
+    high_conf_rules = [r for r in rules if (r.get("confidence") or 0) >= _HIGH_CONFIDENCE_THRESHOLD]
     vibe_matches = db.get_vibe_matches(user_id=user_id, limit=10)
 
     return {
@@ -118,9 +114,7 @@ def _format_context_for_llm(sections: dict[str, Any]) -> str:
                 f"  - {r['text']} ({r.get('category', 'general')}, "
                 f"conf {(r.get('confidence') or 0):.2f})"
             )
-    parts.append(
-        f"\nVibe matches (zero-friction long responses): {len(sp['vibe_matches'])}"
-    )
+    parts.append(f"\nVibe matches (zero-friction long responses): {len(sp['vibe_matches'])}")
 
     fc = sections["friction_profile"]
     if fc:
@@ -150,8 +144,7 @@ def _format_context_for_llm(sections: dict[str, Any]) -> str:
         parts.append("\nBest (zero-friction) sessions:")
         for s in bw:
             parts.append(
-                f"  - {s['interaction_count']} interactions, "
-                f"avg friction {s['avg_friction']}"
+                f"  - {s['interaction_count']} interactions, avg friction {s['avg_friction']}"
             )
     else:
         parts.append("\nBest sessions: none yet")
@@ -186,11 +179,11 @@ def render_vibe_profile_html(
 
 def _render_header(user_label: str, now: str) -> str:
     return (
-        '<header>'
+        "<header>"
         '<p class="kicker">Vibe Coder Profile</p>'
-        f'<h1>{user_label}</h1>'
+        f"<h1>{user_label}</h1>"
         f'<p class="generated">Generated {now}</p>'
-        '</header>'
+        "</header>"
     )
 
 
@@ -198,53 +191,43 @@ def _render_narrative(narrative: str | None) -> str:
     if narrative is None:
         return (
             '<section class="card narrative empty">'
-            '<h2>The Narrative</h2>'
+            "<h2>The Narrative</h2>"
             '<p class="empty-state">The prose portrait requires '
-            '<code>JFYI_ANTHROPIC_API_KEY</code> to be set on the server. '
-            'The structured sections below render without it.</p>'
-            '</section>'
+            "<code>JFYI_ANTHROPIC_API_KEY</code> to be set on the server. "
+            "The structured sections below render without it.</p>"
+            "</section>"
         )
     paras = "".join(
-        f"<p>{html.escape(p.strip())}</p>"
-        for p in narrative.split("\n\n")
-        if p.strip()
+        f"<p>{html.escape(p.strip())}</p>" for p in narrative.split("\n\n") if p.strip()
     )
-    return (
-        '<section class="card narrative">'
-        '<h2>The Narrative</h2>'
-        f'{paras}'
-        '</section>'
-    )
+    return f'<section class="card narrative"><h2>The Narrative</h2>{paras}</section>'
 
 
 def _render_constitution(constitution: dict[str, list[dict[str, Any]]]) -> str:
     if not constitution:
         return (
             '<section class="card empty">'
-            '<h2>Your Constitution</h2>'
+            "<h2>Your Constitution</h2>"
             '<p class="empty-state">No curated rules yet. Author rules in the '
-            'dashboard at <code>/profile</code> — they form the explicit '
-            'principles the agent reads at session start.</p>'
-            '</section>'
+            "dashboard at <code>/profile</code> — they form the explicit "
+            "principles the agent reads at session start.</p>"
+            "</section>"
         )
     blocks: list[str] = []
     for cat, rules in constitution.items():
         items = "".join(
-            f'<li>{html.escape(r["text"])} '
+            f"<li>{html.escape(r['text'])} "
             f'<span class="meta">conf {(r.get("confidence") or 0):.2f}</span></li>'
             for r in rules
         )
-        blocks.append(
-            f'<div class="category"><h3>{html.escape(cat)}</h3>'
-            f'<ul>{items}</ul></div>'
-        )
+        blocks.append(f'<div class="category"><h3>{html.escape(cat)}</h3><ul>{items}</ul></div>')
     return (
         '<section class="card">'
-        '<h2>Your Constitution</h2>'
+        "<h2>Your Constitution</h2>"
         '<p class="lede">The explicit principles you have authored — '
-        'the agent reads these at the start of every session.</p>'
-        f'{"".join(blocks)}'
-        '</section>'
+        "the agent reads these at the start of every session.</p>"
+        f"{''.join(blocks)}"
+        "</section>"
     )
 
 
@@ -254,32 +237,32 @@ def _render_signature_patterns(sp: dict[str, Any]) -> str:
     if not hcr and vm_count == 0:
         return (
             '<section class="card empty">'
-            '<h2>Signature Patterns</h2>'
+            "<h2>Signature Patterns</h2>"
             '<p class="empty-state">Patterns surface as rule confidence rises '
-            'and zero-friction interactions accumulate.</p>'
-            '</section>'
+            "and zero-friction interactions accumulate.</p>"
+            "</section>"
         )
     parts: list[str] = [
         '<section class="card">',
-        '<h2>Signature Patterns</h2>',
+        "<h2>Signature Patterns</h2>",
         '<p class="lede">What you consistently value and get right.</p>',
     ]
     if hcr:
-        parts.append('<h3>Validated principles (high confidence)</h3><ul>')
+        parts.append("<h3>Validated principles (high confidence)</h3><ul>")
         for r in hcr:
             parts.append(
-                f'<li>{html.escape(r["text"])} '
+                f"<li>{html.escape(r['text'])} "
                 f'<span class="meta">{html.escape(r.get("category") or "general")}, '
-                f'conf {(r.get("confidence") or 0):.2f}</span></li>'
+                f"conf {(r.get('confidence') or 0):.2f}</span></li>"
             )
-        parts.append('</ul>')
+        parts.append("</ul>")
     if vm_count:
         parts.append(
-            f'<p><strong>{vm_count}</strong> recent zero-friction long '
+            f"<p><strong>{vm_count}</strong> recent zero-friction long "
             'responses ("vibe matches") — significant contributions accepted '
-            'with zero edits.</p>'
+            "with zero edits.</p>"
         )
-    parts.append('</section>')
+    parts.append("</section>")
     return "\n".join(parts)
 
 
@@ -287,11 +270,11 @@ def _render_friction_profile(clusters: list[dict[str, Any]]) -> str:
     if not clusters:
         return (
             '<section class="card empty">'
-            '<h2>Friction Profile</h2>'
+            "<h2>Friction Profile</h2>"
             '<p class="empty-state">No friction clusters computed. Enable '
-            '<code>JFYI_ENABLE_CLUSTERING</code> and accumulate friction events '
-            'to see recurring gaps.</p>'
-            '</section>'
+            "<code>JFYI_ENABLE_CLUSTERING</code> and accumulate friction events "
+            "to see recurring gaps.</p>"
+            "</section>"
         )
     items: list[str] = []
     for c in clusters:
@@ -301,16 +284,16 @@ def _render_friction_profile(clusters: list[dict[str, Any]]) -> str:
         items.append(
             f'<div class="cluster">'
             f'<h3>{label} <span class="meta">{size} events</span></h3>'
-            f'<p>{summary}</p>'
-            f'</div>'
+            f"<p>{summary}</p>"
+            f"</div>"
         )
     return (
         '<section class="card">'
-        '<h2>Friction Profile</h2>'
+        "<h2>Friction Profile</h2>"
         '<p class="lede">Where your vibe diverges from default agent behaviour '
-        '— the recurring gaps.</p>'
-        f'{"".join(items)}'
-        '</section>'
+        "— the recurring gaps.</p>"
+        f"{''.join(items)}"
+        "</section>"
     )
 
 
@@ -319,32 +302,32 @@ def _render_agent_affinity(agents: list[dict[str, Any]]) -> str:
     if not active:
         return (
             '<section class="card empty">'
-            '<h2>Agent Affinity</h2>'
+            "<h2>Agent Affinity</h2>"
             '<p class="empty-state">No agent interactions tracked yet. '
-            'Agents that call <code>record_interaction</code> appear here '
-            'ranked by alignment.</p>'
-            '</section>'
+            "Agents that call <code>record_interaction</code> appear here "
+            "ranked by alignment.</p>"
+            "</section>"
         )
     rows: list[str] = []
     for a in active:
         alignment = 100.0 - (a.get("correction_rate_pct") or 0)
         rows.append(
-            f'<tr><td>{html.escape(a["name"])}</td>'
-            f'<td>{html.escape(a.get("model") or "—")}</td>'
+            f"<tr><td>{html.escape(a['name'])}</td>"
+            f"<td>{html.escape(a.get('model') or '—')}</td>"
             f'<td class="num">{a["total_interactions"]}</td>'
             f'<td class="num">{a.get("correction_rate_pct", 0)}%</td>'
             f'<td class="num">{alignment:.1f}%</td></tr>'
         )
     return (
         '<section class="card">'
-        '<h2>Agent Affinity</h2>'
+        "<h2>Agent Affinity</h2>"
         '<p class="lede">Which models align best with you, ranked.</p>'
-        '<table>'
-        '<thead><tr><th>Agent</th><th>Model</th><th>Calls</th>'
-        '<th>Correction Rate</th><th>Alignment</th></tr></thead>'
-        f'<tbody>{"".join(rows)}</tbody>'
-        '</table>'
-        '</section>'
+        "<table>"
+        "<thead><tr><th>Agent</th><th>Model</th><th>Calls</th>"
+        "<th>Correction Rate</th><th>Alignment</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
+        "</section>"
     )
 
 
@@ -352,34 +335,34 @@ def _render_best_work(sessions: list[dict[str, Any]]) -> str:
     if not sessions:
         return (
             '<section class="card empty">'
-            '<h2>Best Work</h2>'
+            "<h2>Best Work</h2>"
             '<p class="empty-state">No zero-friction sessions on record yet.</p>'
-            '</section>'
+            "</section>"
         )
     items = "".join(
-        f'<li><code>{html.escape(s["session_id"][:12])}…</code> — '
-        f'{s["interaction_count"]} interactions, '
-        f'avg friction {s["avg_friction"]}</li>'
+        f"<li><code>{html.escape(s['session_id'][:12])}…</code> — "
+        f"{s['interaction_count']} interactions, "
+        f"avg friction {s['avg_friction']}</li>"
         for s in sessions
     )
     return (
         '<section class="card">'
-        '<h2>Best Work</h2>'
+        "<h2>Best Work</h2>"
         '<p class="lede">Sessions where every recorded interaction landed '
-        'without correction.</p>'
-        f'<ul>{items}</ul>'
-        '</section>'
+        "without correction.</p>"
+        f"<ul>{items}</ul>"
+        "</section>"
     )
 
 
 def _render_footer() -> str:
     return (
-        '<footer>'
-        '<p>Generated by JFYI — Just For Your Information. '
+        "<footer>"
+        "<p>Generated by JFYI — Just For Your Information. "
         '<a href="/">Return to dashboard</a></p>'
         '<p class="hint">Tip: use your browser\'s '
-        '<strong>Print → Save as PDF</strong> to keep a copy.</p>'
-        '</footer>'
+        "<strong>Print → Save as PDF</strong> to keep a copy.</p>"
+        "</footer>"
     )
 
 

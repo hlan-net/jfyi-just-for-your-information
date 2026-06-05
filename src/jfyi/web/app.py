@@ -151,9 +151,28 @@ def get_current_user(request: Request, db: Database = Depends(get_db)) -> dict[s
             user_id = payload.get("user_id")
 
     if not user_id:
+        token = None
+
+        # 1. Authorization: Bearer <token> (case-insensitive scheme check)
         auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ", 1)[1]
+        if auth_header and auth_header.lower().startswith("bearer "):
+            parts = auth_header.split(" ", 1)
+            if len(parts) > 1:
+                token = parts[1].strip()
+
+        # 2. X-MCP-Token: <token>
+        if not token:
+            token = request.headers.get("X-MCP-Token")
+
+        # 3. X-Agy-Token: <token> (Support for the new Antigravity CLI)
+        if not token:
+            token = request.headers.get("X-Agy-Token")
+
+        # 4. query param ?token=<token>
+        if not token:
+            token = request.query_params.get("token")
+
+        if token:
             payload = verify_mcp_jwt(token)
             if payload:
                 user_id = int(payload["sub"])
