@@ -571,7 +571,12 @@
       <!-- Step 2: Model configuration -->
       <div v-if="step === 2">
         <p class="desc" style="margin-bottom:1rem;">Configure the model that will draw rules from the selected notes. The API key is stored on your JFYI instance only.</p>
-        
+
+        <!-- Saved-config status banner -->
+        <div v-if="savedCfg.configured" style="margin-bottom:1rem; padding:0.6rem 0.75rem; background:rgba(var(--green-rgb,34,197,94), 0.08); border:1px solid var(--green,#22c55e); border-radius:4px; font-size:0.82rem; color:var(--fg);">
+          <strong>Currently saved:</strong> {{ savedCfg.provider === 'anthropic' ? 'Anthropic' : 'OpenAI-compatible' }} · {{ savedCfg.model || '—' }}<span v-if="savedCfg.base_url"> · {{ savedCfg.base_url }}</span>
+        </div>
+
         <div style="margin-bottom:1.25rem; padding:0.75rem; background:rgba(var(--purple-rgb), 0.05); border:1px dashed var(--purple); border-radius:4px; display:flex; flex-direction:column; gap:0.5rem;">
           <div style="font-size:0.85rem; color:var(--purple); font-weight:500;">Quick setup for local models:</div>
           <div style="display:flex; gap:0.5rem;">
@@ -593,23 +598,33 @@
             :placeholder="cfg.provider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'" />
         </div>
         <div class="form-group">
-          <label>API Key <span v-if="savedCfg.has_key" style="color:var(--muted);font-weight:400;">(saved — leave blank to keep)</span></label>
+          <label>
+            API Key
+            <span v-if="providerChanged" style="color:var(--red);font-weight:500;"> (required — provider changed)</span>
+            <span v-else-if="savedCfg.has_key" style="color:var(--muted);font-weight:400;"> (saved — leave blank to keep)</span>
+          </label>
           <input :type="showKey ? 'text' : 'password'" v-model="cfg.api_key"
-            :placeholder="savedCfg.has_key ? '●●●●●●●●●●●● (leave blank to keep)' : 'sk-…'" />
+            :placeholder="providerChanged ? 'Enter key for new provider' : (savedCfg.has_key ? '●●●●●●●●●●●● (leave blank to keep)' : 'sk-…')" />
           <button @click="showKey = !showKey" class="btn btn-outline" style="font-size:0.75rem;padding:0.15rem 0.5rem;margin-top:0.3rem;">{{ showKey ? 'Hide' : 'Show' }}</button>
+          <div v-if="providerChanged && !cfg.api_key" style="font-size:0.78rem; color:var(--red); margin-top:0.35rem;">
+            ⚠ Changing provider requires a new API key — the saved key belongs to a different provider and won't work here.
+          </div>
         </div>
         <div v-if="cfg.provider === 'openai'" class="form-group">
           <label>Base URL <span style="color:var(--muted);font-weight:400;">(optional — use {host} for current hostname)</span></label>
           <input type="text" v-model="cfg.base_url" placeholder="http://{host}:11434/v1" />
-          <div v-if="cfg.base_url && cfg.base_url.includes('{host}')" style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem;">
+          <div v-if="cfg.base_url" style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem;">
             Resolves to: <code>{{ resolvedUrl }}</code>
           </div>
         </div>
-        <div v-if="error" style="color:var(--red);font-size:0.85rem;margin-bottom:0.75rem;">{{ error }}</div>
+        <div v-if="error" style="color:var(--red);font-size:0.85rem;margin-bottom:0.75rem;">
+          {{ error }}
+          <div v-if="errorHint" style="margin-top:0.3rem; font-size:0.8rem; color:var(--orange);">💡 {{ errorHint }}</div>
+        </div>
         <div style="display:flex;justify-content:space-between;margin-top:0.25rem;">
           <button @click="step = 1" class="btn btn-outline">Back</button>
           <button @click="runSynthesis" class="btn"
-            :disabled="synthesizing || !cfg.provider || !cfg.model || (!cfg.api_key && !savedCfg.has_key)">
+            :disabled="synthesizing || !cfg.provider || !cfg.model || (!cfg.api_key && !savedCfg.has_key) || (providerChanged && !cfg.api_key)">
             {{ synthesizing ? 'Synthesizing…' : 'Synthesize' }}
           </button>
         </div>
@@ -1390,6 +1405,28 @@ const RuleSynthesis = {
       Object.entries(selected).filter(([, v]) => v).map(([k]) => Number.parseInt(k))
     );
 
+    // True when the user has changed the provider away from the last saved value.
+    // In that case we must require a new API key — the old key belongs to a different provider.
+    const providerChanged = computed(() =>
+      savedCfg.configured && !!savedCfg.provider && savedCfg.provider !== cfg.provider
+    );
+
+    // Derive a user-friendly hint from the raw error string.
+    const errorHint = computed(() => {
+      const msg = error.value.toLowerCase();
+      if (!msg) return '';
+      if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('authentication')) {
+        return 'Check that the API key is correct for this provider.';
+      }
+      if (msg.includes('connect') || msg.includes('refused') || msg.includes('network') || msg.includes('timeout')) {
+        return 'Cannot reach the model server. Check the Base URL and make sure the server is running.';
+      }
+      if (msg.includes('provider') && msg.includes('key')) {
+        return 'Enter a new API key for the selected provider.';
+      }
+      return '';
+    });
+
     const catColor = (c) => ({ style:'orange', architecture:'purple', testing:'green', docs:'blue' }[c] || 'blue');
     const noteById = computed(() => {
       const m = {};
@@ -1404,14 +1441,14 @@ const RuleSynthesis = {
       cfg.provider = 'openai';
       cfg.model = 'llama3.2:1b';
       cfg.base_url = 'http://{host}:8000/v1';
-      if (!cfg.api_key && !savedCfg.has_key) cfg.api_key = 'ollama';
+      if (!cfg.api_key && (!savedCfg.has_key || providerChanged.value)) cfg.api_key = 'ollama';
     };
 
     const useLocalOllama = () => {
       cfg.provider = 'openai';
       cfg.model = 'llama3';
       cfg.base_url = 'http://localhost:11434/v1';
-      if (!cfg.api_key && !savedCfg.has_key) cfg.api_key = 'ollama';
+      if (!cfg.api_key && (!savedCfg.has_key || providerChanged.value)) cfg.api_key = 'ollama';
     };
 
     const resolvedUrl = computed(() => {
@@ -1446,10 +1483,10 @@ const RuleSynthesis = {
           body: JSON.stringify(saveBody),
         });
         if (!saveRes.ok) { const d = await saveRes.json(); throw new Error(d.detail || 'Failed to save config'); }
-        Object.assign(savedCfg, { configured: true, has_key: true, provider: cfg.provider, model: cfg.model });
+        Object.assign(savedCfg, { configured: true, has_key: true, provider: cfg.provider, model: cfg.model, base_url: resolvedUrl.value || cfg.base_url });
 
         const prioritiesObj = {};
-        props.rules.forEach(r => { prioritiesObj[r.id] = priorities[r.id] || 3; });
+        selectedIds.value.forEach(id => { prioritiesObj[id] = priorities[id] || 3; });
         const synthRes = await fetch(API + '/api/profile/notes/synthesize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1496,6 +1533,7 @@ const RuleSynthesis = {
       step, selected, priorities, cfg, savedCfg, showKey,
       synthesizing, applying, synthesized, error,
       selectedCount, catColor, noteById,
+      providerChanged, errorHint,
       selectAll, deselectAll, setPriority, runSynthesis,
       useLocalHailo, useLocalOllama, resolvedUrl,
       applyRules, close,

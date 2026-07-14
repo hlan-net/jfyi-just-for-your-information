@@ -363,6 +363,109 @@ def test_synthesize_apply_model_id_outside_batch_is_rejected(client):
     assert n1 in rules[0]["source_note_ids"]
 
 
+# ── Synthesis config API ──────────────────────────────────────────────────────
+
+
+def test_get_synthesis_config_not_configured(client):
+    resp = client.get("/api/profile/synthesis-config")
+    assert resp.status_code == 200
+    assert resp.json() == {"configured": False}
+
+
+def test_save_synthesis_config_roundtrip(client):
+    resp = client.put(
+        "/api/profile/synthesis-config",
+        json={
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5-20251001",
+            "api_key": "sk-ant-test",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "saved"}
+
+    cfg = client.get("/api/profile/synthesis-config").json()
+    assert cfg["configured"] is True
+    assert cfg["provider"] == "anthropic"
+    assert cfg["model"] == "claude-haiku-4-5-20251001"
+    assert cfg["has_key"] is True
+
+
+def test_save_synthesis_config_allows_keeping_key_for_same_provider(client):
+    # Save initial config
+    client.put(
+        "/api/profile/synthesis-config",
+        json={
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5-20251001",
+            "api_key": "sk-ant-test",
+        },
+    )
+    # Update model without supplying key — same provider, should succeed
+    resp = client.put(
+        "/api/profile/synthesis-config",
+        json={"provider": "anthropic", "model": "claude-sonnet-4-5"},
+    )
+    assert resp.status_code == 200
+    cfg = client.get("/api/profile/synthesis-config").json()
+    assert cfg["model"] == "claude-sonnet-4-5"
+    assert cfg["has_key"] is True
+
+
+def test_save_synthesis_config_requires_new_key_when_provider_changes(client):
+    # Save initial Anthropic config
+    client.put(
+        "/api/profile/synthesis-config",
+        json={
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5-20251001",
+            "api_key": "sk-ant-test",
+        },
+    )
+    # Switch to openai WITHOUT providing a new key — must be rejected
+    resp = client.put(
+        "/api/profile/synthesis-config",
+        json={"provider": "openai", "model": "llama3", "base_url": "http://localhost:11434/v1"},
+    )
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    assert "provider" in detail.lower() or "key" in detail.lower()
+
+
+def test_save_synthesis_config_accepts_provider_change_with_new_key(client):
+    # Save initial Anthropic config
+    client.put(
+        "/api/profile/synthesis-config",
+        json={
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5-20251001",
+            "api_key": "sk-ant-test",
+        },
+    )
+    # Switch to openai WITH a new key — must succeed
+    resp = client.put(
+        "/api/profile/synthesis-config",
+        json={
+            "provider": "openai",
+            "model": "llama3",
+            "api_key": "ollama",
+            "base_url": "http://localhost:11434/v1",
+        },
+    )
+    assert resp.status_code == 200
+    cfg = client.get("/api/profile/synthesis-config").json()
+    assert cfg["provider"] == "openai"
+    assert cfg["model"] == "llama3"
+
+
+def test_save_synthesis_config_rejects_unknown_provider(client):
+    resp = client.put(
+        "/api/profile/synthesis-config",
+        json={"provider": "unknown", "model": "some-model", "api_key": "key"},
+    )
+    assert resp.status_code == 400
+
+
 # ── Cold-start interview ───────────────────────────────────────────────────────
 
 
