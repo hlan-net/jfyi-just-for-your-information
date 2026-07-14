@@ -759,6 +759,16 @@ def _register_synthesis_api(app: FastAPI) -> None:
         if body.provider not in ("anthropic", "openai"):
             raise HTTPException(status_code=400, detail="provider must be 'anthropic' or 'openai'")
         existing = db.get_synthesis_config(current_user["id"])
+        # Switching providers silently reusing the old key is the primary source of
+        # confusing 401/auth errors.  Require an explicit new key on provider change.
+        if existing and existing["provider"] != body.provider and not body.api_key:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Changing provider from '{existing['provider']}' to '{body.provider}' "
+                    "requires a new API key — the saved key belongs to a different provider."
+                ),
+            )
         api_key = body.api_key or (existing["api_key"] if existing else None)
         if not api_key:
             raise HTTPException(status_code=400, detail="api_key is required")
