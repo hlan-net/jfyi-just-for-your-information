@@ -1056,8 +1056,16 @@ def _register_journal_read_api(app: FastAPI) -> None:
         return entry
 
 
-def _register_journal_write_api(app: FastAPI) -> None:
-    """Write endpoints for Developer & Work Journal."""
+def _redact_journal_fields(title: str | None, content: str | None) -> tuple[str | None, str | None]:
+    if not settings.dlp_enabled:
+        return title, content
+    r_title = redact(title)[0] if title is not None else None
+    r_content = redact(content)[0] if content is not None else None
+    return r_title, r_content
+
+
+def _register_journal_create(app: FastAPI) -> None:
+    """Create endpoint for Developer & Work Journal."""
 
     @app.post("/api/journal", status_code=201, responses=RESPONSES_422)
     async def create_journal_entry(
@@ -1067,16 +1075,13 @@ def _register_journal_write_api(app: FastAPI) -> None:
             raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
         if not body.title.strip():
             raise HTTPException(status_code=422, detail="Title must not be empty")
-        title, content = body.title, body.content_md
-        if settings.dlp_enabled:
-            title, _ = redact(title)
-            content, _ = redact(content)
+        title, content = _redact_journal_fields(body.title, body.content_md)
         try:
             entry_id = await asyncio.to_thread(
                 db.journal_add,
                 user_id=current_user["id"],
-                title=title,
-                content_md=content,
+                title=title or "",
+                content_md=content or "",
                 entry_type=body.entry_type,
                 source="manual",
                 entry_date=_validate_journal_date(body.entry_date),
@@ -1090,18 +1095,17 @@ def _register_journal_write_api(app: FastAPI) -> None:
         assert entry is not None
         return entry
 
+
+def _register_journal_update(app: FastAPI) -> None:
+    """Update endpoint for Developer & Work Journal."""
+
     @app.put("/api/journal/{entry_id}", responses=RESPONSES_JOURNAL_ITEM)
     async def update_journal_entry(
         entry_id: int, body: JournalEntryUpdate, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
         if body.entry_type is not None and body.entry_type not in Database.JOURNAL_ENTRY_TYPES:
             raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
-        title, content = body.title, body.content_md
-        if settings.dlp_enabled:
-            if title is not None:
-                title, _ = redact(title)
-            if content is not None:
-                content, _ = redact(content)
+        title, content = _redact_journal_fields(body.title, body.content_md)
         fields = body.model_fields_set
         try:
             ok = await asyncio.to_thread(
@@ -1125,6 +1129,10 @@ def _register_journal_write_api(app: FastAPI) -> None:
         assert entry is not None
         return entry
 
+
+def _register_journal_delete(app: FastAPI) -> None:
+    """Delete endpoint for Developer & Work Journal."""
+
     @app.delete(
         "/api/journal/{entry_id}",
         status_code=204,
@@ -1139,7 +1147,9 @@ def _register_journal_write_api(app: FastAPI) -> None:
 def _register_journal_api(app: FastAPI) -> None:
     """Developer & Work Journal — REST CRUD, strictly scoped to the current user."""
     _register_journal_read_api(app)
-    _register_journal_write_api(app)
+    _register_journal_create(app)
+    _register_journal_update(app)
+    _register_journal_delete(app)
 
 
 class ClientRegistration(BaseModel):
