@@ -148,12 +148,20 @@
       <router-link to="/">🏠 Overview</router-link>
       <router-link to="/profile">👤 Profile<span v-if="inboxCount" class="nav-badge" :title="inboxCount + ' note(s) awaiting review'">{{ inboxCount }}</span></router-link>
       <div class="nav-dd" :class="{ open: insightsOpen }" @mouseleave="insightsOpen = false">
-        <a href="#/insights/agents" :class="{ 'nav-active': isInsights }" @click.prevent="insightsOpen = !insightsOpen">💡 Insights ▾</a>
-        <div class="nav-dd-menu" @click="insightsOpen = false">
-          <router-link to="/insights/journal">📖 Journal</router-link>
-          <router-link to="/insights/agents">📊 Agents</router-link>
-          <router-link to="/insights/trends">📈 Trends</router-link>
-          <router-link to="/insights/memory">🧠 Memory</router-link>
+        <a href="#/insights/agents"
+           role="button"
+           aria-haspopup="true"
+           :aria-expanded="insightsOpen ? 'true' : 'false'"
+           :class="{ 'nav-active': isInsights }"
+           @click.prevent="insightsOpen = !insightsOpen"
+           @keydown.enter.prevent="insightsOpen = !insightsOpen"
+           @keydown.space.prevent="insightsOpen = !insightsOpen"
+           @keydown.esc="insightsOpen = false">💡 Insights ▾</a>
+        <div class="nav-dd-menu" role="menu" @click="insightsOpen = false">
+          <router-link to="/insights/journal" role="menuitem">📖 Journal</router-link>
+          <router-link to="/insights/agents" role="menuitem">📊 Agents</router-link>
+          <router-link to="/insights/trends" role="menuitem">📈 Trends</router-link>
+          <router-link to="/insights/memory" role="menuitem">🧠 Memory</router-link>
         </div>
       </div>
       <router-link to="/settings">⚙️ Settings</router-link>

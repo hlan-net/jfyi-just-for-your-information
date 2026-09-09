@@ -67,6 +67,7 @@ def test_journal_add_and_get(db):
         "Switched to httpx",
         "requests lacks async streaming",
         entry_type="decision",
+        entry_date="2026-04-15",
         project_id="jfyi",
         tags=["http", "async"],
     )
@@ -76,7 +77,7 @@ def test_journal_add_and_get(db):
     assert entry["source"] == "manual"
     assert entry["project_id"] == "jfyi"
     assert entry["tags"] == ["http", "async"]
-    assert entry["entry_date"] == datetime.now(UTC).date().isoformat()
+    assert entry["entry_date"] == "2026-04-15"
 
 
 def test_journal_strips_injection_markers(db):
@@ -274,7 +275,8 @@ def test_api_journal_scoped_to_current_user(client, db):
     assert db.journal_get(2, bob_entry)["title"] == "bob only"
 
 
-def test_api_journal_requires_auth(db):
+def test_api_journal_requires_auth(db, monkeypatch):
+    monkeypatch.setattr("jfyi.web.app.settings.single_user_mode", False)
     app = create_app(db, AnalyticsEngine(db))
     anon = TestClient(app)
     assert anon.get("/api/journal").status_code == 401

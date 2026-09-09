@@ -533,7 +533,10 @@ async def _handle_recall_journal(
     user_id: int,
 ) -> list[TextContent]:
     query = str(arguments.get("query") or "")
-    days_back = int(arguments.get("days_back") or 7)
+    try:
+        days_back = max(1, min(365, int(arguments.get("days_back") or 7)))
+    except (TypeError, ValueError):
+        days_back = 7
     entry_type = arguments.get("entry_type") or "all"
     entries = await asyncio.to_thread(
         db.journal_recall,
