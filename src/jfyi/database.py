@@ -48,6 +48,10 @@ class Database:
                 rule_rows = conn.execute(
                     "SELECT id, user_id, text, category, scope, project_id FROM profile_rules"
                 ).fetchall()
+                journal_rows = conn.execute(
+                    "SELECT id, user_id, title, content_md, entry_type, project_id, entry_date"
+                    " FROM journal_entries"
+                ).fetchall()
         except sqlite3.OperationalError:
             # Tables not present (pre-migration call path); nothing to reconcile.
             return
@@ -77,6 +81,13 @@ class Database:
                     "scope": r["scope"] or "global",
                     "project_id": r["project_id"] or "",
                 },
+            )
+        for r in journal_rows:
+            self._vs.add(
+                "journal",
+                str(r["id"]),
+                self._journal_text(r["title"], r["content_md"]),
+                self._journal_vector_meta(dict(r)),
             )
 
     @contextmanager
@@ -491,6 +502,36 @@ class Database:
 
                     PRAGMA user_version = 15;
                 """)
+            if version < 16:
+                # Developer & Work Journal (v2.17.0): temporal timeline of
+                # daily digests, architectural decisions, reflections and
+                # raw agent-filed notes. Strictly scoped per user; optional
+                # project scope.
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS journal_entries (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        entry_date TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        content_md TEXT NOT NULL,
+                        entry_type TEXT NOT NULL
+                            CHECK(entry_type IN ('daily_digest', 'decision', 'reflection', 'note')),
+                        source TEXT NOT NULL DEFAULT 'manual',
+                        project_id TEXT,
+                        tags TEXT,
+                        friction_summary TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_journal_user_date
+                        ON journal_entries(user_id, entry_date DESC);
+
+                    CREATE INDEX IF NOT EXISTS idx_journal_user_project
+                        ON journal_entries(user_id, project_id);
+
+                    PRAGMA user_version = 16;
+                """)
 
     # ── Rule Injections (Decay + Effectiveness) ───────────────────────────
 
@@ -828,6 +869,7 @@ class Database:
                 "episodic_memory",
                 "artifacts",
                 "vibe_matches",
+                "journal_entries",
                 "synthesis_config",
             ]
 
@@ -2194,3 +2236,305 @@ class Database:
                 "DELETE FROM artifacts WHERE id=? AND user_id=?", (artifact_id, user_id)
             )
             return cur.rowcount > 0
+
+    # ── Developer & Work Journal ──────────────────────────────────────────
+
+    JOURNAL_ENTRY_TYPES = ("daily_digest", "decision", "reflection", "note")
+    JOURNAL_SOURCES = ("manual", "agent", "synthesizer")
+
+    @staticmethod
+    def _journal_text(title: str, content_md: str) -> str:
+        return f"{title}\n\n{content_md}".strip()
+
+    @staticmethod
+    def _journal_vector_meta(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "user_id": row["user_id"],
+            "entry_type": row["entry_type"],
+            "project_id": row.get("project_id") or "",
+            "entry_date": row.get("entry_date") or "",
+        }
+
+    @staticmethod
+    def _normalize_tags(tags: list[str] | str | None) -> str | None:
+        if tags is None:
+            return None
+        if isinstance(tags, str):
+            parts = [t.strip() for t in tags.split(",")]
+        else:
+            parts = [str(t).strip() for t in tags]
+        cleaned = [t for t in parts if t]
+        return json.dumps(cleaned) if cleaned else None
+
+    @staticmethod
+    def _journal_row(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        raw = d.get("tags")
+        tags: list[str] = []
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                tags = [str(t) for t in parsed] if isinstance(parsed, list) else []
+            except (TypeError, ValueError):
+                tags = [t.strip() for t in raw.split(",") if t.strip()]
+        d["tags"] = tags
+        return d
+
+    def journal_add(
+        self,
+        user_id: int,
+        title: str,
+        content_md: str,
+        entry_type: str = "note",
+        source: str = "manual",
+        entry_date: str | None = None,
+        project_id: str | None = None,
+        tags: list[str] | str | None = None,
+        friction_summary: str | None = None,
+    ) -> int:
+        if entry_type not in self.JOURNAL_ENTRY_TYPES:
+            raise ValueError(f"Invalid journal entry_type: {entry_type!r}")
+        if source not in self.JOURNAL_SOURCES:
+            raise ValueError(f"Invalid journal source: {source!r}")
+        now = datetime.now(UTC)
+        day = entry_date or now.date().isoformat()
+        clean_title = sanitize_rule(title)
+        clean_content = sanitize_rule(content_md)
+        if not clean_title:
+            raise ValueError("Journal title must not be empty")
+        with self._conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO journal_entries"
+                " (user_id, entry_date, title, content_md, entry_type, source, project_id,"
+                "  tags, friction_summary, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    user_id,
+                    day,
+                    clean_title,
+                    clean_content,
+                    entry_type,
+                    source,
+                    project_id or None,
+                    self._normalize_tags(tags),
+                    friction_summary,
+                    now.isoformat(),
+                    now.isoformat(),
+                ),
+            )
+            entry_id = cur.lastrowid
+        if self._vs:
+            self._vs.add(
+                "journal",
+                str(entry_id),
+                self._journal_text(clean_title, clean_content),
+                self._journal_vector_meta(
+                    {
+                        "user_id": user_id,
+                        "entry_type": entry_type,
+                        "project_id": project_id,
+                        "entry_date": day,
+                    }
+                ),
+            )
+        return entry_id
+
+    def journal_get(self, user_id: int, entry_id: int) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM journal_entries WHERE id=? AND user_id=?", (entry_id, user_id)
+            ).fetchone()
+            return self._journal_row(row) if row else None
+
+    def journal_list(
+        self,
+        user_id: int,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        project_id: str | None = None,
+        entry_type: str | None = None,
+        source: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """List journal entries newest first. All filters are optional."""
+        clauses = ["user_id = ?"]
+        params: list[Any] = [user_id]
+        if from_date:
+            clauses.append("entry_date >= ?")
+            params.append(from_date)
+        if to_date:
+            clauses.append("entry_date <= ?")
+            params.append(to_date)
+        if project_id:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if entry_type and entry_type != "all":
+            clauses.append("entry_type = ?")
+            params.append(entry_type)
+        if source:
+            clauses.append("source = ?")
+            params.append(source)
+        params.append(max(1, min(int(limit), 500)))
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM journal_entries WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY entry_date DESC, created_at DESC, id DESC LIMIT ?",
+                params,
+            ).fetchall()
+            return [self._journal_row(r) for r in rows]
+
+    def journal_update(
+        self,
+        user_id: int,
+        entry_id: int,
+        title: str | None = None,
+        content_md: str | None = None,
+        entry_type: str | None = None,
+        entry_date: str | None = None,
+        project_id: str | None = None,
+        tags: list[str] | str | None = None,
+        friction_summary: str | None = None,
+        clear_project: bool = False,
+    ) -> bool:
+        """Partial update. Only supplied fields change; returns False when not found."""
+        if entry_type is not None and entry_type not in self.JOURNAL_ENTRY_TYPES:
+            raise ValueError(f"Invalid journal entry_type: {entry_type!r}")
+        sets: list[str] = []
+        params: list[Any] = []
+        if title is not None:
+            clean_title = sanitize_rule(title)
+            if not clean_title:
+                raise ValueError("Journal title must not be empty")
+            sets.append("title=?")
+            params.append(clean_title)
+        if content_md is not None:
+            sets.append("content_md=?")
+            params.append(sanitize_rule(content_md))
+        if entry_type is not None:
+            sets.append("entry_type=?")
+            params.append(entry_type)
+        if entry_date is not None:
+            sets.append("entry_date=?")
+            params.append(entry_date)
+        if clear_project:
+            sets.append("project_id=NULL")
+        elif project_id is not None:
+            sets.append("project_id=?")
+            params.append(project_id or None)
+        if tags is not None:
+            sets.append("tags=?")
+            params.append(self._normalize_tags(tags))
+        if friction_summary is not None:
+            sets.append("friction_summary=?")
+            params.append(friction_summary)
+        sets.append("updated_at=?")
+        params.append(datetime.now(UTC).isoformat())
+        params.extend([entry_id, user_id])
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE journal_entries SET " + ", ".join(sets) + " WHERE id=? AND user_id=?",
+                params,
+            )
+            ok = cur.rowcount > 0
+        if ok and self._vs:
+            entry = self.journal_get(user_id, entry_id)
+            if entry:
+                self._vs.add(
+                    "journal",
+                    str(entry_id),
+                    self._journal_text(entry["title"], entry["content_md"]),
+                    self._journal_vector_meta(entry),
+                )
+        return ok
+
+    def journal_delete(self, user_id: int, entry_id: int) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM journal_entries WHERE id=? AND user_id=?", (entry_id, user_id)
+            )
+            deleted = cur.rowcount > 0
+        if deleted and self._vs:
+            self._vs.delete("journal", ids=str(entry_id))
+        return deleted
+
+    def journal_recall(
+        self,
+        user_id: int,
+        query: str = "",
+        days_back: int = 7,
+        project_id: str | None = None,
+        entry_type: str | None = None,
+        k: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Agent read path: return up to k relevant entries within the date window.
+
+        Uses ChromaDB when a vector store is attached; otherwise falls back to
+        lexical term matching over title/content/tags, ordered newest first.
+        An empty query returns the most recent entries in the window.
+        """
+        days_back = max(1, int(days_back))
+        from_date = (datetime.now(UTC).date() - timedelta(days=days_back)).isoformat()
+        type_filter = None if entry_type in (None, "", "all") else entry_type
+        if self._vs and query.strip():
+            where_clauses: list[dict[str, Any]] = [{"user_id": user_id}]
+            if project_id:
+                where_clauses.append({"project_id": project_id})
+            if type_filter:
+                where_clauses.append({"entry_type": type_filter})
+            where = where_clauses[0] if len(where_clauses) == 1 else {"$and": where_clauses}
+            # Over-fetch so the date window can be applied after ranking.
+            ids = self._vs.query("journal", query, k=max(k * 4, 12), where=where)
+            if ids:
+                placeholders = ",".join("?" * len(ids))
+                with self._conn() as conn:
+                    rows = conn.execute(
+                        f"SELECT * FROM journal_entries WHERE id IN ({placeholders})"
+                        " AND user_id=? AND entry_date >= ?",
+                        (*ids, user_id, from_date),
+                    ).fetchall()
+                id_order = {id_: i for i, id_ in enumerate(ids)}
+                ranked = sorted(
+                    (self._journal_row(r) for r in rows),
+                    key=lambda r: id_order.get(str(r["id"]), 999),
+                )
+                if ranked:
+                    return ranked[:k]
+        clauses = ["user_id = ?", "entry_date >= ?"]
+        params: list[Any] = [user_id, from_date]
+        if project_id:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if type_filter:
+            clauses.append("entry_type = ?")
+            params.append(type_filter)
+        terms = [t.lower() for t in query.split() if len(t) >= 3][:8]
+        if terms:
+            term_clauses = []
+            for t in terms:
+                term_clauses.append(
+                    "(lower(title) LIKE ? OR lower(content_md) LIKE ?"
+                    " OR lower(COALESCE(tags, '')) LIKE ?)"
+                )
+                params.extend([f"%{t}%"] * 3)
+            clauses.append("(" + " OR ".join(term_clauses) + ")")
+        params.append(k)
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM journal_entries WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY entry_date DESC, created_at DESC LIMIT ?",
+                params,
+            ).fetchall()
+            results = [self._journal_row(r) for r in rows]
+        if results or not terms:
+            return results
+        # No lexical hit — degrade to most recent entries in the window so the
+        # agent still gets temporal context rather than nothing.
+        return self.journal_list(
+            user_id,
+            from_date=from_date,
+            project_id=project_id,
+            entry_type=type_filter,
+            limit=k,
+        )

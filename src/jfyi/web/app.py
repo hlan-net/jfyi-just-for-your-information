@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -110,6 +111,26 @@ class InteractionCreate(BaseModel):
     correction_latency_s: float | None = None
     num_edits: int = 0
     model: str | None = None
+
+
+class JournalEntryCreate(BaseModel):
+    title: str
+    content_md: str = ""
+    entry_type: str = "note"
+    entry_date: str | None = None
+    project_id: str | None = None
+    tags: list[str] | None = None
+    friction_summary: str | None = None
+
+
+class JournalEntryUpdate(BaseModel):
+    title: str | None = None
+    content_md: str | None = None
+    entry_type: str | None = None
+    entry_date: str | None = None
+    project_id: str | None = None
+    tags: list[str] | None = None
+    friction_summary: str | None = None
 
 
 class IdpCreate(BaseModel):
@@ -980,6 +1001,127 @@ def _register_developer_api(app: FastAPI) -> None:
         return await asyncio.to_thread(get_clusters_for_user, db, current_user["id"])
 
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+ERR_JOURNAL_NOT_FOUND = "Journal entry not found"
+
+
+def _validate_journal_date(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not _DATE_RE.match(value):
+        raise HTTPException(status_code=422, detail="entry_date must be YYYY-MM-DD")
+    return value
+
+
+def _register_journal_api(app: FastAPI) -> None:
+    """Developer & Work Journal — REST CRUD, strictly scoped to the current user."""
+
+    @app.get("/api/journal")
+    async def list_journal(
+        current_user: CurrentUser,
+        db: DBDep,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        project_id: str | None = None,
+        type: str | None = None,
+        source: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        if type and type != "all" and type not in Database.JOURNAL_ENTRY_TYPES:
+            raise HTTPException(status_code=422, detail="Invalid entry type")
+        return db.journal_list(
+            user_id=current_user["id"],
+            from_date=_validate_journal_date(from_date),
+            to_date=_validate_journal_date(to_date),
+            project_id=project_id,
+            entry_type=type,
+            source=source,
+            limit=limit,
+        )
+
+    @app.post("/api/journal", status_code=201)
+    async def create_journal_entry(
+        body: JournalEntryCreate, current_user: CurrentUser, db: DBDep
+    ) -> dict[str, Any]:
+        if body.entry_type not in Database.JOURNAL_ENTRY_TYPES:
+            raise HTTPException(status_code=422, detail="Invalid entry type")
+        if not body.title.strip():
+            raise HTTPException(status_code=422, detail="Title must not be empty")
+        title, content = body.title, body.content_md
+        if settings.dlp_enabled:
+            title, _ = redact(title)
+            content, _ = redact(content)
+        try:
+            entry_id = db.journal_add(
+                user_id=current_user["id"],
+                title=title,
+                content_md=content,
+                entry_type=body.entry_type,
+                source="manual",
+                entry_date=_validate_journal_date(body.entry_date),
+                project_id=body.project_id,
+                tags=body.tags,
+                friction_summary=body.friction_summary,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        entry = db.journal_get(current_user["id"], entry_id)
+        assert entry is not None
+        return entry
+
+    @app.get("/api/journal/{entry_id}", responses={404: {"description": ERR_JOURNAL_NOT_FOUND}})
+    async def get_journal_entry(
+        entry_id: int, current_user: CurrentUser, db: DBDep
+    ) -> dict[str, Any]:
+        entry = db.journal_get(current_user["id"], entry_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail=ERR_JOURNAL_NOT_FOUND)
+        return entry
+
+    @app.put("/api/journal/{entry_id}", responses={404: {"description": ERR_JOURNAL_NOT_FOUND}})
+    async def update_journal_entry(
+        entry_id: int, body: JournalEntryUpdate, current_user: CurrentUser, db: DBDep
+    ) -> dict[str, Any]:
+        if body.entry_type is not None and body.entry_type not in Database.JOURNAL_ENTRY_TYPES:
+            raise HTTPException(status_code=422, detail="Invalid entry type")
+        title, content = body.title, body.content_md
+        if settings.dlp_enabled:
+            if title is not None:
+                title, _ = redact(title)
+            if content is not None:
+                content, _ = redact(content)
+        fields = body.model_fields_set
+        try:
+            ok = db.journal_update(
+                current_user["id"],
+                entry_id,
+                title=title,
+                content_md=content,
+                entry_type=body.entry_type,
+                entry_date=_validate_journal_date(body.entry_date),
+                project_id=body.project_id,
+                tags=body.tags if "tags" in fields else None,
+                friction_summary=body.friction_summary,
+                clear_project="project_id" in fields and body.project_id is None,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not ok:
+            raise HTTPException(status_code=404, detail=ERR_JOURNAL_NOT_FOUND)
+        entry = db.journal_get(current_user["id"], entry_id)
+        assert entry is not None
+        return entry
+
+    @app.delete(
+        "/api/journal/{entry_id}",
+        status_code=204,
+        responses={404: {"description": ERR_JOURNAL_NOT_FOUND}},
+    )
+    async def delete_journal_entry(entry_id: int, current_user: CurrentUser, db: DBDep) -> None:
+        if not db.journal_delete(current_user["id"], entry_id):
+            raise HTTPException(status_code=404, detail=ERR_JOURNAL_NOT_FOUND)
+
+
 class ClientRegistration(BaseModel):
     client_name: str
     client_uri: str | None = None
@@ -1322,6 +1464,7 @@ def create_app(
     _register_synthesis_api(app)
     _register_analytics_api(app)
     _register_developer_api(app)
+    _register_journal_api(app)
     _register_export_api(app)
     _register_oauth_server_api(app)
 

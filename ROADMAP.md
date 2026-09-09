@@ -4,7 +4,7 @@ This roadmap describes planned improvements across context efficiency, memory ar
 
 The user-centric mission and the core architectural pattern (write raw / curate / read curated) are documented in [`docs/architecture.md`](docs/architecture.md). New roadmap items should be evaluated against the test laid out there: *does this serve the agent reading better-curated info about the user?* — answers map to **Core**, **Supplementary**, or **Infrastructure** tags.
 
-> **Shipped Releases & History:** All completed roadmap phases (`v2.3.0`–`v2.16.0`) have been moved to [`CHANGELOG.md`](CHANGELOG.md).
+> **Shipped Releases & History:** All completed roadmap phases (`v2.3.0`–`v2.17.0`) have been moved to [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -14,17 +14,17 @@ The user-centric mission and the core architectural pattern (write raw / curate 
 
 Adds a temporal journal dimension and restructures the dashboard from 7 history-driven tabs into 4 intuitive areas (Overview, Profile, Insights, Settings).
 
-#### `v2.17.0` — Journal Backend + Dashboard Restructure (Phase 1)
+#### `v2.17.0` — Journal Backend + Dashboard Restructure (Phase 1) ✓ Done
 
 | Item | Status | Spec | Tag |
 |------|--------|------|-----|
-| [Dashboard UX Redesign — Phase 1](docs/dashboard-ux-redesign.md) (Overview page, nav restructure, Profile merge, Settings merge) | Planned | [docs/dashboard-ux-redesign.md](docs/dashboard-ux-redesign.md) | Core |
-| [Developer & Work Journal — Schema & API](docs/journal.md) (CRUD, `recall_journal`, `add_journal_note`) | Planned | [docs/journal.md](docs/journal.md) | Core |
+| [Dashboard UX Redesign — Phase 1](docs/dashboard-ux-redesign.md) (Overview page, nav restructure, Profile merge, Settings merge) | ✓ Done | [docs/dashboard-ux-redesign.md](docs/dashboard-ux-redesign.md) | Core |
+| [Developer & Work Journal — Schema & API](docs/journal.md) (CRUD, `recall_journal`, `add_journal_note`) | ✓ Done | [docs/journal.md](docs/journal.md) | Core |
 
 - **Overview Page:** Living default landing with KPIs, 7-day trend, top agents, notes inbox preview, and zero-state onboarding. *No new backend endpoints needed — uses existing APIs.*
 - **Navigation Restructure:** `🏠 Overview` · `👤 Profile` · `💡 Insights ▾` · `⚙️ Settings`. Old routes preserved as redirects.
 - **Profile Merge:** Notes Inbox + Constitution unified as sub-tabs under Profile.
-- **Journal Backend:** `journal_entries` schema, REST CRUD, MCP tools (`recall_journal`, `add_journal_note`).
+- **Journal Backend:** `journal_entries` schema, REST CRUD, MCP tools (`recall_journal`, `add_journal_note`). A minimal timeline with quick entry ships under `Insights → Journal`; digest cards and standup export follow in `v2.18.0`.
 
 #### `v2.18.0` — Journal UI + Memory Explorer (Phases 2–3)
 
@@ -84,3 +84,4 @@ For full release notes, pull requests, and evaluation details, see [`CHANGELOG.m
 - **✓ Profile Architecture & Operations (`v2.7.0`–`v2.11.0`)**: Notes vs Rules 2-tier architecture, ChromaDB extraction, Evidence Traceability.
 - **✓ Phase 6 — Vibe Coder Optimization (`v2.12.0`)**: Tiered Profiling, Positive Reinforcement, Semantic Rule Inference, Vibe Telemetry, Friction Clustering, Agent Warming.
 - **✓ Dashboard, Reporting & Budgeting (`v2.13.0`–`v2.16.0`)**: Agent Analytics, Vibe Profile Report, Structured Export, Constitution Token Budget Cap & Decay, Identity Linking.
+- **✓ Phase 7, Part 1 — Journal Backend & Dashboard Restructure (`v2.17.0`)**: `journal_entries` schema + CRUD, `recall_journal` / `add_journal_note`, 4-area navigation with living Overview page.

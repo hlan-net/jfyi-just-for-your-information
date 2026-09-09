@@ -108,7 +108,7 @@ kubectl port-forward svc/my-jfyi-service 8080:8080 -n jfyi-system
 }
 ```
 
-Generate a token from the **How to Connect** page in the web dashboard.
+Generate a token from the **Settings** page in the web dashboard.
 
 **stdio single-user mode (no cluster required):**
 
@@ -134,11 +134,10 @@ The named volume `jfyi-data` persists the developer constitution across sessions
 
 Access at `http://localhost:8080/` after port-forwarding. The dashboard provides:
 
-- **Developer Constitution** — view, add, edit, and delete profile rules by category and confidence; copy all rules as tab-separated text for use elsewhere
-- **How to Connect** — generate Bearer tokens for agent authentication
-- **Agent Analytics** — comparative correction rate, friction score, and latency across agents
-- **Memory Explorer** — browse episodic session summaries and friction events
-- **Admin** — manage identity providers (including custom OIDC), users, and registration settings
+- **🏠 Overview** — living home page: KPIs, 7-day correction trend, top agents, recent activity, notes inbox and journal previews; onboarding card for new users
+- **👤 Profile** — the Constitution (curated rules, AGENTS.md export, linked identities) and the Notes Inbox (raw agent observations, synthesis wizard, style interview) as sub-tabs
+- **💡 Insights** — Journal (decisions and agent-filed notes), Agents (comparative correction rate, friction, latency), Trends (self-analytics, rule health), Memory (v2.18.0)
+- **⚙️ Settings** — generate Bearer tokens for agent authentication; admins also manage identity providers (including custom OIDC), users, and registration
 
 ## Privacy
 

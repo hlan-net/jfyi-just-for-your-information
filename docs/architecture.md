@@ -19,6 +19,7 @@ The MCP surface is shaped the same way at every tier. The agent **writes raw obs
 | **Profile** | `add_profile_note` — observations about the user's preferences, captured opportunistically during work | Human in `/notes` UX (composes notes into rules; deletes noise) | `get_developer_profile` — the curated rules constitution |
 | **Analytics** | `record_interaction` — friction signals after each generation | `AnalyticsEngine` (`src/jfyi/analytics.py`) — computes correction rate, friction score, latency aggregates | `get_agent_analytics` — comparative friction by agent |
 | **Episodic** | (background summarizer writes; agents do not write directly) | Background summarizer — distills sessions into summaries | `recall_episodic` — session summaries on demand |
+| **Journal** | `add_journal_note` — decision drafts and milestones at the end of a task | Human in `Insights → Journal` UX (reviews, rewrites, deletes; daily digest engine from v2.18.0) | `recall_journal` — at most 3 curated entries within a 1,000-token cap |
 
 Same shape every time. **The asymmetry is the value**: agents see only what the curation step has approved.
 
@@ -43,9 +44,10 @@ Features that serve the agent reading better-curated info about the user. The re
 
 Emergent analysis surfaces. Useful when patterns surface, but not load-bearing. The user can ignore them and the core mission is still served.
 
-- `/developer` (My Analytics) — self-reflection on correction rates, friction by agent, latency, rule-confidence and -accumulation. Implemented.
-- `/analytics` (Agent Analytics) — comparative agent performance. Currently a stub.
-- `/memory` (Memory Explorer) — friction event exploration. Currently a stub.
+- `/insights/trends` (Trends, formerly `/developer`) — self-reflection on correction rates, friction by agent, latency, rule-confidence and -accumulation. Implemented.
+- `/insights/agents` (Agents, formerly `/analytics`) — comparative agent performance. Implemented.
+- `/insights/journal` (Journal) — temporal timeline of decisions and agent-filed notes. Minimal timeline in v2.17.0; digests and standup in v2.18.0.
+- `/insights/memory` (Memory Explorer, formerly `/memory`) — friction event exploration. Currently a stub (v2.18.0).
 
 Supplementary work earns a place in JFYI when it might surface signal that flows back into the core curation step (e.g., a friction pattern in `/developer` prompts the user to add a new note). When it doesn't feed back, it's a pure read-only diagnostic that has to justify its maintenance cost on its own merits.
 
