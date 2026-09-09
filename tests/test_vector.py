@@ -264,3 +264,26 @@ def test_memory_recall_without_semantic_query_uses_sql(db_vs):
     mem.remember("long_term", user_id=1, text="use snake_case", category="style")
     results = mem.recall("long_term", user_id=1)
     assert len(results) == 1
+
+
+def test_journal_recall_vector_semantic_ranking_and_filters(db_vs):
+    db, _ = db_vs
+    # Add entries
+    id1 = db.journal_add(1, "Postgres migration", "Switched from mysql to postgresql", "decision")
+    id2 = db.journal_add(1, "CSS styling polish", "Updated color theme to dark mode", "note")
+    # Agent entry should be filtered out by vector where clause
+    db.journal_add(1, "Agent DB note", "Agent observation on postgresql", "note", source="agent")
+
+    # Query matching id1 semantically
+    results = db.journal_recall(1, "relational database migration", days_back=7)
+    assert len(results) >= 1
+    assert results[0]["id"] == id1
+    assert "Postgres" in results[0]["title"]
+    # Verify agent note is excluded
+    assert all(r["source"] != "agent" for r in results)
+
+    # Test entry_type filter
+    decisions = db.journal_recall(1, "theme dark mode", days_back=7, entry_type="decision")
+    assert all(r["entry_type"] == "decision" for r in decisions)
+    notes = db.journal_recall(1, "theme dark mode", days_back=7, entry_type="note")
+    assert any(r["id"] == id2 for r in notes)

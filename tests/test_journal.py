@@ -51,6 +51,37 @@ def test_migration_v16_creates_journal_table(tmp_path):
     assert {"user_id", "entry_date", "title", "content_md", "entry_type", "source"} <= cols
 
 
+def test_migration_v15_to_v16_preserves_data(tmp_path):
+    db_path = tmp_path / "v15.db"
+    db = Database(db_path)
+    db.create_user("alice@example.com")
+
+    # Simulate v15 database state
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        DROP TABLE IF EXISTS journal_entries;
+        DROP INDEX IF EXISTS idx_journal_user_date;
+        DROP INDEX IF EXISTS idx_journal_user_project;
+        PRAGMA user_version = 15;
+    """)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 15
+    conn.close()
+
+    # Reopen with Database to run v16 migration
+    db2 = Database(db_path)
+    conn2 = sqlite3.connect(db_path)
+    assert conn2.execute("PRAGMA user_version").fetchone()[0] == 16
+    cols = {r[1] for r in conn2.execute("PRAGMA table_info(journal_entries)").fetchall()}
+    conn2.close()
+    assert {"user_id", "entry_date", "title", "content_md", "entry_type", "source"} <= cols
+
+    # Verify user data intact and journal table operational
+    user = db2.get_user_by_email("alice@example.com")
+    assert user is not None
+    entry_id = db2.journal_add(user["id"], "Migrated", "Content", "decision")
+    assert entry_id == 1
+
+
 def test_journal_entry_type_is_constrained(db):
     with pytest.raises(ValueError):
         db.journal_add(1, "x", "y", entry_type="bogus")

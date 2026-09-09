@@ -1483,7 +1483,7 @@
           <li><strong>Network access:</strong> the default <em>Trusted</em> level only allows package registries and GitHub. Set the environment to <em>Custom</em> and add <code>{{ host }}</code>. JFYI must be served over TLS.</li>
         </ol>
       </div>
-      <p class="desc">Because headless cloud sessions cannot prompt for plugin <code>user_config</code>, commit a project <code>.mcp.json</code> to connect tools via environment variables — no URL, no token in the file — plus a <code>SessionStart</code> hook running <code>plugins/jfyi/scripts/session-start.sh</code>:</p>
+      <p class="desc">Because headless cloud sessions cannot prompt for plugin <code>user_config</code>, commit a project <code>.mcp.json</code> to connect tools via environment variables — no URL, no token in the file (the plugin's bundled SessionStart hook already reads the environment fallback):</p>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
         <code style="color:var(--accent);font-size:0.85rem;">.mcp.json</code>
         <button class="btn btn-outline" style="font-size:0.75rem;padding:0.2rem 0.6rem;" @click="copy('webmcp', files.webmcp)">{{ copied === 'webmcp' ? 'Copied!' : 'Copy' }}</button>
@@ -2561,7 +2561,7 @@ const Overview = {
     };
 
     const isZeroState = computed(() =>
-      summary.value.total_interactions <= 0 && !notes.value.length && !rules.value.length
+      summary.value.total_interactions <= 0 && !notes.value.length && !rules.value.length && !journal.value.length
     );
     const alignment = computed(() =>
       summary.value.correction_rate == null ? null : Math.round((1 - summary.value.correction_rate) * 100)

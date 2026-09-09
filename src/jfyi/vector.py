@@ -46,15 +46,16 @@ class VectorStore:
         text: str,
         k: int = 5,
         where: dict[str, Any] | None = None,
+        ids: list[str] | None = None,
     ) -> list[str]:
         """Return up to k IDs ranked by semantic similarity. Returns [] when empty.
 
-        Pass where={"user_id": uid} (or any ChromaDB metadata filter) to restrict
-        the search to a subset of the collection before ranking.
+        Pass where={"user_id": uid} (or any ChromaDB metadata filter) or ids=[...]
+        to restrict the search before ranking.
         """
         col = self._col(collection)
-        if where:
-            matched = col.get(where=where, include=[])
+        if where or ids:
+            matched = col.get(where=where, ids=ids, include=[])
             n_results = min(k, len(matched["ids"]))
         else:
             n_results = min(k, col.count())
@@ -64,6 +65,7 @@ class VectorStore:
             query_texts=[text],
             n_results=n_results,
             where=where,
+            ids=ids,
         )
         return results["ids"][0]
 

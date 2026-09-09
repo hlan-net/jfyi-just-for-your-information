@@ -2539,26 +2539,32 @@ class Database:
         type_filter: str | None,
         k: int,
     ) -> list[dict[str, Any]]:
-        where_clauses: list[dict[str, Any]] = [
-            {"user_id": user_id},
-            {"source": {"$ne": "agent"}},
-        ]
-        if from_date:
-            where_clauses.append({"entry_date": {"$gte": from_date}})
-        if project_id:
-            where_clauses.append({"project_id": project_id})
-        if type_filter:
-            where_clauses.append({"entry_type": type_filter})
-        where = where_clauses[0] if len(where_clauses) == 1 else {"$and": where_clauses}
-        ids = self._vs.query("journal", query, k=max(k * 4, 12), where=where)
+        with self._conn() as conn:
+            query_sql = (
+                "SELECT id FROM journal_entries"
+                " WHERE user_id=? AND entry_date >= ? AND source != 'agent'"
+            )
+            params: list[Any] = [user_id, from_date]
+            if project_id:
+                query_sql += " AND project_id=?"
+                params.append(project_id)
+            if type_filter:
+                query_sql += " AND entry_type=?"
+                params.append(type_filter)
+            eligible_rows = conn.execute(query_sql, params).fetchall()
+
+        if not eligible_rows:
+            return []
+
+        eligible_ids = [str(r[0]) for r in eligible_rows]
+        ids = self._vs.query("journal", query, k=k, ids=eligible_ids)
         if not ids:
             return []
         placeholders = ",".join("?" * len(ids))
         with self._conn() as conn:
             rows = conn.execute(
-                f"SELECT * FROM journal_entries WHERE id IN ({placeholders})"
-                " AND user_id=? AND entry_date >= ? AND source != 'agent'",
-                (*ids, user_id, from_date),
+                f"SELECT * FROM journal_entries WHERE id IN ({placeholders})",
+                ids,
             ).fetchall()
         id_order = {id_: i for i, id_ in enumerate(ids)}
         ranked = sorted(
