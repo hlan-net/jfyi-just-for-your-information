@@ -1587,6 +1587,7 @@ plugins/jfyi/
               <div style="display:flex;gap:0.4rem;align-items:center;white-space:nowrap;">
                 <span v-if="e.project_id" style="font-size:0.75rem;color:var(--accent);">📁 {{ e.project_id }}</span>
                 <span :class="e.source === 'agent' ? 'pill pill-green' : e.source === 'synthesizer' ? 'pill pill-orange' : 'pill pill-purple'" :title="'source: ' + e.source">{{ e.source }}</span>
+                <button v-if="e.source === 'agent'" class="btn-sm" style="margin-right:2px;" @click="promote(e.id)" title="Promote agent note to manual curated entry">↑ Promote</button>
                 <button class="btn-danger" style="border:none;cursor:pointer;" @click="remove(e.id)" title="Delete entry">×</button>
               </div>
             </div>
@@ -2717,6 +2718,15 @@ const Journal = {
       if (res.ok) load();
     };
 
+    const promote = async (id) => {
+      const res = await fetch(API + `/api/journal/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'manual' }),
+      });
+      if (res.ok) await load();
+    };
+
     const dayLabel = (date) => {
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const d = new Date(date + 'T00:00:00');
@@ -2737,7 +2747,7 @@ const Journal = {
 
     onMounted(load);
 
-    return { entries, loading, saving, error, typeFilter, draft, grouped, load, save, remove, typeColor: journalTypeColorOf };
+    return { entries, loading, saving, error, typeFilter, draft, grouped, load, save, remove, promote, typeColor: journalTypeColorOf };
   }
 };
 

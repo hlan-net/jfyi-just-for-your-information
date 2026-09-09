@@ -491,3 +491,69 @@ def test_delete_user_purges_vectors(tmp_path):
     purged_cols = [c[0] for c in called_collections]
     assert "journal" in purged_cols
     assert "rules" in purged_cols
+
+
+async def test_add_journal_note_dlp_redacts_project_id(ctx):
+    db, analytics = ctx
+    result = await dispatch_tool(
+        "add_journal_note",
+        {
+            "title": "Auth update",
+            "content": "Updated credentials",
+            "project_id": "https://ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij@github.com/org/repo.git",
+        },
+        db,
+        analytics,
+    )
+    assert "Journal note added" in result[0].text
+    entries = db.journal_list(1)
+    assert len(entries) == 1
+    assert "ghp_" not in entries[0]["project_id"]
+    assert "[REDACTED:github_pat]" in entries[0]["project_id"]
+
+
+def test_api_journal_dlp_redacts_project_id_and_tags(client):
+    secret_pat = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+    resp = client.post(
+        "/api/journal",
+        json={
+            "title": "Config refactor",
+            "content_md": "Migrated auth config",
+            "entry_type": "decision",
+            "project_id": f"https://{secret_pat}@github.com/org/repo.git",
+            "tags": ["prod", f"pat-{secret_pat}"],
+        },
+    )
+    assert resp.status_code == 201
+    created = resp.json()
+    assert secret_pat not in created["project_id"]
+    assert "[REDACTED:github_pat]" in created["project_id"]
+    assert secret_pat not in created["tags"][1]
+    assert "[REDACTED:github_pat]" in created["tags"][1]
+
+    # Test update also redacts project_id and tags
+    resp2 = client.put(
+        f"/api/journal/{created['id']}",
+        json={
+            "project_id": f"https://{secret_pat}@example.com",
+            "tags": [f"updated-{secret_pat}"],
+        },
+    )
+    assert resp2.status_code == 200
+    updated = resp2.json()
+    assert secret_pat not in updated["project_id"]
+    assert "[REDACTED:github_pat]" in updated["project_id"]
+    assert secret_pat not in updated["tags"][0]
+    assert "[REDACTED:github_pat]" in updated["tags"][0]
+
+
+async def test_recall_journal_unbroken_blob_bounded_by_ceiling(ctx):
+    db, analytics = ctx
+    # Add a massive 50KB unbroken base64/minified string
+    unbroken_blob = "A" * 50_000
+    db.journal_add(1, "Unbroken payload", unbroken_blob, "decision")
+    result = await dispatch_tool("recall_journal", {"query": "payload"}, db, analytics)
+    text = result[0].text
+    # Total character length must be strictly bounded (1000 tokens * 4 chars = ~4000 chars)
+    assert len(text) <= 4500
+    assert text.endswith("…")

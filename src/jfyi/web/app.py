@@ -1065,14 +1065,20 @@ def _register_journal_read_api(app: FastAPI) -> None:
 
 
 def _redact_journal_fields(
-    title: str | None, content: str | None, friction: str | None = None
-) -> tuple[str | None, str | None, str | None]:
+    title: str | None,
+    content: str | None,
+    friction: str | None = None,
+    project_id: str | None = None,
+    tags: list[str] | None = None,
+) -> tuple[str | None, str | None, str | None, str | None, list[str] | None]:
     if not settings.dlp_enabled:
-        return title, content, friction
+        return title, content, friction, project_id, tags
     r_title = redact(title)[0] if title is not None else None
     r_content = redact(content)[0] if content is not None else None
     r_friction = redact(friction)[0] if friction is not None else None
-    return r_title, r_content, r_friction
+    r_project = redact(project_id)[0] if project_id is not None else None
+    r_tags = [redact(t)[0] for t in tags] if tags is not None else None
+    return r_title, r_content, r_friction, r_project, r_tags
 
 
 def _register_journal_create(app: FastAPI) -> None:
@@ -1086,8 +1092,8 @@ def _register_journal_create(app: FastAPI) -> None:
             raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
         if not body.title.strip():
             raise HTTPException(status_code=422, detail="Title must not be empty")
-        title, content, friction = _redact_journal_fields(
-            body.title, body.content_md, body.friction_summary
+        title, content, friction, project_id, tags = _redact_journal_fields(
+            body.title, body.content_md, body.friction_summary, body.project_id, body.tags
         )
         try:
             entry_id = await asyncio.to_thread(
@@ -1098,8 +1104,8 @@ def _register_journal_create(app: FastAPI) -> None:
                 entry_type=body.entry_type,
                 source="manual",
                 entry_date=_validate_journal_date(body.entry_date),
-                project_id=body.project_id,
-                tags=body.tags,
+                project_id=project_id,
+                tags=tags,
                 friction_summary=friction,
             )
         except ValueError as exc:
@@ -1135,10 +1141,14 @@ def _register_journal_update(app: FastAPI) -> None:
         entry_id: int, body: JournalEntryUpdate, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
         _validate_journal_update_body(body)
-        title, content, friction = _redact_journal_fields(
-            body.title, body.content_md, body.friction_summary
-        )
         fields = body.model_fields_set
+        title, content, friction, project_id, tags = _redact_journal_fields(
+            body.title,
+            body.content_md,
+            body.friction_summary,
+            body.project_id,
+            body.tags if "tags" in fields else None,
+        )
         source = await _resolve_update_source(db, current_user["id"], entry_id, body.source)
         try:
             ok = await asyncio.to_thread(
@@ -1149,8 +1159,8 @@ def _register_journal_update(app: FastAPI) -> None:
                 content_md=content,
                 entry_type=body.entry_type,
                 entry_date=_validate_journal_date(body.entry_date),
-                project_id=body.project_id,
-                tags=body.tags if "tags" in fields else None,
+                project_id=project_id,
+                tags=tags if "tags" in fields else None,
                 friction_summary=friction,
                 clear_project="project_id" in fields and body.project_id is None,
                 clear_friction="friction_summary" in fields and body.friction_summary is None,

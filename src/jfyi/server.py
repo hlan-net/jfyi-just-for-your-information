@@ -507,15 +507,44 @@ def _format_journal_meta(e: dict[str, Any]) -> str:
     return f"({'; '.join(meta_bits)})" if meta_bits else ""
 
 
+CHARS_PER_TOKEN = 4
+
+
+def _count_entry_tokens(text: str) -> int:
+    """Estimate token count via whitespace split with a character safety ceiling."""
+    if not text:
+        return 0
+    words = text.split()
+    return max(len(words), (len(text) + CHARS_PER_TOKEN - 1) // CHARS_PER_TOKEN)
+
+
+def _truncate_head(head_str: str, remaining: int) -> str:
+    """Truncate a header block to fit both word budget and character ceiling."""
+    max_chars = remaining * CHARS_PER_TOKEN
+    words = head_str.split()
+    text = " ".join(words[:remaining]) if len(words) > remaining else head_str
+    if len(text) > max_chars:
+        text = text[: max(0, max_chars - 1)].rstrip()
+    return text if text.endswith("…") else text + "…"
+
+
 def _truncate_body(content: str, remaining: int) -> str:
+    """Truncate content to fit both word budget and character ceiling."""
+    if remaining <= 0:
+        return ""
+    max_chars = remaining * CHARS_PER_TOKEN
     body_words = content.split()
     if len(body_words) > remaining:
-        if remaining <= 0:
-            return ""
         kept = body_words[:remaining]
-        kept[-1] += "…"
-        return " ".join(kept)
-    return " ".join(body_words)
+        text = " ".join(kept)
+        if len(text) > max_chars:
+            text = text[: max(0, max_chars - 1)].rstrip()
+        return text + "…"
+
+    text = " ".join(body_words)
+    if len(text) > max_chars:
+        return text[: max(0, max_chars - 1)].rstrip() + "…"
+    return text
 
 
 def _render_journal_entries(entries: list[dict[str, Any]], budget: int) -> str:
@@ -528,18 +557,15 @@ def _render_journal_entries(entries: list[dict[str, Any]], budget: int) -> str:
             break
         header = f"### {e['entry_date']} · [{e['entry_type']}] {e['title']}"
         meta = _format_journal_meta(e)
-        head_tokens = count_tokens(header) + count_tokens(meta)
+        head_tokens = _count_entry_tokens(header) + _count_entry_tokens(meta)
         if head_tokens >= remaining:
             if not lines and remaining > 0:
-                words = f"{header}\n{meta}".strip().split()
-                kept = words[:remaining]
-                kept[-1] += "…"
-                lines.append(" ".join(kept))
+                lines.append(_truncate_head(f"{header}\n{meta}".strip(), remaining))
             break
         body = _truncate_body(e.get("content_md") or "", remaining - head_tokens)
         block = "\n".join(x for x in (header, meta, body) if x)
         lines.append(block)
-        used += head_tokens + count_tokens(body)
+        used += head_tokens + _count_entry_tokens(body)
     return "\n\n".join(lines)
 
 
@@ -817,11 +843,14 @@ async def dispatch_tool(
 
         title = str(arguments.get("title") or "").strip()
         content = str(arguments.get("content") or "").strip()
+        project_id = arguments.get("project_id")
         if not title:
             return [TextContent(type="text", text="add_journal_note requires a non-empty title.")]
         if settings.dlp_enabled:
             title, _ = redact(title)
             content, _ = redact(content)
+            if project_id:
+                project_id, _ = redact(str(project_id))
         entry_id = await asyncio.to_thread(
             db.journal_add,
             user_id,
@@ -829,7 +858,7 @@ async def dispatch_tool(
             content,
             entry_type="note",
             source="agent",
-            project_id=arguments.get("project_id"),
+            project_id=project_id,
         )
         return [
             TextContent(
