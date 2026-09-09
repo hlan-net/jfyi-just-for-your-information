@@ -49,8 +49,8 @@ class Database:
                     "SELECT id, user_id, text, category, scope, project_id FROM profile_rules"
                 ).fetchall()
                 journal_rows = conn.execute(
-                    "SELECT id, user_id, title, content_md, entry_type, project_id, entry_date"
-                    " FROM journal_entries"
+                    "SELECT id, user_id, title, content_md, entry_type, project_id, "
+                    "entry_date, source FROM journal_entries"
                 ).fetchall()
         except sqlite3.OperationalError:
             # Tables not present (pre-migration call path); nothing to reconcile.
@@ -2356,6 +2356,7 @@ class Database:
                     {
                         "user_id": user_id,
                         "entry_type": entry_type,
+                        "source": source,
                         "project_id": project_id,
                         "entry_date": day,
                     }
@@ -2418,6 +2419,7 @@ class Database:
         tags: list[str] | str | None,
         friction_summary: str | None,
         clear_project: bool,
+        clear_friction: bool,
     ) -> tuple[list[str], list[Any]]:
         sets: list[str] = []
         params: list[Any] = []
@@ -2444,7 +2446,9 @@ class Database:
         if tags is not None:
             sets.append("tags=?")
             params.append(self._normalize_tags(tags))
-        if friction_summary is not None:
+        if clear_friction:
+            sets.append("friction_summary=NULL")
+        elif friction_summary is not None:
             sets.append("friction_summary=?")
             params.append(friction_summary)
         return sets, params
@@ -2461,6 +2465,7 @@ class Database:
         tags: list[str] | str | None = None,
         friction_summary: str | None = None,
         clear_project: bool = False,
+        clear_friction: bool = False,
     ) -> bool:
         """Partial update. Only supplied fields change; returns False when not found."""
         if entry_type is not None and entry_type not in self.JOURNAL_ENTRY_TYPES:
@@ -2474,6 +2479,7 @@ class Database:
             tags,
             friction_summary,
             clear_project,
+            clear_friction,
         )
         sets.append("updated_at=?")
         params.append(datetime.now(UTC).isoformat())
@@ -2575,13 +2581,13 @@ class Database:
             results = [self._journal_row(r) for r in rows]
         if results or not terms:
             return results
-        return self.journal_list(
+        return self._journal_recall_lexical(
             user_id,
+            "",
             from_date=from_date,
             project_id=project_id,
-            entry_type=type_filter,
-            source="manual",
-            limit=k,
+            type_filter=type_filter,
+            k=k,
         )
 
     def journal_recall(

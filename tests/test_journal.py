@@ -102,15 +102,19 @@ def test_journal_list_orders_newest_first_and_filters(db):
 
 
 def test_journal_update_partial(db):
-    entry_id = db.journal_add(1, "Title", "Body", project_id="p1", tags=["a"])
+    entry_id = db.journal_add(
+        1, "Title", "Body", project_id="p1", tags=["a"], friction_summary="slow"
+    )
     assert db.journal_update(1, entry_id, title="New title")
     e = db.journal_get(1, entry_id)
     assert e["title"] == "New title"
     assert e["content_md"] == "Body"  # untouched
     assert e["project_id"] == "p1"
-    assert db.journal_update(1, entry_id, clear_project=True, tags=[])
+    assert e["friction_summary"] == "slow"
+    assert db.journal_update(1, entry_id, clear_project=True, clear_friction=True, tags=[])
     e = db.journal_get(1, entry_id)
     assert e["project_id"] is None
+    assert e["friction_summary"] is None
     assert e["tags"] == []
     assert e["updated_at"] >= e["created_at"]
 
@@ -294,6 +298,13 @@ def test_api_journal_redacts_secrets(client):
     assert "AKIA" not in resp3.json()["friction_summary"]
     assert "[REDACTED:aws_access_key]" in resp3.json()["friction_summary"]
 
+    resp4 = client.put(
+        f"/api/journal/{resp2.json()['id']}",
+        json={"friction_summary": None},
+    )
+    assert resp4.status_code == 200
+    assert resp4.json()["friction_summary"] is None
+
 
 def test_api_journal_scoped_to_current_user(client, db):
     bob_entry = db.journal_add(2, "bob only", "b")
@@ -435,3 +446,11 @@ async def test_recall_journal_huge_header_bounded(ctx):
     text = result[0].text
     # Should be truncated to fit budget
     assert len(text.split()) <= 1000 + 40
+
+
+async def test_recall_journal_fallback_includes_synthesizer_entries(ctx):
+    db, analytics = ctx
+    db.journal_add(1, "Daily digest", "Summary of the day", "note", source="synthesizer")
+    result = await dispatch_tool("recall_journal", {"query": "nonexistentkeyword"}, db, analytics)
+    text = result[0].text
+    assert "Daily digest" in text

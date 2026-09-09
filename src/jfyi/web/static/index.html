@@ -1535,10 +1535,10 @@ plugins/jfyi/
 │   └── plugin.json            # manifest + userConfig (jfyi_url, jfyi_token[sensitive])
 ├── .mcp.json                  # SSE server: ${user_config.jfyi_url}/mcp/sse
 ├── hooks/
-│   └── hooks.json             # SessionStart + optional Stop hook
+│   └── hooks.json             # SessionStart hook
 ├── scripts/
 │   ├── session-start.sh       # injects the constitution; exits 0 if JFYI is unreachable
-│   └── record-interaction.sh  # optional raw telemetry (needs jq)
+│   └── record-interaction.sh  # optional standalone raw telemetry script (needs jq)
 └── skills/
     └── jfyi/
         └── SKILL.md           # usage guidance for the agent

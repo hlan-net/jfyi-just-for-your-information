@@ -1134,6 +1134,7 @@ def _register_journal_update(app: FastAPI) -> None:
                 tags=body.tags if "tags" in fields else None,
                 friction_summary=friction,
                 clear_project="project_id" in fields and body.project_id is None,
+                clear_friction="friction_summary" in fields and body.friction_summary is None,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
