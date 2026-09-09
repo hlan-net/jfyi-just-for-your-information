@@ -2,7 +2,7 @@
 
 **Status:** Shipped in `v2.17.0` — plugin lives in [`plugins/jfyi/`](../plugins/jfyi/), installable from this repository's marketplace. The guide is also shown in the dashboard under `Settings → Claude Code plugin`.  
 **Tag:** Infrastructure (delivery of the core read path)  
-**Verified against:** Claude Code docs for [plugins](https://code.claude.com/docs/en/plugins-reference), [hooks](https://code.claude.com/docs/en/hooks), [MCP](https://code.claude.com/docs/en/mcp), [marketplaces](https://code.claude.com/docs/en/plugin-marketplaces) and [cloud environments](https://code.claude.com/docs/en/cloud-environments)
+**Verified:** end-to-end with Claude Code v2.1.266 (marketplace install, `/plugin configure`, SessionStart injection via `CLAUDE_PLUGIN_OPTION_*`). Docs used: Claude Code docs for [plugins](https://code.claude.com/docs/en/plugins-reference), [hooks](https://code.claude.com/docs/en/hooks), [MCP](https://code.claude.com/docs/en/mcp), [marketplaces](https://code.claude.com/docs/en/plugin-marketplaces) and [cloud environments](https://code.claude.com/docs/en/cloud-environments)
 
 > [!IMPORTANT]
 > **No secrets, no personal data in any repository.** The plugin is generic: your JFYI instance URL and MCP token are entered once at install time (the token goes to Claude Code's secure storage) or set as variables on a cloud environment. Do not fork this repo to bake in your URL or token, and do not commit them to your own projects. Every snippet below is safe to commit as-is.
