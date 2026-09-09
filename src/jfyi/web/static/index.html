@@ -47,17 +47,24 @@
   .kpi .val { font-size: 1.9rem; font-weight: 700; }
   .kpi .lbl { color: var(--muted); font-size: 0.8rem; margin-top: 0.25rem; }
   .kpi .sub { color: var(--muted); font-size: 0.72rem; margin-top: 0.15rem; }
-  .overview-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 1.5rem; align-items: start; }
-  .feed-item { display: flex; gap: 0.6rem; padding: 0.45rem 0; border-bottom: 1px solid #21262d; font-size: 0.85rem; align-items: baseline; }
+  .overview-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1.5rem; align-items: start; }
+  .feed-item { display: flex; flex-wrap: wrap; gap: 0.6rem; padding: 0.45rem 0; border-bottom: 1px solid #21262d; font-size: 0.85rem; align-items: baseline; }
   .feed-item:last-child { border-bottom: none; }
   .feed-item .when { color: var(--muted); font-family: monospace; font-size: 0.75rem; flex-shrink: 0; width: 5.2rem; }
+  /* Feed body text: wraps instead of truncating, and drops to its own line once
+     the fixed-width siblings leave it less than 8rem. min-width:0 is required —
+     a flex item will not shrink below its min-content width without it. */
+  .feed-item .grow { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; }
   .card-link { font-size: 0.8rem; margin-top: 0.75rem; display: inline-block; }
   .onboard-step { display: flex; gap: 1rem; align-items: center; padding: 0.9rem 0; border-bottom: 1px solid var(--border); }
   .onboard-step:last-child { border-bottom: none; }
   .onboard-step .num { width: 2rem; height: 2rem; border-radius: 50%; background: #1f6feb22; color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
   .pg-pre { background: #0d1117; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid var(--border); overflow-x: auto; color: var(--text); font-family: monospace; font-size: 0.8rem; line-height: 1.45; white-space: pre; }
   textarea.jf { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; font: inherit; background: #21262d; color: var(--text); resize: vertical; }
-  @media (max-width: 820px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } .overview-grid { grid-template-columns: 1fr; } }
+  /* The overview's 2fr column stops carrying its content well before the window
+     is narrow, so it collapses earlier than the KPI row. */
+  @media (max-width: 1000px) { .overview-grid { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 820px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
   
   main { max-width: 1100px; margin: 2rem auto; padding: 0 2rem; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
@@ -1372,7 +1379,7 @@
                 <span class="when">{{ fmtWhen(ev.at) }}</span>
                 <span :class="ev.kind === 'match' ? 'pill pill-green' : 'pill pill-red'" style="flex-shrink:0;">{{ ev.kind }}</span>
                 <span style="color:var(--muted);flex-shrink:0;">{{ ev.agent }}</span>
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ ev.text }}</span>
+                <span class="grow">{{ ev.text }}</span>
               </div>
             </div>
           </div>
@@ -1389,7 +1396,7 @@
             <div v-else style="margin-top:0.75rem;">
               <div v-for="n in inboxPreview" :key="n.id" class="feed-item">
                 <span :class="'pill pill-' + catColor(n.category)" style="flex-shrink:0;">{{ n.category }}</span>
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="n.text">{{ n.text }}</span>
+                <span class="grow" :title="n.text">{{ n.text }}</span>
               </div>
             </div>
           </div>
@@ -1405,7 +1412,7 @@
               <div v-for="e in journal" :key="e.id" class="feed-item">
                 <span class="when">{{ e.entry_date.slice(5) }}</span>
                 <span :class="'pill pill-' + journalTypeColor(e.entry_type)" style="flex-shrink:0;">{{ e.entry_type }}</span>
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="e.title">{{ e.title }}</span>
+                <span class="grow" :title="e.title">{{ e.title }}</span>
               </div>
             </div>
           </div>
