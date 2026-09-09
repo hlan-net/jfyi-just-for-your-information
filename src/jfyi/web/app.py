@@ -1109,6 +1109,24 @@ def _register_journal_create(app: FastAPI) -> None:
         return entry
 
 
+def _validate_journal_update_body(body: JournalEntryUpdate) -> None:
+    if body.entry_type is not None and body.entry_type not in Database.JOURNAL_ENTRY_TYPES:
+        raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
+    if body.source is not None and body.source not in Database.JOURNAL_SOURCES:
+        raise HTTPException(status_code=422, detail="Invalid journal source")
+
+
+async def _resolve_update_source(
+    db: Database, user_id: int, entry_id: int, requested: str | None
+) -> str | None:
+    if requested is not None:
+        return requested
+    entry = await asyncio.to_thread(db.journal_get, user_id, entry_id)
+    if entry and entry.get("source") == "agent":
+        return "manual"
+    return None
+
+
 def _register_journal_update(app: FastAPI) -> None:
     """Update endpoint for Developer & Work Journal."""
 
@@ -1116,19 +1134,12 @@ def _register_journal_update(app: FastAPI) -> None:
     async def update_journal_entry(
         entry_id: int, body: JournalEntryUpdate, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
-        if body.entry_type is not None and body.entry_type not in Database.JOURNAL_ENTRY_TYPES:
-            raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
-        if body.source is not None and body.source not in Database.JOURNAL_SOURCES:
-            raise HTTPException(status_code=422, detail="Invalid journal source")
+        _validate_journal_update_body(body)
         title, content, friction = _redact_journal_fields(
             body.title, body.content_md, body.friction_summary
         )
         fields = body.model_fields_set
-        source = body.source
-        if source is None:
-            current_entry = await asyncio.to_thread(db.journal_get, current_user["id"], entry_id)
-            if current_entry and current_entry.get("source") == "agent":
-                source = "manual"
+        source = await _resolve_update_source(db, current_user["id"], entry_id, body.source)
         try:
             ok = await asyncio.to_thread(
                 db.journal_update,
