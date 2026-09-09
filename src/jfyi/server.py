@@ -496,29 +496,35 @@ _JOURNAL_RECALL_MAX_ENTRIES = 3
 _JOURNAL_RECALL_TOKEN_BUDGET = 1000
 
 
+def _format_journal_meta(e: dict[str, Any]) -> str:
+    meta_bits: list[str] = []
+    if e.get("project_id"):
+        meta_bits.append(f"project: {e['project_id']}")
+    if e.get("tags"):
+        meta_bits.append("tags: " + ", ".join(e["tags"]))
+    if e.get("source") and e["source"] != "manual":
+        meta_bits.append(f"source: {e['source']}")
+    return f"({'; '.join(meta_bits)})" if meta_bits else ""
+
+
+def _truncate_body(content: str, remaining: int) -> str:
+    body_words = content.split()
+    if len(body_words) > remaining:
+        return " ".join(body_words[: max(remaining, 0)]) + " …"
+    return " ".join(body_words)
+
+
 def _render_journal_entries(entries: list[dict[str, Any]], budget: int) -> str:
     """Render journal entries newest-first, truncating bodies to fit the token budget."""
     lines: list[str] = []
     used = 0
     for e in entries:
         header = f"### {e['entry_date']} · [{e['entry_type']}] {e['title']}"
-        meta_bits = []
-        if e.get("project_id"):
-            meta_bits.append(f"project: {e['project_id']}")
-        if e.get("tags"):
-            meta_bits.append("tags: " + ", ".join(e["tags"]))
-        if e.get("source") and e["source"] != "manual":
-            meta_bits.append(f"source: {e['source']}")
-        meta = f"({'; '.join(meta_bits)})" if meta_bits else ""
+        meta = _format_journal_meta(e)
         head_tokens = count_tokens(header) + count_tokens(meta)
         if lines and used + head_tokens >= budget:
             break
-        remaining = budget - used - head_tokens
-        body_words = (e.get("content_md") or "").split()
-        if len(body_words) > remaining:
-            body = " ".join(body_words[: max(remaining, 0)]) + " …"
-        else:
-            body = " ".join(body_words)
+        body = _truncate_body(e.get("content_md") or "", budget - used - head_tokens)
         block = "\n".join(x for x in (header, meta, body) if x)
         lines.append(block)
         used += head_tokens + count_tokens(body)

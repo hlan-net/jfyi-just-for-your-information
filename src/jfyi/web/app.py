@@ -1003,6 +1003,12 @@ def _register_developer_api(app: FastAPI) -> None:
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 ERR_JOURNAL_NOT_FOUND = "Journal entry not found"
+ERR_INVALID_ENTRY_TYPE = "Invalid entry type"
+RESPONSES_422: dict[int | str, dict[str, Any]] = {422: {"description": "Validation error"}}
+RESPONSES_JOURNAL_ITEM: dict[int | str, dict[str, Any]] = {
+    404: {"description": ERR_JOURNAL_NOT_FOUND},
+    422: {"description": "Validation error"},
+}
 
 
 def _validate_journal_date(value: str | None) -> str | None:
@@ -1013,10 +1019,10 @@ def _validate_journal_date(value: str | None) -> str | None:
     return value
 
 
-def _register_journal_api(app: FastAPI) -> None:
-    """Developer & Work Journal — REST CRUD, strictly scoped to the current user."""
+def _register_journal_read_api(app: FastAPI) -> None:
+    """Read endpoints for Developer & Work Journal."""
 
-    @app.get("/api/journal")
+    @app.get("/api/journal", responses=RESPONSES_422)
     async def list_journal(
         current_user: CurrentUser,
         db: DBDep,
@@ -1028,7 +1034,7 @@ def _register_journal_api(app: FastAPI) -> None:
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         if type and type != "all" and type not in Database.JOURNAL_ENTRY_TYPES:
-            raise HTTPException(status_code=422, detail="Invalid entry type")
+            raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
         return await asyncio.to_thread(
             db.journal_list,
             user_id=current_user["id"],
@@ -1040,12 +1046,25 @@ def _register_journal_api(app: FastAPI) -> None:
             limit=limit,
         )
 
-    @app.post("/api/journal", status_code=201)
+    @app.get("/api/journal/{entry_id}", responses=RESPONSES_JOURNAL_ITEM)
+    async def get_journal_entry(
+        entry_id: int, current_user: CurrentUser, db: DBDep
+    ) -> dict[str, Any]:
+        entry = await asyncio.to_thread(db.journal_get, current_user["id"], entry_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail=ERR_JOURNAL_NOT_FOUND)
+        return entry
+
+
+def _register_journal_write_api(app: FastAPI) -> None:
+    """Write endpoints for Developer & Work Journal."""
+
+    @app.post("/api/journal", status_code=201, responses=RESPONSES_422)
     async def create_journal_entry(
         body: JournalEntryCreate, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
         if body.entry_type not in Database.JOURNAL_ENTRY_TYPES:
-            raise HTTPException(status_code=422, detail="Invalid entry type")
+            raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
         if not body.title.strip():
             raise HTTPException(status_code=422, detail="Title must not be empty")
         title, content = body.title, body.content_md
@@ -1071,21 +1090,12 @@ def _register_journal_api(app: FastAPI) -> None:
         assert entry is not None
         return entry
 
-    @app.get("/api/journal/{entry_id}", responses={404: {"description": ERR_JOURNAL_NOT_FOUND}})
-    async def get_journal_entry(
-        entry_id: int, current_user: CurrentUser, db: DBDep
-    ) -> dict[str, Any]:
-        entry = await asyncio.to_thread(db.journal_get, current_user["id"], entry_id)
-        if not entry:
-            raise HTTPException(status_code=404, detail=ERR_JOURNAL_NOT_FOUND)
-        return entry
-
-    @app.put("/api/journal/{entry_id}", responses={404: {"description": ERR_JOURNAL_NOT_FOUND}})
+    @app.put("/api/journal/{entry_id}", responses=RESPONSES_JOURNAL_ITEM)
     async def update_journal_entry(
         entry_id: int, body: JournalEntryUpdate, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
         if body.entry_type is not None and body.entry_type not in Database.JOURNAL_ENTRY_TYPES:
-            raise HTTPException(status_code=422, detail="Invalid entry type")
+            raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
         title, content = body.title, body.content_md
         if settings.dlp_enabled:
             if title is not None:
@@ -1124,6 +1134,12 @@ def _register_journal_api(app: FastAPI) -> None:
         ok = await asyncio.to_thread(db.journal_delete, current_user["id"], entry_id)
         if not ok:
             raise HTTPException(status_code=404, detail=ERR_JOURNAL_NOT_FOUND)
+
+
+def _register_journal_api(app: FastAPI) -> None:
+    """Developer & Work Journal — REST CRUD, strictly scoped to the current user."""
+    _register_journal_read_api(app)
+    _register_journal_write_api(app)
 
 
 class ClientRegistration(BaseModel):

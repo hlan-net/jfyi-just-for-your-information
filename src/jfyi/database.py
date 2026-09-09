@@ -204,334 +204,340 @@ class Database:
                     ON friction_clusters(user_id);
             """)
 
+    def _migrate_1_to_8(self, conn: sqlite3.Connection, version: int) -> None:
+        if version < 1:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS short_term_memory (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(session_id, user_id, key)
+                );
+
+                CREATE TABLE IF NOT EXISTS episodic_memory (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    event_type TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    context_json TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_stm_expires
+                    ON short_term_memory(expires_at);
+                CREATE INDEX IF NOT EXISTS idx_episodic_session
+                    ON episodic_memory(session_id, user_id);
+
+                PRAGMA user_version = 1;
+            """)
+        if version < 2:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS artifacts (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    type TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    size_bytes INTEGER,
+                    compiled_view TEXT,
+                    compiled_view_at TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_artifacts_user
+                    ON artifacts(user_id, session_id);
+
+                PRAGMA user_version = 2;
+            """)
+        if version < 3:
+            conn.executescript("""
+                CREATE TABLE identity_providers_v3 (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    client_secret TEXT NOT NULL,
+                    discovery_url TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                INSERT INTO identity_providers_v3
+                SELECT
+                    provider,
+                    CASE provider
+                        WHEN 'github' THEN 'GitHub'
+                        WHEN 'google' THEN 'Google'
+                        WHEN 'entra' THEN 'Microsoft Entra ID'
+                        ELSE provider
+                    END,
+                    provider,
+                    client_id,
+                    client_secret,
+                    NULL,
+                    created_at
+                FROM identity_providers;
+
+                DROP TABLE identity_providers;
+                ALTER TABLE identity_providers_v3 RENAME TO identity_providers;
+
+                PRAGMA user_version = 3;
+            """)
+        if version < 4:
+            conn.executescript("""
+                CREATE TABLE identity_providers_v4 (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    client_secret TEXT NOT NULL,
+                    discovery_url TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                INSERT INTO identity_providers_v4
+                SELECT
+                    CASE provider
+                        WHEN 'github' THEN 1
+                        WHEN 'google' THEN 2
+                        WHEN 'entra'  THEN 3
+                    END,
+                    name, provider, client_id, client_secret, discovery_url, created_at
+                FROM identity_providers
+                WHERE provider IN ('github', 'google', 'entra');
+
+                INSERT INTO identity_providers_v4
+                SELECT
+                    100 + ROW_NUMBER() OVER (ORDER BY created_at),
+                    name, provider, client_id, client_secret, discovery_url, created_at
+                FROM identity_providers
+                WHERE provider NOT IN ('github', 'google', 'entra');
+
+                DROP TABLE identity_providers;
+                ALTER TABLE identity_providers_v4 RENAME TO identity_providers;
+
+                PRAGMA user_version = 4;
+            """)
+        if version < 5:
+            conn.executescript("""
+                ALTER TABLE profile_rules ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+
+                CREATE TABLE IF NOT EXISTS synthesis_config (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                    provider TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    api_key TEXT NOT NULL,
+                    base_url TEXT
+                );
+
+                PRAGMA user_version = 5;
+            """)
+        if version < 6:
+            conn.executescript("""
+                ALTER TABLE profile_rules ADD COLUMN agent_name TEXT;
+
+                PRAGMA user_version = 6;
+            """)
+        if version < 7:
+            conn.executescript("""
+                ALTER TABLE identity_providers ADD COLUMN client_secret_id TEXT;
+
+                PRAGMA user_version = 7;
+            """)
+        if version < 8:
+            # Notes vs Rules split: the existing profile_rules table becomes
+            # profile_notes (raw, agent-captured); a new, leaner profile_rules
+            # table holds curated rules composed from one or more notes.
+            conn.executescript("""
+                ALTER TABLE profile_rules RENAME TO profile_notes;
+                ALTER TABLE profile_notes RENAME COLUMN rule TO text;
+                ALTER TABLE profile_notes ADD COLUMN promoted_to_rule_id INTEGER;
+
+                CREATE TABLE profile_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    text TEXT NOT NULL,
+                    category TEXT DEFAULT 'general',
+                    archived INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE rule_note_links (
+                    rule_id INTEGER NOT NULL REFERENCES profile_rules(id) ON DELETE CASCADE,
+                    note_id INTEGER NOT NULL REFERENCES profile_notes(id) ON DELETE CASCADE,
+                    PRIMARY KEY (rule_id, note_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_rule_note_links_note
+                    ON rule_note_links(note_id);
+
+                PRAGMA user_version = 8;
+            """)
+
+    def _migrate_9_to_16(self, conn: sqlite3.Connection, version: int) -> None:
+        if version < 9:
+            # Notes are sources, rules are conclusions, and a note can be
+            # cited by many rules. The denormalized promoted_to_rule_id
+            # field on profile_notes contradicts that model and is no
+            # longer used. rule_note_links is the sole source of truth.
+            conn.executescript("""
+                ALTER TABLE profile_notes DROP COLUMN promoted_to_rule_id;
+
+                PRAGMA user_version = 9;
+            """)
+        if version < 10:
+            # The `archived` column on profile_notes was carried over from
+            # the pre-split schema as forward-compat for a bulk-archive
+            # flow that never materialised — no REST route, no UI,
+            # no production write path. Prune it. profile_rules.archived
+            # is unaffected (still used for soft-delete on curated rules).
+            conn.executescript("""
+                ALTER TABLE profile_notes DROP COLUMN archived;
+
+                PRAGMA user_version = 10;
+            """)
+        if version < 11:
+            # Tiered Profiling: rules now carry a scope ('global', 'project',
+            # 'agent'), an optional project_id (git remote or directory name),
+            # and a per-rule confidence score. Existing rows default to
+            # scope='global', project_id=NULL, confidence=0.5.
+            conn.executescript("""
+                ALTER TABLE profile_rules ADD COLUMN scope TEXT NOT NULL DEFAULT 'global';
+                ALTER TABLE profile_rules ADD COLUMN project_id TEXT;
+                ALTER TABLE profile_rules ADD COLUMN confidence REAL NOT NULL DEFAULT 0.5;
+
+                CREATE INDEX idx_profile_rules_scope
+                    ON profile_rules(user_id, scope, project_id);
+
+                PRAGMA user_version = 11;
+            """)
+        if version < 12:
+            # Positive Reinforcement: track zero-friction, substantive
+            # contributions as "vibe matches." Each match row records the
+            # interaction that triggered it so it can be surfaced in the
+            # dashboard's "Best Matches" view.
+            conn.executescript("""
+                CREATE TABLE vibe_matches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+                    interaction_id INTEGER NOT NULL
+                        REFERENCES interactions(id) ON DELETE CASCADE,
+                    response_length INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX idx_vibe_matches_user
+                    ON vibe_matches(user_id, agent_id);
+
+                PRAGMA user_version = 12;
+            """)
+
+        if version < 13:
+            # Semantic Rule Inference: track which friction events have
+            # already been processed by the inference engine so that
+            # re-runs remain idempotent.
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS inference_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    friction_event_id INTEGER NOT NULL
+                        REFERENCES friction_events(id) ON DELETE CASCADE,
+                    note_id INTEGER NOT NULL
+                        REFERENCES profile_notes(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(friction_event_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_inference_log_user
+                    ON inference_log(user_id);
+
+                PRAGMA user_version = 13;
+            """)
+        if version < 14:
+            # Constitution Budget Telemetry: record rule count and
+            # estimated token count each time get_developer_profile is
+            # called, enabling trend tracking in /developer and the Vibe
+            # Telemetry resource.
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS constitution_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    rule_count INTEGER NOT NULL,
+                    token_count INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_constitution_snapshots_user
+                    ON constitution_snapshots(user_id, created_at);
+
+                PRAGMA user_version = 14;
+            """)
+        if version < 15:
+            # Rule Injections: record which rules were served per
+            # get_developer_profile call, enabling confidence decay gated
+            # on served sessions and per-rule effectiveness scoring.
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS rule_injections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    rule_id INTEGER NOT NULL REFERENCES profile_rules(id) ON DELETE CASCADE,
+                    session_id TEXT NOT NULL,
+                    served_at TEXT NOT NULL,
+                    UNIQUE(user_id, rule_id, session_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_rule_injections_user_rule
+                    ON rule_injections(user_id, rule_id);
+
+                CREATE INDEX IF NOT EXISTS idx_rule_injections_user_session
+                    ON rule_injections(user_id, session_id);
+
+                PRAGMA user_version = 15;
+            """)
+        if version < 16:
+            # Developer & Work Journal (v2.17.0): temporal timeline of
+            # daily digests, architectural decisions, reflections and
+            # raw agent-filed notes. Strictly scoped per user; optional
+            # project scope.
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS journal_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    entry_date TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    content_md TEXT NOT NULL,
+                    entry_type TEXT NOT NULL
+                        CHECK(entry_type IN ('daily_digest', 'decision', 'reflection', 'note')),
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    project_id TEXT,
+                    tags TEXT,
+                    friction_summary TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_journal_user_date
+                    ON journal_entries(user_id, entry_date DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_journal_user_project
+                    ON journal_entries(user_id, project_id);
+
+                PRAGMA user_version = 16;
+            """)
+
     def _run_migrations(self) -> None:
         """Apply forward-only, idempotent schema migrations tracked by PRAGMA user_version."""
         with self._conn() as conn:
             version = conn.execute("PRAGMA user_version").fetchone()[0]
-            if version < 1:
-                conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS short_term_memory (
-                        id TEXT PRIMARY KEY,
-                        session_id TEXT NOT NULL,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        key TEXT NOT NULL,
-                        value TEXT NOT NULL,
-                        expires_at TEXT NOT NULL,
-                        created_at TEXT NOT NULL,
-                        UNIQUE(session_id, user_id, key)
-                    );
-
-                    CREATE TABLE IF NOT EXISTS episodic_memory (
-                        id TEXT PRIMARY KEY,
-                        session_id TEXT NOT NULL,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        event_type TEXT NOT NULL,
-                        summary TEXT NOT NULL,
-                        context_json TEXT,
-                        created_at TEXT NOT NULL
-                    );
-
-                    CREATE INDEX IF NOT EXISTS idx_stm_expires
-                        ON short_term_memory(expires_at);
-                    CREATE INDEX IF NOT EXISTS idx_episodic_session
-                        ON episodic_memory(session_id, user_id);
-
-                    PRAGMA user_version = 1;
-                """)
-            if version < 2:
-                conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS artifacts (
-                        id TEXT PRIMARY KEY,
-                        session_id TEXT,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        type TEXT NOT NULL,
-                        path TEXT NOT NULL,
-                        size_bytes INTEGER,
-                        compiled_view TEXT,
-                        compiled_view_at TEXT,
-                        created_at TEXT NOT NULL
-                    );
-
-                    CREATE INDEX IF NOT EXISTS idx_artifacts_user
-                        ON artifacts(user_id, session_id);
-
-                    PRAGMA user_version = 2;
-                """)
-            if version < 3:
-                conn.executescript("""
-                    CREATE TABLE identity_providers_v3 (
-                        id TEXT NOT NULL PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        provider TEXT NOT NULL,
-                        client_id TEXT NOT NULL,
-                        client_secret TEXT NOT NULL,
-                        discovery_url TEXT,
-                        created_at TEXT NOT NULL
-                    );
-
-                    INSERT INTO identity_providers_v3
-                    SELECT
-                        provider,
-                        CASE provider
-                            WHEN 'github' THEN 'GitHub'
-                            WHEN 'google' THEN 'Google'
-                            WHEN 'entra' THEN 'Microsoft Entra ID'
-                            ELSE provider
-                        END,
-                        provider,
-                        client_id,
-                        client_secret,
-                        NULL,
-                        created_at
-                    FROM identity_providers;
-
-                    DROP TABLE identity_providers;
-                    ALTER TABLE identity_providers_v3 RENAME TO identity_providers;
-
-                    PRAGMA user_version = 3;
-                """)
-            if version < 4:
-                conn.executescript("""
-                    CREATE TABLE identity_providers_v4 (
-                        id INTEGER NOT NULL PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        provider TEXT NOT NULL,
-                        client_id TEXT NOT NULL,
-                        client_secret TEXT NOT NULL,
-                        discovery_url TEXT,
-                        created_at TEXT NOT NULL
-                    );
-
-                    INSERT INTO identity_providers_v4
-                    SELECT
-                        CASE provider
-                            WHEN 'github' THEN 1
-                            WHEN 'google' THEN 2
-                            WHEN 'entra'  THEN 3
-                        END,
-                        name, provider, client_id, client_secret, discovery_url, created_at
-                    FROM identity_providers
-                    WHERE provider IN ('github', 'google', 'entra');
-
-                    INSERT INTO identity_providers_v4
-                    SELECT
-                        100 + ROW_NUMBER() OVER (ORDER BY created_at),
-                        name, provider, client_id, client_secret, discovery_url, created_at
-                    FROM identity_providers
-                    WHERE provider NOT IN ('github', 'google', 'entra');
-
-                    DROP TABLE identity_providers;
-                    ALTER TABLE identity_providers_v4 RENAME TO identity_providers;
-
-                    PRAGMA user_version = 4;
-                """)
-            if version < 5:
-                conn.executescript("""
-                    ALTER TABLE profile_rules ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
-
-                    CREATE TABLE IF NOT EXISTS synthesis_config (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-                        provider TEXT NOT NULL,
-                        model TEXT NOT NULL,
-                        api_key TEXT NOT NULL,
-                        base_url TEXT
-                    );
-
-                    PRAGMA user_version = 5;
-                """)
-            if version < 6:
-                conn.executescript("""
-                    ALTER TABLE profile_rules ADD COLUMN agent_name TEXT;
-
-                    PRAGMA user_version = 6;
-                """)
-            if version < 7:
-                conn.executescript("""
-                    ALTER TABLE identity_providers ADD COLUMN client_secret_id TEXT;
-
-                    PRAGMA user_version = 7;
-                """)
-            if version < 8:
-                # Notes vs Rules split: the existing profile_rules table becomes
-                # profile_notes (raw, agent-captured); a new, leaner profile_rules
-                # table holds curated rules composed from one or more notes.
-                conn.executescript("""
-                    ALTER TABLE profile_rules RENAME TO profile_notes;
-                    ALTER TABLE profile_notes RENAME COLUMN rule TO text;
-                    ALTER TABLE profile_notes ADD COLUMN promoted_to_rule_id INTEGER;
-
-                    CREATE TABLE profile_rules (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        text TEXT NOT NULL,
-                        category TEXT DEFAULT 'general',
-                        archived INTEGER NOT NULL DEFAULT 0,
-                        created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL
-                    );
-
-                    CREATE TABLE rule_note_links (
-                        rule_id INTEGER NOT NULL REFERENCES profile_rules(id) ON DELETE CASCADE,
-                        note_id INTEGER NOT NULL REFERENCES profile_notes(id) ON DELETE CASCADE,
-                        PRIMARY KEY (rule_id, note_id)
-                    );
-
-                    CREATE INDEX IF NOT EXISTS idx_rule_note_links_note
-                        ON rule_note_links(note_id);
-
-                    PRAGMA user_version = 8;
-                """)
-            if version < 9:
-                # Notes are sources, rules are conclusions, and a note can be
-                # cited by many rules. The denormalized promoted_to_rule_id
-                # field on profile_notes contradicts that model and is no
-                # longer used. rule_note_links is the sole source of truth.
-                conn.executescript("""
-                    ALTER TABLE profile_notes DROP COLUMN promoted_to_rule_id;
-
-                    PRAGMA user_version = 9;
-                """)
-            if version < 10:
-                # The `archived` column on profile_notes was carried over from
-                # the pre-split schema as forward-compat for a bulk-archive
-                # flow that never materialised — no REST route, no UI,
-                # no production write path. Prune it. profile_rules.archived
-                # is unaffected (still used for soft-delete on curated rules).
-                conn.executescript("""
-                    ALTER TABLE profile_notes DROP COLUMN archived;
-
-                    PRAGMA user_version = 10;
-                """)
-            if version < 11:
-                # Tiered Profiling: rules now carry a scope ('global', 'project',
-                # 'agent'), an optional project_id (git remote or directory name),
-                # and a per-rule confidence score. Existing rows default to
-                # scope='global', project_id=NULL, confidence=0.5.
-                conn.executescript("""
-                    ALTER TABLE profile_rules ADD COLUMN scope TEXT NOT NULL DEFAULT 'global';
-                    ALTER TABLE profile_rules ADD COLUMN project_id TEXT;
-                    ALTER TABLE profile_rules ADD COLUMN confidence REAL NOT NULL DEFAULT 0.5;
-
-                    CREATE INDEX idx_profile_rules_scope
-                        ON profile_rules(user_id, scope, project_id);
-
-                    PRAGMA user_version = 11;
-                """)
-            if version < 12:
-                # Positive Reinforcement: track zero-friction, substantive
-                # contributions as "vibe matches." Each match row records the
-                # interaction that triggered it so it can be surfaced in the
-                # dashboard's "Best Matches" view.
-                conn.executescript("""
-                    CREATE TABLE vibe_matches (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-                        interaction_id INTEGER NOT NULL
-                            REFERENCES interactions(id) ON DELETE CASCADE,
-                        response_length INTEGER NOT NULL,
-                        created_at TEXT NOT NULL
-                    );
-
-                    CREATE INDEX idx_vibe_matches_user
-                        ON vibe_matches(user_id, agent_id);
-
-                    PRAGMA user_version = 12;
-                """)
-
-            if version < 13:
-                # Semantic Rule Inference: track which friction events have
-                # already been processed by the inference engine so that
-                # re-runs remain idempotent.
-                conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS inference_log (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        friction_event_id INTEGER NOT NULL
-                            REFERENCES friction_events(id) ON DELETE CASCADE,
-                        note_id INTEGER NOT NULL
-                            REFERENCES profile_notes(id) ON DELETE CASCADE,
-                        created_at TEXT NOT NULL,
-                        UNIQUE(friction_event_id)
-                    );
-
-                    CREATE INDEX IF NOT EXISTS idx_inference_log_user
-                        ON inference_log(user_id);
-
-                    PRAGMA user_version = 13;
-                """)
-            if version < 14:
-                # Constitution Budget Telemetry: record rule count and
-                # estimated token count each time get_developer_profile is
-                # called, enabling trend tracking in /developer and the Vibe
-                # Telemetry resource.
-                conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS constitution_snapshots (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        rule_count INTEGER NOT NULL,
-                        token_count INTEGER NOT NULL,
-                        created_at TEXT NOT NULL
-                    );
-
-                    CREATE INDEX IF NOT EXISTS idx_constitution_snapshots_user
-                        ON constitution_snapshots(user_id, created_at);
-
-                    PRAGMA user_version = 14;
-                """)
-            if version < 15:
-                # Rule Injections: record which rules were served per
-                # get_developer_profile call, enabling confidence decay gated
-                # on served sessions and per-rule effectiveness scoring.
-                conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS rule_injections (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        rule_id INTEGER NOT NULL REFERENCES profile_rules(id) ON DELETE CASCADE,
-                        session_id TEXT NOT NULL,
-                        served_at TEXT NOT NULL,
-                        UNIQUE(user_id, rule_id, session_id)
-                    );
-
-                    CREATE INDEX IF NOT EXISTS idx_rule_injections_user_rule
-                        ON rule_injections(user_id, rule_id);
-
-                    CREATE INDEX IF NOT EXISTS idx_rule_injections_user_session
-                        ON rule_injections(user_id, session_id);
-
-                    PRAGMA user_version = 15;
-                """)
-            if version < 16:
-                # Developer & Work Journal (v2.17.0): temporal timeline of
-                # daily digests, architectural decisions, reflections and
-                # raw agent-filed notes. Strictly scoped per user; optional
-                # project scope.
-                conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS journal_entries (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        entry_date TEXT NOT NULL,
-                        title TEXT NOT NULL,
-                        content_md TEXT NOT NULL,
-                        entry_type TEXT NOT NULL
-                            CHECK(entry_type IN ('daily_digest', 'decision', 'reflection', 'note')),
-                        source TEXT NOT NULL DEFAULT 'manual',
-                        project_id TEXT,
-                        tags TEXT,
-                        friction_summary TEXT,
-                        created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL
-                    );
-
-                    CREATE INDEX IF NOT EXISTS idx_journal_user_date
-                        ON journal_entries(user_id, entry_date DESC);
-
-                    CREATE INDEX IF NOT EXISTS idx_journal_user_project
-                        ON journal_entries(user_id, project_id);
-
-                    PRAGMA user_version = 16;
-                """)
+            self._migrate_1_to_8(conn, version)
+            self._migrate_9_to_16(conn, version)
 
     # ── Rule Injections (Decay + Effectiveness) ───────────────────────────
 
@@ -2384,22 +2390,17 @@ class Database:
             ).fetchall()
             return [self._journal_row(r) for r in rows]
 
-    def journal_update(
+    def _build_journal_update_fields(
         self,
-        user_id: int,
-        entry_id: int,
-        title: str | None = None,
-        content_md: str | None = None,
-        entry_type: str | None = None,
-        entry_date: str | None = None,
-        project_id: str | None = None,
-        tags: list[str] | str | None = None,
-        friction_summary: str | None = None,
-        clear_project: bool = False,
-    ) -> bool:
-        """Partial update. Only supplied fields change; returns False when not found."""
-        if entry_type is not None and entry_type not in self.JOURNAL_ENTRY_TYPES:
-            raise ValueError(f"Invalid journal entry_type: {entry_type!r}")
+        title: str | None,
+        content_md: str | None,
+        entry_type: str | None,
+        entry_date: str | None,
+        project_id: str | None,
+        tags: list[str] | str | None,
+        friction_summary: str | None,
+        clear_project: bool,
+    ) -> tuple[list[str], list[Any]]:
         sets: list[str] = []
         params: list[Any] = []
         if title is not None:
@@ -2428,6 +2429,34 @@ class Database:
         if friction_summary is not None:
             sets.append("friction_summary=?")
             params.append(friction_summary)
+        return sets, params
+
+    def journal_update(
+        self,
+        user_id: int,
+        entry_id: int,
+        title: str | None = None,
+        content_md: str | None = None,
+        entry_type: str | None = None,
+        entry_date: str | None = None,
+        project_id: str | None = None,
+        tags: list[str] | str | None = None,
+        friction_summary: str | None = None,
+        clear_project: bool = False,
+    ) -> bool:
+        """Partial update. Only supplied fields change; returns False when not found."""
+        if entry_type is not None and entry_type not in self.JOURNAL_ENTRY_TYPES:
+            raise ValueError(f"Invalid journal entry_type: {entry_type!r}")
+        sets, params = self._build_journal_update_fields(
+            title,
+            content_md,
+            entry_type,
+            entry_date,
+            project_id,
+            tags,
+            friction_summary,
+            clear_project,
+        )
         sets.append("updated_at=?")
         params.append(datetime.now(UTC).isoformat())
         params.extend([entry_id, user_id])
@@ -2458,48 +2487,47 @@ class Database:
             self._vs.delete("journal", ids=str(entry_id))
         return deleted
 
-    def journal_recall(
+    def _journal_recall_vector(
         self,
         user_id: int,
-        query: str = "",
-        days_back: int = 7,
-        project_id: str | None = None,
-        entry_type: str | None = None,
-        k: int = 3,
+        query: str,
+        from_date: str,
+        project_id: str | None,
+        type_filter: str | None,
+        k: int,
     ) -> list[dict[str, Any]]:
-        """Agent read path: return up to k relevant entries within the date window.
+        where_clauses: list[dict[str, Any]] = [{"user_id": user_id}]
+        if project_id:
+            where_clauses.append({"project_id": project_id})
+        if type_filter:
+            where_clauses.append({"entry_type": type_filter})
+        where = where_clauses[0] if len(where_clauses) == 1 else {"$and": where_clauses}
+        ids = self._vs.query("journal", query, k=max(k * 4, 12), where=where)
+        if not ids:
+            return []
+        placeholders = ",".join("?" * len(ids))
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM journal_entries WHERE id IN ({placeholders})"
+                " AND user_id=? AND entry_date >= ?",
+                (*ids, user_id, from_date),
+            ).fetchall()
+        id_order = {id_: i for i, id_ in enumerate(ids)}
+        ranked = sorted(
+            (self._journal_row(r) for r in rows),
+            key=lambda r: id_order.get(str(r["id"]), 999),
+        )
+        return ranked[:k]
 
-        Uses ChromaDB when a vector store is attached; otherwise falls back to
-        lexical term matching over title/content/tags, ordered newest first.
-        An empty query returns the most recent entries in the window.
-        """
-        days_back = max(1, int(days_back))
-        from_date = (datetime.now(UTC).date() - timedelta(days=days_back)).isoformat()
-        type_filter = None if entry_type in (None, "", "all") else entry_type
-        if self._vs and query.strip():
-            where_clauses: list[dict[str, Any]] = [{"user_id": user_id}]
-            if project_id:
-                where_clauses.append({"project_id": project_id})
-            if type_filter:
-                where_clauses.append({"entry_type": type_filter})
-            where = where_clauses[0] if len(where_clauses) == 1 else {"$and": where_clauses}
-            # Over-fetch so the date window can be applied after ranking.
-            ids = self._vs.query("journal", query, k=max(k * 4, 12), where=where)
-            if ids:
-                placeholders = ",".join("?" * len(ids))
-                with self._conn() as conn:
-                    rows = conn.execute(
-                        f"SELECT * FROM journal_entries WHERE id IN ({placeholders})"
-                        " AND user_id=? AND entry_date >= ?",
-                        (*ids, user_id, from_date),
-                    ).fetchall()
-                id_order = {id_: i for i, id_ in enumerate(ids)}
-                ranked = sorted(
-                    (self._journal_row(r) for r in rows),
-                    key=lambda r: id_order.get(str(r["id"]), 999),
-                )
-                if ranked:
-                    return ranked[:k]
+    def _journal_recall_lexical(
+        self,
+        user_id: int,
+        query: str,
+        from_date: str,
+        project_id: str | None,
+        type_filter: str | None,
+        k: int,
+    ) -> list[dict[str, Any]]:
         clauses = ["user_id = ?", "entry_date >= ?"]
         params: list[Any] = [user_id, from_date]
         if project_id:
@@ -2529,8 +2557,6 @@ class Database:
             results = [self._journal_row(r) for r in rows]
         if results or not terms:
             return results
-        # No lexical hit — degrade to most recent entries in the window so the
-        # agent still gets temporal context rather than nothing.
         return self.journal_list(
             user_id,
             from_date=from_date,
@@ -2538,3 +2564,29 @@ class Database:
             entry_type=type_filter,
             limit=k,
         )
+
+    def journal_recall(
+        self,
+        user_id: int,
+        query: str = "",
+        days_back: int = 7,
+        project_id: str | None = None,
+        entry_type: str | None = None,
+        k: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Agent read path: return up to k relevant entries within the date window.
+
+        Uses ChromaDB when a vector store is attached; otherwise falls back to
+        lexical term matching over title/content/tags, ordered newest first.
+        An empty query returns the most recent entries in the window.
+        """
+        days_back = max(1, int(days_back))
+        from_date = (datetime.now(UTC).date() - timedelta(days=days_back)).isoformat()
+        type_filter = None if entry_type in (None, "", "all") else entry_type
+        if self._vs and query.strip():
+            ranked = self._journal_recall_vector(
+                user_id, query, from_date, project_id, type_filter, k
+            )
+            if ranked:
+                return ranked
+        return self._journal_recall_lexical(user_id, query, from_date, project_id, type_filter, k)

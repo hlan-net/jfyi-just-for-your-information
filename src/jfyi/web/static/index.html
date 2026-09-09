@@ -2562,7 +2562,7 @@ const Overview = {
     };
 
     const isZeroState = computed(() =>
-      !(summary.value.total_interactions > 0) && !notes.value.length && !rules.value.length
+      summary.value.total_interactions <= 0 && !notes.value.length && !rules.value.length
     );
     const alignment = computed(() =>
       summary.value.correction_rate == null ? null : Math.round((1 - summary.value.correction_rate) * 100)

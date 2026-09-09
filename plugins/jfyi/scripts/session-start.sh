@@ -10,7 +10,7 @@ set -u
 
 URL="${CLAUDE_PLUGIN_OPTION_JFYI_URL:-${JFYI_URL:-}}"
 TOKEN="${CLAUDE_PLUGIN_OPTION_JFYI_TOKEN:-${JFYI_MCP_TOKEN:-}}"
-[ -n "$URL" ] && [ -n "$TOKEN" ] || { echo "JFYI: JFYI_URL / JFYI_MCP_TOKEN not configured; skipping." >&2; exit 0; }
+[[ -n "$URL" && -n "$TOKEN" ]] || { echo "JFYI: JFYI_URL / JFYI_MCP_TOKEN not configured; skipping." >&2; exit 0; }
 
 PROJECT="$(basename "${CLAUDE_PROJECT_DIR:-$PWD}")"
 if BODY="$(curl -sS --fail --max-time 8 -H "Authorization: Bearer ${TOKEN}" \
