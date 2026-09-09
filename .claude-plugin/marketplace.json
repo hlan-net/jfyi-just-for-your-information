@@ -1,11 +1,14 @@
 {
   "name": "jfyi",
-  "owner": { "name": "hlan-net" },
+  "owner": {
+    "name": "hlan-net"
+  },
   "plugins": [
     {
       "name": "jfyi",
       "source": "./plugins/jfyi",
-      "description": "JFYI developer constitution, journal recall and telemetry for Claude Code. Configure your own instance URL and token at install time; nothing is hard-coded."
+      "description": "JFYI developer constitution, journal recall and telemetry for Claude Code. Configure your own instance URL and token at install time; nothing is hard-coded.",
+      "version": "0.1.1"
     }
   ]
 }
