@@ -67,7 +67,7 @@ Because a headless session cannot answer the install-time prompts, the plugin's 
 1. **Environment variables:** `JFYI_URL=https://jfyi.example.net` and `JFYI_MCP_TOKEN=<token>`. Anyone using the environment can read these; on Pro and Max plans an *API credential* scoped to your JFYI host keeps the token out of the VM for requests the agent proxy can attach it to.
 2. **Network access:** the default *Trusted* level allows package registries and GitHub only. Choose *Custom* and add your JFYI host so the SSE connection and the hook's `curl` can reach it. JFYI must be served over TLS.
 
-If you prefer not to use the marketplace at all, commit a project `.mcp.json` that expands the same variables (no URL, no token in the file) and a `SessionStart` hook in `.claude/settings.json` that runs `plugins/jfyi/scripts/session-start.sh` from a checkout of this repo:
+Because headless cloud sessions cannot prompt for plugin `user_config`, the marketplace plugin's `.mcp.json` cannot resolve instance credentials without an interactive prompt. To connect MCP tools in headless cloud sessions, commit a project `.mcp.json` that expands `${JFYI_URL}` and `${JFYI_MCP_TOKEN}` (no URL, no token in the file), and a `SessionStart` hook in `.claude/settings.json` that runs `plugins/jfyi/scripts/session-start.sh`:
 
 ```json
 {

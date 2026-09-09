@@ -1483,7 +1483,7 @@
           <li><strong>Network access:</strong> the default <em>Trusted</em> level only allows package registries and GitHub. Set the environment to <em>Custom</em> and add <code>{{ host }}</code>. JFYI must be served over TLS.</li>
         </ol>
       </div>
-      <p class="desc">Prefer no marketplace? Commit a project <code>.mcp.json</code> that expands the same variables — no URL, no token in the file — plus a <code>SessionStart</code> hook running <code>plugins/jfyi/scripts/session-start.sh</code>:</p>
+      <p class="desc">Because headless cloud sessions cannot prompt for plugin <code>user_config</code>, commit a project <code>.mcp.json</code> to connect tools via environment variables — no URL, no token in the file — plus a <code>SessionStart</code> hook running <code>plugins/jfyi/scripts/session-start.sh</code>:</p>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
         <code style="color:var(--accent);font-size:0.85rem;">.mcp.json</code>
         <button class="btn btn-outline" style="font-size:0.75rem;padding:0.2rem 0.6rem;" @click="copy('webmcp', files.webmcp)">{{ copied === 'webmcp' ? 'Copied!' : 'Copy' }}</button>
@@ -1496,7 +1496,6 @@
           <li><strong>SessionStart hook</strong> fetches <code>GET /api/export/agents-md</code> and prints it — Claude Code adds that output to the model's context before the first prompt and again after <code>/compact</code>. This is the passive read path.</li>
           <li><strong><code>.mcp.json</code></strong> connects <code>/mcp/sse</code> so <code>recall_journal</code>, <code>add_profile_note</code>, <code>add_journal_note</code> and <code>record_interaction</code> are callable.</li>
           <li><strong>Skill</strong> tells the agent <em>when</em> to use those tools.</li>
-          <li><strong>Stop hook</strong> (optional, needs <code>jq</code>) records each assistant turn as raw telemetry. Only hashes are stored.</li>
         </ol>
       </div>
       <pre class="pg-pre"><code>{{ files.layout }}</code></pre>
