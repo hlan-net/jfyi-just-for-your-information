@@ -10,6 +10,22 @@ The user-centric mission and the core architectural pattern (write raw / curate 
 
 ## Active & Upcoming Roadmap
 
+### Phase 7 — Developer & Work Journal `v2.17.0`
+
+Adds a temporal, reflective timeline dimension for the developer and historical context recall for agents.
+
+| Item | Target | Status | Spec | Tag |
+|------|--------|--------|------|-----|
+| [Developer & Work Journal](docs/journal.md) | `v2.17.0` | Planned | [docs/journal.md](docs/journal.md) | Core / Supplementary |
+| Daily Digest & Standup Synthesis | `v2.17.0` | Planned | [docs/journal.md](docs/journal.md) | Supplementary |
+| Agent Journal Recall (`recall_journal`) | `v2.17.0` | Planned | [docs/journal.md](docs/journal.md) | Core |
+
+- **Journal Timeline (`/journal`):** A temporal timeline in the dashboard displaying daily digests, friction events, and human architectural decision notes.
+- **Decision Capture & Standup Exports:** Quick-entry bar for architectural decisions (ADRs) and one-click standup export (Yesterday / Today / Blockers).
+- **Agent Recall (`recall_journal`):** Budget-capped semantic recall tool for agents to retrieve past technical decisions and rationale before modifying code.
+
+---
+
 ### Protocol Expansion `v3.0.0` ⏸ Shelved
 
 *Status: No concrete demand signal; blocked on ACP/A2A spec stability. Shelved until a specific multi-framework integration target emerges.*

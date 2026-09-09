@@ -201,7 +201,8 @@ docker-compose up
 │   ├── sandboxed-execution.md       — Phase 4: sandboxed script execution (deferred)
 │   ├── notebooklm-report.md         — Background briefing: AI trustworthiness & risk
 │   ├── acp.md                       — Phase 5: Agent Communication Protocol
-│   └── a2a.md                       — Phase 5: Agent2Agent negotiation
+│   ├── a2a.md                       — Phase 5: Agent2Agent negotiation
+│   └── journal.md                   — Phase 7: Developer & Work Journal
 ├── src/jfyi/           — Application source code
 ├── tests/              — Test suite (pytest, asyncio_mode=auto)
 ├── helm/               — Kubernetes Helm chart
