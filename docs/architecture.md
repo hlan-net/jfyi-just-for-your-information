@@ -97,6 +97,16 @@ The lesson is captured as a planning rule on the project's curated rules: *befor
 
 ---
 
+## Multi-tenant personal isolation by default
+
+JFYI is designed from the foundation as a multi-user service where every developer's data is strictly and personally isolated:
+
+- **Strict User Boundaries:** All storage tiers (`profile_notes`, `profile_rules`, `interactions`, `friction_events`, `vibe_matches`, `rule_injections`, `memory`) require a `user_id` foreign key. No profile data or interaction telemetry is shared across users.
+- **Per-User Agent Authentication:** Each developer authenticates their MCP client (Claude Code, Cursor, Antigravity CLI, etc.) with their personal MCP JWT token. Tools like `get_developer_profile` and `record_interaction` resolve the `user_id` from the caller's token and operate exclusively in that user's scope.
+- **Future Team / Shared Extensions:** Any future team-level or organizational features (e.g., shared repo rules or compliance policies) must be implemented as additive overlays on top of the personal profile, without ever compromising or leaking personal developer telemetry and privacy.
+
+---
+
 ## Decision rule for new features
 
 Before adding any new feature, route, MCP tool, or schema, ask:
@@ -106,6 +116,7 @@ Before adding any new feature, route, MCP tool, or schema, ask:
    - **Maybe** → supplementary. Earn its place by either (a) producing signal that flows back into the curation step, or (b) producing diagnostic value the user actively consumes.
    - **No** → out of scope. Keep it out.
 2. **For MCP tool surface specifically**: agent-writable tools should produce raw observations; agent-readable tools should return curated artifacts. Tools that let agents author curated artifacts directly invert the asymmetry and should be rejected.
-3. **Avoid forward-compat speculation**: don't ship columns, endpoints, or routes for features that aren't being built right now. Add them when they earn their place; prune them when they go dormant.
+3. **Preserve personal developer isolation**: JFYI is multi-user by default. New endpoints, queries, and background processes must strictly enforce `user_id` scoping and never leak cross-user telemetry or profile data.
+4. **Avoid forward-compat speculation**: don't ship columns, endpoints, or routes for features that aren't being built right now. Add them when they earn their place; prune them when they go dormant.
 
-These three checks together keep the mission anchored as the project grows.
+These four checks together keep the mission anchored as the project grows.

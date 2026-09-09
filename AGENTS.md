@@ -18,6 +18,8 @@
 | Analytics | `record_interaction` | `AnalyticsEngine` | `get_agent_analytics` |
 | Episodic | (background summarizer) | Background summarizer | `recall_episodic` |
 
+**Multi-tenant personal isolation by default:** All database entities, MCP tool invocations, and telemetry are strictly scoped per `user_id`. Never leak cross-user telemetry or profile rules.
+
 **Test for new features:** *Does this serve the agent reading better-curated info about the user?* Yes → core. Maybe/opportunistic → supplementary. No → out of scope. Tools that let agents author curated artifacts directly invert the asymmetry and should be rejected.
 
 Full framing in [`docs/architecture.md`](docs/architecture.md).
