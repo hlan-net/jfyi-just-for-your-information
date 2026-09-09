@@ -182,6 +182,7 @@ docker-compose up
 ```
 /
 ├── README.md           — Project overview (this file)
+├── CHANGELOG.md        — Shipped releases and version history
 ├── ROADMAP.md          — Phased feature roadmap with status
 ├── LICENSE             — Apache 2.0
 ├── docs/               — Engineering design specifications
