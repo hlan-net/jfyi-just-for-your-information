@@ -5,6 +5,15 @@ For planned future work and architectural phases, see [`ROADMAP.md`](ROADMAP.md)
 
 ---
 
+## [v2.17.1] — Overview layout fix
+
+- **Overview no longer overflows narrow-but-not-mobile windows**: `.overview-grid` used bare `3fr 2fr` columns, which cannot shrink below their min-content width. Combined with `white-space: nowrap` on the Notes Inbox, Journal and Recent Activity feed text, the right-hand column pushed past the viewport and was clipped at the window edge — visible in any browser window narrower than ~1100px, such as a squared-off window on a wide display.
+  - Grid columns are now `minmax(0, 3fr) minmax(0, 2fr)` so they may shrink.
+  - Feed body text wraps (`.feed-item .grow`) instead of truncating to an ellipsis whose full content was reachable only via a `title` tooltip — never on touch. It drops to its own line once the fixed-width siblings leave it under 8rem.
+  - The two-column overview collapses at 1000px rather than 820px: the 2fr column stops carrying its content well before the window is narrow enough for the KPI row to reflow (which still happens at 820px).
+
+---
+
 ## [v2.17.0] — Journal Backend & Dashboard Restructure (Phase 7, Part 1)
 
 First half of Phase 7 ([docs/journal.md](docs/journal.md), [docs/dashboard-ux-redesign.md](docs/dashboard-ux-redesign.md)).
