@@ -78,7 +78,7 @@ JFYI runs as a single container on port 8080, serving three roles simultaneously
 - `get_developer_profile` — retrieves the developer constitution for injection into context
 - `record_interaction` — logs a prompt/response pair with correction signal
 - `get_agent_analytics` — returns comparative friction metrics across agents
-- `add_profile_note` / `add_profile_rule` — records observations and curated constitution rules
+- `add_profile_note` — files a raw observation about developer preferences for human curation
 - `recall_journal` — budget-capped semantic recall of past decisions and work history
 - `add_journal_note` — files an architectural decision or technical note into the journal
 - `discover_tools` — progressive disclosure router (Phase 3)

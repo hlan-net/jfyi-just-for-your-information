@@ -16,7 +16,6 @@ Adding JFYI as an MCP server only gives the agent *tools*. It still has to remem
 | `hooks/hooks.json` → `SessionStart` | Fetches `GET /api/export/agents-md` and prints it. Claude Code adds SessionStart stdout to the model's context, so the constitution is present before the first prompt and again after `/compact`. | Read curated |
 | `.mcp.json` | Connects the SSE endpoint so `recall_journal`, `add_profile_note`, `add_journal_note`, `record_interaction` are callable. | Write raw / read curated |
 | `skills/jfyi/SKILL.md` | Tells the agent *when* to use those tools (pattern-level notes, decision notes after milestones) via `discover_tools`. | Write raw |
-| `scripts/record-interaction.sh` | Standalone script for optional raw telemetry. Not registered in `hooks.json` by default to prevent recording false uncorrected turns before user feedback arrives. | Write raw |
 
 ## 1. Install for yourself (CLI and Desktop)
 
@@ -94,8 +93,7 @@ plugins/jfyi/
 ├── hooks/
 │   └── hooks.json             # SessionStart hook
 ├── scripts/
-│   ├── session-start.sh       # injects the constitution; exits 0 if JFYI is unreachable
-│   └── record-interaction.sh  # optional standalone raw telemetry script (needs jq)
+│   └── session-start.sh       # injects the constitution; exits 0 if JFYI is unreachable
 └── skills/
     └── jfyi/
         └── SKILL.md           # usage guidance for the agent
@@ -107,5 +105,5 @@ Design notes:
 
 - Hooks use the exec form (`"command": "${CLAUDE_PLUGIN_ROOT}/scripts/…", "args": []` — a command hook is exec form exactly when `args` is present, and then no shell is involved) and never reference `${user_config.*}`: Claude Code rejects that in shell-form commands because the value would be re-parsed by the shell. Instead Claude Code exports every `userConfig` value to hook processes as `CLAUDE_PLUGIN_OPTION_<KEY>`; the scripts read `CLAUDE_PLUGIN_OPTION_JFYI_URL` / `CLAUDE_PLUGIN_OPTION_JFYI_TOKEN` and fall back to `JFYI_URL` / `JFYI_MCP_TOKEN`. One script serves both install paths.
 - `/api/export/agents-md` already applies the constitution token budget (`JFYI_CONSTITUTION_TOKEN_BUDGET`), so the injected block stays bounded. `project_context` is the checkout's directory basename, which makes project-scoped rules ride along.
-- `record-interaction.sh` is provided as a standalone script rather than an active `Stop` hook in `hooks.json`. A `Stop` hook fires before user feedback arrives, always recording `was_corrected=false` and artificially inflating alignment scores. It can be registered manually or combined with a future `UserPromptSubmit` hook that determines whether the prior turn was corrected.
+- Passive interaction telemetry via hooks is intentionally omitted: Claude Code's `Stop` event does not know whether a turn will be corrected by the user on the next turn. Recording turns as uncorrected systematically inflates alignment and confidence metrics. A future release will introduce turn-correlation telemetry once next-prompt feedback is available.
 - Test changes to the plugin with `claude plugin validate ./plugins/jfyi` and `claude --plugin-dir ./plugins/jfyi` (export `JFYI_URL` and `JFYI_MCP_TOKEN` in your shell for the run). `userConfig` values are collected when a plugin is *enabled*, so with `--plugin-dir` the hooks rely on the environment variables, and the MCP server can be authenticated with `/mcp` through JFYI's OAuth flow instead of a token.
