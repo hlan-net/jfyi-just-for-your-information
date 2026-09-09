@@ -2,14 +2,14 @@
 # JFYI SessionStart hook — inject the developer constitution into context.
 # stdout of a SessionStart hook is added to Claude's context.
 #
-# Configuration comes from plugin userConfig (JFYI_CFG_*) or, as a fallback,
-# from the JFYI_URL / JFYI_MCP_TOKEN environment variables (cloud environments).
-# Nothing is read from files in the repository.
+# Configuration: Claude Code exports plugin userConfig values to hook processes
+# as CLAUDE_PLUGIN_OPTION_<KEY>. Fallback: JFYI_URL / JFYI_MCP_TOKEN environment
+# variables (cloud environments, --plugin-dir testing). Nothing is read from
+# files in the repository.
 set -u
 
-pick() { case "$1" in ''|'${user_config'*) printf '%s' "$2" ;; *) printf '%s' "$1" ;; esac; }
-URL="$(pick "${JFYI_CFG_URL:-}" "${JFYI_URL:-}")"
-TOKEN="$(pick "${JFYI_CFG_TOKEN:-}" "${JFYI_MCP_TOKEN:-}")"
+URL="${CLAUDE_PLUGIN_OPTION_JFYI_URL:-${JFYI_URL:-}}"
+TOKEN="${CLAUDE_PLUGIN_OPTION_JFYI_TOKEN:-${JFYI_MCP_TOKEN:-}}"
 [ -n "$URL" ] && [ -n "$TOKEN" ] || { echo "JFYI: JFYI_URL / JFYI_MCP_TOKEN not configured; skipping." >&2; exit 0; }
 
 PROJECT="$(basename "${CLAUDE_PROJECT_DIR:-$PWD}")"

@@ -4,9 +4,8 @@
 set -u
 command -v jq >/dev/null 2>&1 || exit 0
 
-pick() { case "$1" in ''|'${user_config'*) printf '%s' "$2" ;; *) printf '%s' "$1" ;; esac; }
-URL="$(pick "${JFYI_CFG_URL:-}" "${JFYI_URL:-}")"
-TOKEN="$(pick "${JFYI_CFG_TOKEN:-}" "${JFYI_MCP_TOKEN:-}")"
+URL="${CLAUDE_PLUGIN_OPTION_JFYI_URL:-${JFYI_URL:-}}"
+TOKEN="${CLAUDE_PLUGIN_OPTION_JFYI_TOKEN:-${JFYI_MCP_TOKEN:-}}"
 [ -n "$URL" ] && [ -n "$TOKEN" ] || exit 0
 
 INPUT="$(cat)"
