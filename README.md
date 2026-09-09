@@ -202,7 +202,8 @@ docker-compose up
 │   ├── notebooklm-report.md         — Background briefing: AI trustworthiness & risk
 │   ├── acp.md                       — Phase 5: Agent Communication Protocol
 │   ├── a2a.md                       — Phase 5: Agent2Agent negotiation
-│   └── journal.md                   — Phase 7: Developer & Work Journal
+│   ├── journal.md                   — Phase 7: Developer & Work Journal
+│   └── dashboard-ux-redesign.md     — Phase 7: Dashboard UX Redesign plan
 ├── src/jfyi/           — Application source code
 ├── tests/              — Test suite (pytest, asyncio_mode=auto)
 ├── helm/               — Kubernetes Helm chart

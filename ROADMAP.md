@@ -10,19 +10,32 @@ The user-centric mission and the core architectural pattern (write raw / curate 
 
 ## Active & Upcoming Roadmap
 
-### Phase 7 — Developer & Work Journal `v2.17.0`
+### Phase 7 — Journal & Dashboard UX Redesign `v2.17.0`–`v2.18.0`
 
-Adds a temporal, reflective timeline dimension for the developer and historical context recall for agents.
+Adds a temporal journal dimension and restructures the dashboard from 7 history-driven tabs into 4 intuitive areas (Overview, Profile, Insights, Settings).
 
-| Item | Target | Status | Spec | Tag |
-|------|--------|--------|------|-----|
-| [Developer & Work Journal](docs/journal.md) | `v2.17.0` | Planned | [docs/journal.md](docs/journal.md) | Core / Supplementary |
-| Daily Digest & Standup Synthesis | `v2.17.0` | Planned | [docs/journal.md](docs/journal.md) | Supplementary |
-| Agent Journal Recall (`recall_journal`) | `v2.17.0` | Planned | [docs/journal.md](docs/journal.md) | Core |
+#### `v2.17.0` — Journal Backend + Dashboard Restructure (Phase 1)
 
-- **Journal Timeline (`/journal`):** A temporal timeline in the dashboard displaying daily digests, friction events, and human architectural decision notes.
-- **Decision Capture & Standup Exports:** Quick-entry bar for architectural decisions (ADRs) and one-click standup export (Yesterday / Today / Blockers).
-- **Agent Recall (`recall_journal`):** Budget-capped semantic recall tool for agents to retrieve past technical decisions and rationale before modifying code.
+| Item | Status | Spec | Tag |
+|------|--------|------|-----|
+| [Dashboard UX Redesign — Phase 1](docs/dashboard-ux-redesign.md) (Overview page, nav restructure, Profile merge, Settings merge) | Planned | [docs/dashboard-ux-redesign.md](docs/dashboard-ux-redesign.md) | Core |
+| [Developer & Work Journal — Schema & API](docs/journal.md) (CRUD, `recall_journal`, `add_journal_note`) | Planned | [docs/journal.md](docs/journal.md) | Core |
+
+- **Overview Page:** Living default landing with KPIs, 7-day trend, top agents, notes inbox preview, and zero-state onboarding. *No new backend endpoints needed — uses existing APIs.*
+- **Navigation Restructure:** `🏠 Overview` · `👤 Profile` · `💡 Insights ▾` · `⚙️ Settings`. Old routes preserved as redirects.
+- **Profile Merge:** Notes Inbox + Constitution unified as sub-tabs under Profile.
+- **Journal Backend:** `journal_entries` schema, REST CRUD, MCP tools (`recall_journal`, `add_journal_note`).
+
+#### `v2.18.0` — Journal UI + Memory Explorer (Phases 2–3)
+
+| Item | Status | Spec | Tag |
+|------|--------|------|-----|
+| [Dashboard UX Redesign — Phase 2](docs/dashboard-ux-redesign.md) (Journal UI under Insights, Daily Digest on Overview) | Planned | [docs/dashboard-ux-redesign.md](docs/dashboard-ux-redesign.md) | Supplementary |
+| [Dashboard UX Redesign — Phase 3](docs/dashboard-ux-redesign.md) (Memory Explorer under Insights) | Planned | [docs/dashboard-ux-redesign.md](docs/dashboard-ux-redesign.md) | Supplementary |
+| Daily Digest & Standup Synthesis | Planned | [docs/journal.md](docs/journal.md) | Supplementary |
+
+- **Journal UI (`/insights/journal`):** Timeline, daily digest cards, quick-entry bar, standup export.
+- **Memory Explorer (`/insights/memory`):** Session browser, friction event explorer. Exposes existing `db.get_best_sessions()` and `db.get_session_telemetry()` as REST endpoints.
 
 ---
 
