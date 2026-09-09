@@ -1457,10 +1457,10 @@
         <button class="btn btn-outline" style="font-size:0.75rem;padding:0.2rem 0.6rem;" @click="copy('install', files.install)">{{ copied === 'install' ? 'Copied!' : 'Copy' }}</button>
       </div>
       <pre class="pg-pre"><code>{{ files.install }}</code></pre>
-      <p class="desc">Claude Code asks for two values: <strong>JFYI base URL</strong> → <code>{{ origin }}</code> and <strong>JFYI MCP token</strong> → generate it in the Connect section above. Then run <code>/mcp</code> in a session to confirm the <code>jfyi</code> server is connected and <code>/context</code> to see the injected constitution.</p>
+      <p class="desc">Then, inside a Claude Code session, run <code>/plugin configure jfyi@jfyi</code> and set <strong>JFYI base URL</strong> → <code>{{ origin }}</code> and <strong>JFYI MCP token</strong> → generate it in the Connect section above (or pass both with <code>--config KEY=VALUE</code> at install). Verify with <code>/mcp</code> (the <code>jfyi</code> server is connected) and <code>/context</code> (the injected constitution is visible).</p>
 
       <h3 style="font-size:0.95rem;margin:1.25rem 0 0.5rem;">2. Enable for a project or team</h3>
-      <p class="desc">Commit this to the project's <code>.claude/settings.json</code>. It only references the public marketplace; each team member is asked for their own URL and token when the plugin first loads.</p>
+      <p class="desc">Commit this to the project's <code>.claude/settings.json</code>. It only references the public marketplace; each team member sets their own URL and token with <code>/plugin configure jfyi@jfyi</code>.</p>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
         <code style="color:var(--accent);font-size:0.85rem;">.claude/settings.json</code>
         <button class="btn btn-outline" style="font-size:0.75rem;padding:0.2rem 0.6rem;" @click="copy('settings', files.settings)">{{ copied === 'settings' ? 'Copied!' : 'Copy' }}</button>

@@ -25,24 +25,24 @@ claude plugin marketplace add hlan-net/jfyi-just-for-your-information
 claude plugin install jfyi@jfyi
 ```
 
-Claude Code asks for the two `userConfig` values declared by the plugin:
+Then set the two `userConfig` values declared by the plugin. Run `/plugin configure jfyi@jfyi` inside a Claude Code session (the install command reminds you of this), or pass them with `--config`:
 
 | Key | Value | Where it is stored |
 |---|---|---|
 | `jfyi_url` | Your instance, e.g. `https://jfyi.example.net` (no trailing slash) | Claude Code plugin config |
 | `jfyi_token` | Bearer token from your dashboard, `Settings → Connect` | Secure storage (`sensitive: true`), never a settings file |
 
-Non-interactive form (values still stay out of the repo):
-
 ```bash
 claude plugin install jfyi@jfyi --config jfyi_url=https://jfyi.example.net --config jfyi_token="$JFYI_MCP_TOKEN"
 ```
+
+Either way the values stay out of every repository.
 
 Verify: inside a session run `/mcp` (the `jfyi` server should be connected) and `/context` (the injected constitution is visible).
 
 ## 2. Enable for a project or team
 
-Commit this to the project's `.claude/settings.json`. It only *references* the public marketplace; every team member is asked for their own URL and token the first time the plugin loads, so nothing personal enters the repo.
+Commit this to the project's `.claude/settings.json`. It only *references* the public marketplace; every team member sets their own URL and token with `/plugin configure jfyi@jfyi`, so nothing personal enters the repo.
 
 ```json
 {
