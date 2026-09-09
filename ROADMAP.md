@@ -33,9 +33,13 @@ Adds a temporal journal dimension and restructures the dashboard from 7 history-
 | [Dashboard UX Redesign — Phase 2](docs/dashboard-ux-redesign.md) (Journal UI under Insights, Daily Digest on Overview) | Planned | [docs/dashboard-ux-redesign.md](docs/dashboard-ux-redesign.md) | Supplementary |
 | [Dashboard UX Redesign — Phase 3](docs/dashboard-ux-redesign.md) (Memory Explorer under Insights) | Planned | [docs/dashboard-ux-redesign.md](docs/dashboard-ux-redesign.md) | Supplementary |
 | Daily Digest & Standup Synthesis | Planned | [docs/journal.md](docs/journal.md) | Supplementary |
+| [Dashboard responsive layout](https://github.com/hlan-net/jfyi-just-for-your-information/issues/68) (tables, inline grids, chart labels, nav) | Planned | [#68](https://github.com/hlan-net/jfyi-just-for-your-information/issues/68) | Infrastructure |
+| [Layout constraints in the UX spec](https://github.com/hlan-net/jfyi-just-for-your-information/issues/69) | Planned | [#69](https://github.com/hlan-net/jfyi-just-for-your-information/issues/69) | Infrastructure |
 
 - **Journal UI (`/insights/journal`):** Timeline, daily digest cards, quick-entry bar, standup export.
 - **Memory Explorer (`/insights/memory`):** Session browser, friction event explorer. Exposes existing `db.get_best_sessions()` and `db.get_session_telemetry()` as REST endpoints.
+- **Responsive layout ([#68](https://github.com/hlan-net/jfyi-just-for-your-information/issues/68)):** The dashboard assumes a wide viewport outside the Overview — 13 tables with no `overflow-x` wrapper, three grids written as inline styles that no media query can reach, chart labels at `font-size="8"`, and a nav that overflows below ~500px. Sequenced with Phases 2–3 so the layout work lands with the pages it affects. `v2.17.1` fixed the Overview case ([#67](https://github.com/hlan-net/jfyi-just-for-your-information/pull/67)); this is the remainder.
+- **Spec gap ([#69](https://github.com/hlan-net/jfyi-just-for-your-information/issues/69)):** [`docs/dashboard-ux-redesign.md`](docs/dashboard-ux-redesign.md) states no viewport, breakpoint or minimum width, which is what let the `v2.17.0` Overview ship with a clipped column. Fix the spec **before** implementing Phases 2–3, or they reproduce it.
 
 ---
 
