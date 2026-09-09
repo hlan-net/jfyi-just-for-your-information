@@ -253,7 +253,16 @@ def test_api_journal_validation(client):
     assert (
         client.post("/api/journal", json={"title": "x", "entry_date": "1/2/26"}).status_code == 422
     )
+    assert (
+        client.post("/api/journal", json={"title": "x", "entry_date": "2026-99-99"}).status_code
+        == 422
+    )
+    assert (
+        client.post("/api/journal", json={"title": "x", "entry_date": "2026-02-31"}).status_code
+        == 422
+    )
     assert client.get("/api/journal?type=bogus").status_code == 422
+    assert client.get("/api/journal?from_date=2026-99-99").status_code == 422
 
 
 def test_api_journal_redacts_secrets(client):
@@ -264,6 +273,26 @@ def test_api_journal_redacts_secrets(client):
     assert resp.status_code == 201
     assert "AKIA" not in resp.json()["content_md"]
     assert "[REDACTED:aws_access_key]" in resp.json()["content_md"]
+
+    resp2 = client.post(
+        "/api/journal",
+        json={
+            "title": "Friction test",
+            "content_md": "clean",
+            "friction_summary": "token AKIAABCDEFGHIJKLMNOP used",
+        },
+    )
+    assert resp2.status_code == 201
+    assert "AKIA" not in resp2.json()["friction_summary"]
+    assert "[REDACTED:aws_access_key]" in resp2.json()["friction_summary"]
+
+    resp3 = client.put(
+        f"/api/journal/{resp2.json()['id']}",
+        json={"friction_summary": "another AKIAZYXWVUTSRQPONMLK leaked"},
+    )
+    assert resp3.status_code == 200
+    assert "AKIA" not in resp3.json()["friction_summary"]
+    assert "[REDACTED:aws_access_key]" in resp3.json()["friction_summary"]
 
 
 def test_api_journal_scoped_to_current_user(client, db):
@@ -386,3 +415,23 @@ async def test_recall_journal_via_discover_tools_proxy(ctx):
         analytics,
     )
     assert "Proxy check" in result[0].text
+
+
+async def test_recall_journal_excludes_raw_agent_notes(ctx):
+    db, analytics = ctx
+    db.journal_add(1, "Agent note", "Raw observations by agent", "note", source="agent")
+    db.journal_add(1, "User note", "Curated developer decision", "decision", source="manual")
+    result = await dispatch_tool("recall_journal", {"query": "observations"}, db, analytics)
+    text = result[0].text
+    assert "Agent note" not in text
+    assert "User note" in text
+
+
+async def test_recall_journal_huge_header_bounded(ctx):
+    db, analytics = ctx
+    huge_title = " ".join(f"titleword{i}" for i in range(1200))
+    db.journal_add(1, huge_title, "some body", "decision")
+    result = await dispatch_tool("recall_journal", {"query": "titleword"}, db, analytics)
+    text = result[0].text
+    # Should be truncated to fit budget
+    assert len(text.split()) <= 1000 + 40

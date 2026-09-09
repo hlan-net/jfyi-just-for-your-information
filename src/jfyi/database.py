@@ -951,6 +951,23 @@ class Database:
             # Finally delete the source user
             conn.execute("DELETE FROM users WHERE id = ?", (source_user_id,))
 
+        if self._vs:
+            with self._conn() as conn:
+                j_rows = conn.execute(
+                    "SELECT id, title, content_md, entry_type, project_id, entry_date, source "
+                    "FROM journal_entries WHERE user_id = ?",
+                    (target_user_id,),
+                ).fetchall()
+                for r in j_rows:
+                    row_dict = dict(r)
+                    row_dict["user_id"] = target_user_id
+                    self._vs.add(
+                        "journal",
+                        str(r["id"]),
+                        self._journal_text(r["title"], r["content_md"]),
+                        self._journal_vector_meta(row_dict),
+                    )
+
     def unlink_identity(self, user_id: int, provider: str) -> bool:
         with self._conn() as conn:
             cur = conn.execute(
@@ -2257,6 +2274,7 @@ class Database:
         return {
             "user_id": row["user_id"],
             "entry_type": row["entry_type"],
+            "source": row.get("source") or "manual",
             "project_id": row.get("project_id") or "",
             "entry_date": row.get("entry_date") or "",
         }
@@ -2496,7 +2514,7 @@ class Database:
         type_filter: str | None,
         k: int,
     ) -> list[dict[str, Any]]:
-        where_clauses: list[dict[str, Any]] = [{"user_id": user_id}]
+        where_clauses: list[dict[str, Any]] = [{"user_id": user_id}, {"source": {"$ne": "agent"}}]
         if project_id:
             where_clauses.append({"project_id": project_id})
         if type_filter:
@@ -2509,7 +2527,7 @@ class Database:
         with self._conn() as conn:
             rows = conn.execute(
                 f"SELECT * FROM journal_entries WHERE id IN ({placeholders})"
-                " AND user_id=? AND entry_date >= ?",
+                " AND user_id=? AND entry_date >= ? AND source != 'agent'",
                 (*ids, user_id, from_date),
             ).fetchall()
         id_order = {id_: i for i, id_ in enumerate(ids)}
@@ -2528,7 +2546,7 @@ class Database:
         type_filter: str | None,
         k: int,
     ) -> list[dict[str, Any]]:
-        clauses = ["user_id = ?", "entry_date >= ?"]
+        clauses = ["user_id = ?", "entry_date >= ?", "source != 'agent'"]
         params: list[Any] = [user_id, from_date]
         if project_id:
             clauses.append("project_id = ?")
@@ -2562,6 +2580,7 @@ class Database:
             from_date=from_date,
             project_id=project_id,
             entry_type=type_filter,
+            source="manual",
             limit=k,
         )
 

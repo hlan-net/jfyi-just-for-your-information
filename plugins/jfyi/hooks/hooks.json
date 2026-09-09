@@ -11,18 +11,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/record-interaction.sh",
-            "args": [],
-            "timeout": 10
-          }
-        ]
-      }
     ]
   }
 }

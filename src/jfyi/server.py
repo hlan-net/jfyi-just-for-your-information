@@ -519,17 +519,21 @@ def _render_journal_entries(entries: list[dict[str, Any]], budget: int) -> str:
     lines: list[str] = []
     used = 0
     for e in entries:
+        remaining = budget - used
+        if remaining <= 0:
+            break
         header = f"### {e['entry_date']} · [{e['entry_type']}] {e['title']}"
         meta = _format_journal_meta(e)
         head_tokens = count_tokens(header) + count_tokens(meta)
-        if lines and used + head_tokens >= budget:
+        if head_tokens >= remaining:
+            if not lines and remaining > 0:
+                words = f"{header}\n{meta}".strip().split()
+                lines.append(" ".join(words[:remaining]) + " …")
             break
-        body = _truncate_body(e.get("content_md") or "", budget - used - head_tokens)
+        body = _truncate_body(e.get("content_md") or "", remaining - head_tokens)
         block = "\n".join(x for x in (header, meta, body) if x)
         lines.append(block)
         used += head_tokens + count_tokens(body)
-        if used >= budget:
-            break
     return "\n\n".join(lines)
 
 

@@ -1431,7 +1431,7 @@
     <connect-panel></connect-panel>
     <plugin-guide></plugin-guide>
     <div v-if="isAdmin">
-      <div class="card" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" @click="showAdmin = !showAdmin">
+      <div class="card" role="button" tabindex="0" :aria-expanded="showAdmin ? 'true' : 'false'" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" @click="showAdmin = !showAdmin" @keydown.enter.prevent="showAdmin = !showAdmin" @keydown.space.prevent="showAdmin = !showAdmin">
         <div>
           <h2 style="margin:0;">🛡️ Administration</h2>
           <p class="desc" style="margin:0.25rem 0 0;">Users, identity providers, registration and build info. Visible to admins only.</p>
@@ -1445,7 +1445,7 @@
 
 <script type="text/x-template" id="plugin-guide-template">
   <div class="card">
-    <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:1rem;" @click="open = !open">
+    <div role="button" tabindex="0" :aria-expanded="open ? 'true' : 'false'" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:1rem;" @click="open = !open" @keydown.enter.prevent="open = !open" @keydown.space.prevent="open = !open">
       <div>
         <h2 style="margin:0;">🧩 Claude Code plugin</h2>
         <p class="desc" style="margin:0.25rem 0 0;">Make JFYI passive in the Claude Code CLI, the Desktop app and claude.ai/code web sessions: the constitution is injected at session start and the MCP tools are connected.</p>

@@ -6,6 +6,7 @@ import asyncio
 import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -1016,6 +1017,12 @@ def _validate_journal_date(value: str | None) -> str | None:
         return None
     if not _DATE_RE.match(value):
         raise HTTPException(status_code=422, detail="entry_date must be YYYY-MM-DD")
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail="entry_date is not a valid calendar date"
+        ) from exc
     return value
 
 
@@ -1056,12 +1063,15 @@ def _register_journal_read_api(app: FastAPI) -> None:
         return entry
 
 
-def _redact_journal_fields(title: str | None, content: str | None) -> tuple[str | None, str | None]:
+def _redact_journal_fields(
+    title: str | None, content: str | None, friction: str | None = None
+) -> tuple[str | None, str | None, str | None]:
     if not settings.dlp_enabled:
-        return title, content
+        return title, content, friction
     r_title = redact(title)[0] if title is not None else None
     r_content = redact(content)[0] if content is not None else None
-    return r_title, r_content
+    r_friction = redact(friction)[0] if friction is not None else None
+    return r_title, r_content, r_friction
 
 
 def _register_journal_create(app: FastAPI) -> None:
@@ -1075,7 +1085,9 @@ def _register_journal_create(app: FastAPI) -> None:
             raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
         if not body.title.strip():
             raise HTTPException(status_code=422, detail="Title must not be empty")
-        title, content = _redact_journal_fields(body.title, body.content_md)
+        title, content, friction = _redact_journal_fields(
+            body.title, body.content_md, body.friction_summary
+        )
         try:
             entry_id = await asyncio.to_thread(
                 db.journal_add,
@@ -1087,7 +1099,7 @@ def _register_journal_create(app: FastAPI) -> None:
                 entry_date=_validate_journal_date(body.entry_date),
                 project_id=body.project_id,
                 tags=body.tags,
-                friction_summary=body.friction_summary,
+                friction_summary=friction,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1105,7 +1117,9 @@ def _register_journal_update(app: FastAPI) -> None:
     ) -> dict[str, Any]:
         if body.entry_type is not None and body.entry_type not in Database.JOURNAL_ENTRY_TYPES:
             raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
-        title, content = _redact_journal_fields(body.title, body.content_md)
+        title, content, friction = _redact_journal_fields(
+            body.title, body.content_md, body.friction_summary
+        )
         fields = body.model_fields_set
         try:
             ok = await asyncio.to_thread(
@@ -1118,7 +1132,7 @@ def _register_journal_update(app: FastAPI) -> None:
                 entry_date=_validate_journal_date(body.entry_date),
                 project_id=body.project_id,
                 tags=body.tags if "tags" in fields else None,
-                friction_summary=body.friction_summary,
+                friction_summary=friction,
                 clear_project="project_id" in fields and body.project_id is None,
             )
         except ValueError as exc:

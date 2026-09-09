@@ -148,7 +148,7 @@ Install directly in Claude Code to automatically inject your developer constitut
 
 ```bash
 claude plugin marketplace add hlan-net/jfyi-just-for-your-information
-claude plugin install jfyi
+claude plugin install jfyi@jfyi
 ```
 
 See [docs/claude-code-plugin.md](docs/claude-code-plugin.md) for configuration details.

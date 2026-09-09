@@ -14,7 +14,7 @@ TOKEN="${CLAUDE_PLUGIN_OPTION_JFYI_TOKEN:-${JFYI_MCP_TOKEN:-}}"
 
 PROJECT="$(basename "${CLAUDE_PROJECT_DIR:-$PWD}")"
 if BODY="$(curl -sS --fail --max-time 8 -H "Authorization: Bearer ${TOKEN}" \
-     "${URL%/}/api/export/agents-md?project_context=${PROJECT}")"; then
+     -G --data-urlencode "project_context=${PROJECT}" "${URL%/}/api/export/agents-md")"; then
   printf '%s\n\n' "$BODY"
   echo "JFYI MCP tools are connected: call recall_journal before proposing changes that may already have been decided; file stable preferences with add_profile_note and decisions with add_journal_note."
 else
