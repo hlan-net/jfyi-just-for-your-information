@@ -454,3 +454,40 @@ async def test_recall_journal_fallback_includes_synthesizer_entries(ctx):
     result = await dispatch_tool("recall_journal", {"query": "nonexistentkeyword"}, db, analytics)
     text = result[0].text
     assert "Daily digest" in text
+
+
+async def test_journal_update_promotes_agent_note(client, db):
+    user_id = client.get("/api/me").json()["id"]
+    analytics = AnalyticsEngine(db)
+    entry_id = db.journal_add(
+        user_id, "Raw agent observation", "Some content", "note", source="agent"
+    )
+    res1 = await dispatch_tool(
+        "recall_journal", {"query": "observation"}, db, analytics, user_id=user_id
+    )
+    assert "Raw agent observation" not in res1[0].text
+
+    resp = client.put(f"/api/journal/{entry_id}", json={"title": "Curated decision"})
+    assert resp.status_code == 200
+    assert resp.json()["source"] == "manual"
+
+    res2 = await dispatch_tool(
+        "recall_journal", {"query": "Curated"}, db, analytics, user_id=user_id
+    )
+    assert "Curated decision" in res2[0].text
+
+
+def test_delete_user_purges_vectors(tmp_path):
+    d = Database(tmp_path / "test_del.db")
+    d.create_user("u@example.com")
+    called_collections = []
+
+    class MockVS:
+        def delete(self, col, where=None, ids=None):
+            called_collections.append((col, where))
+
+    d._vs = MockVS()
+    assert d.delete_user(1)
+    purged_cols = [c[0] for c in called_collections]
+    assert "journal" in purged_cols
+    assert "rules" in purged_cols

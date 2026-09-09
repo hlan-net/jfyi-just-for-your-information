@@ -510,7 +510,11 @@ def _format_journal_meta(e: dict[str, Any]) -> str:
 def _truncate_body(content: str, remaining: int) -> str:
     body_words = content.split()
     if len(body_words) > remaining:
-        return " ".join(body_words[: max(remaining, 0)]) + " …"
+        if remaining <= 0:
+            return ""
+        kept = body_words[:remaining]
+        kept[-1] += "…"
+        return " ".join(kept)
     return " ".join(body_words)
 
 
@@ -528,7 +532,9 @@ def _render_journal_entries(entries: list[dict[str, Any]], budget: int) -> str:
         if head_tokens >= remaining:
             if not lines and remaining > 0:
                 words = f"{header}\n{meta}".strip().split()
-                lines.append(" ".join(words[:remaining]) + " …")
+                kept = words[:remaining]
+                kept[-1] += "…"
+                lines.append(" ".join(kept))
             break
         body = _truncate_body(e.get("content_md") or "", remaining - head_tokens)
         block = "\n".join(x for x in (header, meta, body) if x)

@@ -89,6 +89,14 @@ class Database:
                 self._journal_text(r["title"], r["content_md"]),
                 self._journal_vector_meta(dict(r)),
             )
+        try:
+            live_journal_ids = {str(r["id"]) for r in journal_rows}
+            stored = self._vs._col("journal").get(include=[])
+            stale_ids = [id_ for id_ in stored.get("ids", []) if id_ not in live_journal_ids]
+            if stale_ids:
+                self._vs.delete("journal", ids=stale_ids)
+        except Exception:
+            pass
 
     @contextmanager
     def _conn(self):
@@ -834,6 +842,9 @@ class Database:
             return [dict(r) for r in rows]
 
     def delete_user(self, user_id: int) -> bool:
+        if self._vs:
+            for col in ("notes", "rules", "journal", "episodic"):
+                self._vs.delete(col, where={"user_id": user_id})
         with self._conn() as conn:
             cur = conn.execute("DELETE FROM users WHERE id=?", (user_id,))
             return cur.rowcount > 0
@@ -2420,6 +2431,7 @@ class Database:
         friction_summary: str | None,
         clear_project: bool,
         clear_friction: bool,
+        source: str | None = None,
     ) -> tuple[list[str], list[Any]]:
         sets: list[str] = []
         params: list[Any] = []
@@ -2451,6 +2463,11 @@ class Database:
         elif friction_summary is not None:
             sets.append("friction_summary=?")
             params.append(friction_summary)
+        if source is not None:
+            if source not in self.JOURNAL_SOURCES:
+                raise ValueError(f"Invalid journal source: {source!r}")
+            sets.append("source=?")
+            params.append(source)
         return sets, params
 
     def journal_update(
@@ -2466,6 +2483,7 @@ class Database:
         friction_summary: str | None = None,
         clear_project: bool = False,
         clear_friction: bool = False,
+        source: str | None = None,
     ) -> bool:
         """Partial update. Only supplied fields change; returns False when not found."""
         if entry_type is not None and entry_type not in self.JOURNAL_ENTRY_TYPES:
@@ -2480,6 +2498,7 @@ class Database:
             friction_summary,
             clear_project,
             clear_friction,
+            source=source,
         )
         sets.append("updated_at=?")
         params.append(datetime.now(UTC).isoformat())

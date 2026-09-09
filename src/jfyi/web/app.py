@@ -132,6 +132,7 @@ class JournalEntryUpdate(BaseModel):
     project_id: str | None = None
     tags: list[str] | None = None
     friction_summary: str | None = None
+    source: str | None = None
 
 
 class IdpCreate(BaseModel):
@@ -1117,10 +1118,17 @@ def _register_journal_update(app: FastAPI) -> None:
     ) -> dict[str, Any]:
         if body.entry_type is not None and body.entry_type not in Database.JOURNAL_ENTRY_TYPES:
             raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
+        if body.source is not None and body.source not in Database.JOURNAL_SOURCES:
+            raise HTTPException(status_code=422, detail="Invalid journal source")
         title, content, friction = _redact_journal_fields(
             body.title, body.content_md, body.friction_summary
         )
         fields = body.model_fields_set
+        source = body.source
+        if source is None:
+            current_entry = await asyncio.to_thread(db.journal_get, current_user["id"], entry_id)
+            if current_entry and current_entry.get("source") == "agent":
+                source = "manual"
         try:
             ok = await asyncio.to_thread(
                 db.journal_update,
@@ -1135,6 +1143,7 @@ def _register_journal_update(app: FastAPI) -> None:
                 friction_summary=friction,
                 clear_project="project_id" in fields and body.project_id is None,
                 clear_friction="friction_summary" in fields and body.friction_summary is None,
+                source=source,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
