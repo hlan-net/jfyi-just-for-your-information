@@ -2335,6 +2335,7 @@ class Database:
         day = entry_date or now.date().isoformat()
         clean_title = sanitize_rule(title)
         clean_content = sanitize_rule(content_md)
+        clean_project = sanitize_rule(project_id) if project_id else None
         if not clean_title:
             raise ValueError("Journal title must not be empty")
         with self._conn() as conn:
@@ -2350,7 +2351,7 @@ class Database:
                     clean_content,
                     entry_type,
                     source,
-                    project_id or None,
+                    clean_project or None,
                     self._normalize_tags(tags),
                     friction_summary,
                     now.isoformat(),
@@ -2368,7 +2369,7 @@ class Database:
                         "user_id": user_id,
                         "entry_type": entry_type,
                         "source": source,
-                        "project_id": project_id,
+                        "project_id": clean_project,
                         "entry_date": day,
                     }
                 ),
@@ -2454,7 +2455,8 @@ class Database:
             sets.append("project_id=NULL")
         elif project_id is not None:
             sets.append("project_id=?")
-            params.append(project_id or None)
+            clean_proj = sanitize_rule(project_id) if project_id else None
+            params.append(clean_proj or None)
         if tags is not None:
             sets.append("tags=?")
             params.append(self._normalize_tags(tags))

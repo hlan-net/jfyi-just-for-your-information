@@ -774,7 +774,9 @@ async def dispatch_tool(
         from .config import settings
         from .dlp import redact
 
-        note_text = arguments["text"]
+        note_text = str(arguments.get("text") or arguments.get("note") or "").strip()
+        if not note_text:
+            return [TextContent(type="text", text="add_profile_note requires non-empty text.")]
         if settings.dlp_enabled:
             note_text, _ = redact(note_text)
         note_id = db.add_note(
