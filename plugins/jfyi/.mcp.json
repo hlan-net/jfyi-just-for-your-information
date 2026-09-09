@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "jfyi": {
+      "type": "sse",
+      "url": "${user_config.jfyi_url}/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer ${user_config.jfyi_token}"
+      }
+    }
+  }
+}

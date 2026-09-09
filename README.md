@@ -202,7 +202,9 @@ docker-compose up
 │   ├── acp.md                       — Phase 5: Agent Communication Protocol
 │   ├── a2a.md                       — Phase 5: Agent2Agent negotiation
 │   ├── journal.md                   — Phase 7: Developer & Work Journal
+│   ├── claude-code-plugin.md        — Installing the JFYI Claude Code plugin (CLI, Desktop, web sessions)
 │   └── dashboard-ux-redesign.md     — Phase 7: Dashboard UX Redesign plan
+├── plugins/jfyi/       — Claude Code plugin (installable from this repo's marketplace; no instance data inside)
 ├── src/jfyi/           — Application source code
 ├── tests/              — Test suite (pytest, asyncio_mode=auto)
 ├── helm/               — Kubernetes Helm chart

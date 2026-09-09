@@ -20,6 +20,7 @@ First half of Phase 7 ([docs/journal.md](docs/journal.md), [docs/dashboard-ux-re
 - **Overview page** (new default landing): KPI cards, 7-day correction sparkline, top agents, recent activity feed, notes-inbox preview and journal preview — all from existing endpoints. Zero-state onboarding card for new users with a deep link into the profile interview.
 - **Profile merge**: Constitution and Notes Inbox as sub-tabs of one Profile page, with an unreviewed-notes badge in the nav.
 - **Settings merge**: Connect and (admin-only, collapsible) Administration on one page.
+- **Claude Code plugin** (`plugins/jfyi/`, [docs/claude-code-plugin.md](docs/claude-code-plugin.md), guide also under `Settings → Claude Code plugin`): installable from this repository's marketplace. SessionStart hook injects the constitution, `.mcp.json` connects the tools, a skill guides their use, an optional Stop hook records telemetry. Instance URL and token are entered at install time or via cloud-environment variables; nothing personal is committed anywhere.
 - **Journal timeline (minimal)**: `/insights/journal` lists entries grouped by day with type filter, quick-entry composer and delete. Daily digest cards, standup export and Memory Explorer follow in `v2.18.0`.
 
 ---

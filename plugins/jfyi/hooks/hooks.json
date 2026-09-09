@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "JFYI_CFG_URL=\"${user_config.jfyi_url}\" JFYI_CFG_TOKEN=\"${user_config.jfyi_token}\" \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "JFYI_CFG_URL=\"${user_config.jfyi_url}\" JFYI_CFG_TOKEN=\"${user_config.jfyi_token}\" \"${CLAUDE_PLUGIN_ROOT}/scripts/record-interaction.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
