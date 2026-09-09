@@ -557,3 +557,21 @@ async def test_recall_journal_unbroken_blob_bounded_by_ceiling(ctx):
     # Total character length must be strictly bounded (1000 tokens * 4 chars = ~4000 chars)
     assert len(text) <= 4500
     assert text.endswith("…")
+
+
+def test_journal_update_source_only_allows_manual(client):
+    resp = client.post(
+        "/api/journal",
+        json={"title": "Test", "content_md": "Content", "entry_type": "decision"},
+    )
+    assert resp.status_code == 201
+    entry_id = resp.json()["id"]
+
+    for forbidden in ("agent", "synthesizer", "unknown"):
+        bad_resp = client.put(f"/api/journal/{entry_id}", json={"source": forbidden})
+        assert bad_resp.status_code == 422
+        assert "Only promotion to 'manual' is allowed" in bad_resp.json()["detail"]
+
+    good_resp = client.put(f"/api/journal/{entry_id}", json={"source": "manual"})
+    assert good_resp.status_code == 200
+    assert good_resp.json()["source"] == "manual"

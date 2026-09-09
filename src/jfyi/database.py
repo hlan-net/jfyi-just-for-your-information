@@ -2539,7 +2539,12 @@ class Database:
         type_filter: str | None,
         k: int,
     ) -> list[dict[str, Any]]:
-        where_clauses: list[dict[str, Any]] = [{"user_id": user_id}, {"source": {"$ne": "agent"}}]
+        where_clauses: list[dict[str, Any]] = [
+            {"user_id": user_id},
+            {"source": {"$ne": "agent"}},
+        ]
+        if from_date:
+            where_clauses.append({"entry_date": {"$gte": from_date}})
         if project_id:
             where_clauses.append({"project_id": project_id})
         if type_filter:

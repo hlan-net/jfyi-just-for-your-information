@@ -1118,8 +1118,8 @@ def _register_journal_create(app: FastAPI) -> None:
 def _validate_journal_update_body(body: JournalEntryUpdate) -> None:
     if body.entry_type is not None and body.entry_type not in Database.JOURNAL_ENTRY_TYPES:
         raise HTTPException(status_code=422, detail=ERR_INVALID_ENTRY_TYPE)
-    if body.source is not None and body.source not in Database.JOURNAL_SOURCES:
-        raise HTTPException(status_code=422, detail="Invalid journal source")
+    if body.source is not None and body.source != "manual":
+        raise HTTPException(status_code=422, detail="Only promotion to 'manual' is allowed")
 
 
 async def _resolve_update_source(
