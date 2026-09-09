@@ -1,7 +1,7 @@
 # JFYI Dashboard UX Redesign — Detailed Plan
 
 **Target:** `v2.17.0` (Phase 1) / `v2.18.0` (Phases 2–3)  
-**Status:** Planned  
+**Status:** Phase 1 shipped in `v2.17.0`; Phases 2–3 planned for `v2.18.0`  
 **Tag:** Core (Overview, Profile merge) + Supplementary (Insights group)  
 **Depends on:** [docs/journal.md](journal.md) (Phase 2)
 
@@ -342,7 +342,7 @@ Merges current `/connect` and `/admin` into one settings hub. Connect content is
 
 ## Implementation Phases
 
-### Phase 1: Overview Page + Navigation Restructure
+### Phase 1: Overview Page + Navigation Restructure ✓ Shipped (`v2.17.0`)
 **Scope:** Frontend only. No new backend endpoints.
 
 1. Create `Overview` component using existing endpoints (`/api/developer/summary`, `/api/developer/constitution-budget`, `/api/analytics/agents`, `/api/developer/trend?days=7`, `/api/profile/notes`, `/api/analytics/friction-events`).

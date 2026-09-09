@@ -1,0 +1,23 @@
+{
+  "name": "jfyi",
+  "displayName": "JFYI — Just For Your Information",
+  "version": "0.1.1",
+  "description": "Serves your JFYI developer constitution at session start and lets agents file notes, journal entries and interaction telemetry.",
+  "homepage": "https://github.com/hlan-net/jfyi-just-for-your-information",
+  "repository": "https://github.com/hlan-net/jfyi-just-for-your-information",
+  "license": "Apache-2.0",
+  "keywords": ["profile", "mcp", "developer-experience", "journal"],
+  "userConfig": {
+    "jfyi_url": {
+      "type": "string",
+      "title": "JFYI base URL",
+      "description": "Your own JFYI instance, e.g. https://jfyi.example.net (no trailing slash)"
+    },
+    "jfyi_token": {
+      "type": "string",
+      "title": "JFYI MCP token",
+      "description": "Bearer token generated in your dashboard under Settings → Connect. Stored in Claude Code's secure storage, never in settings files.",
+      "sensitive": true
+    }
+  }
+}

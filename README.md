@@ -37,9 +37,19 @@ Unlike project-level instruction files (`CLAUDE.md`, `GEMINI.md`), JFYI rules tr
 - Semantic tool and instruction retrieval (ITR) — dense vector search selects only the rules and tools relevant to each step
 - Optional ChromaDB + sentence-transformers vector backend (`pip install jfyi-mcp-server[vector]`)
 
-**Phase 4 — Security & Hardening** *(in progress)*
+**Phase 4 — Security & Hardening**
 - Inline DLP / PII redaction — secrets, tokens, and personal data scrubbed before storage
 - Developer behavior analytics dashboard — correction trends, friction by domain, rule accumulation
+
+**Phase 6 — Vibe Coder Optimization**
+- Tiered profiling — global, project, and agent scoped rules with confidence scoring and decay
+- Positive reinforcement — tracks zero-friction accepted code as "vibe matches"
+- Friction clustering — aggregates recurring friction events into thematic issue clusters
+
+**Phase 7 — Developer & Work Journal & Dashboard Redesign**
+- Developer & Work Journal — chronological timeline of technical decisions, daily digests, and reflections
+- Agent journal recall — budget-capped semantic recall tool (`recall_journal`) for technical decisions
+- Redesigned 4-area dashboard (Overview, Profile, Insights, Settings) and Claude Code plugin integration
 
 ## Architecture
 
@@ -68,7 +78,9 @@ JFYI runs as a single container on port 8080, serving three roles simultaneously
 - `get_developer_profile` — retrieves the developer constitution for injection into context
 - `record_interaction` — logs a prompt/response pair with correction signal
 - `get_agent_analytics` — returns comparative friction metrics across agents
-- `add_profile_rule` — adds a rule to the constitution
+- `add_profile_note` — files a raw observation about developer preferences for human curation
+- `recall_journal` — budget-capped semantic recall of past decisions and work history
+- `add_journal_note` — files an architectural decision or technical note into the journal
 - `discover_tools` — progressive disclosure router (Phase 3)
 
 ## Installation (Helm)
@@ -108,7 +120,7 @@ kubectl port-forward svc/my-jfyi-service 8080:8080 -n jfyi-system
 }
 ```
 
-Generate a token from the **How to Connect** page in the web dashboard.
+Generate a token from the **Settings** page in the web dashboard.
 
 **stdio single-user mode (no cluster required):**
 
@@ -130,15 +142,25 @@ Generate a token from the **How to Connect** page in the web dashboard.
 
 The named volume `jfyi-data` persists the developer constitution across sessions.
 
+**Claude Code Plugin:**
+
+Install directly in Claude Code to automatically inject your developer constitution at session start and connect MCP tools:
+
+```bash
+claude plugin marketplace add hlan-net/jfyi-just-for-your-information
+claude plugin install jfyi@jfyi
+```
+
+See [docs/claude-code-plugin.md](docs/claude-code-plugin.md) for configuration details.
+
 ## Web Dashboard
 
 Access at `http://localhost:8080/` after port-forwarding. The dashboard provides:
 
-- **Developer Constitution** — view, add, edit, and delete profile rules by category and confidence; copy all rules as tab-separated text for use elsewhere
-- **How to Connect** — generate Bearer tokens for agent authentication
-- **Agent Analytics** — comparative correction rate, friction score, and latency across agents
-- **Memory Explorer** — browse episodic session summaries and friction events
-- **Admin** — manage identity providers (including custom OIDC), users, and registration settings
+- **🏠 Overview** — living home page: KPIs, 7-day correction trend, top agents, recent activity, notes inbox and journal previews; onboarding card for new users
+- **👤 Profile** — the Constitution (curated rules, AGENTS.md export, linked identities) and the Notes Inbox (raw agent observations, synthesis wizard, style interview) as sub-tabs
+- **💡 Insights** — Journal (decisions and agent-filed notes), Agents (comparative correction rate, friction, latency), Trends (self-analytics, rule health), Memory (v2.18.0)
+- **⚙️ Settings** — generate Bearer tokens for agent authentication; admins also manage identity providers (including custom OIDC), users, and registration
 
 ## Privacy
 
@@ -152,9 +174,8 @@ Phase 4 adds inline DLP redaction — secrets, API keys, and personal data are s
 # Install dependencies
 pip install -e ".[dev]"
 
-# Lint and format
-ruff check src/ tests/
-ruff format src/ tests/
+# Format and lint (format must run first)
+ruff format src/ tests/ && ruff check src/ tests/
 
 # Run tests
 pytest --cov=jfyi --cov-report=term-missing
@@ -203,7 +224,9 @@ docker-compose up
 │   ├── acp.md                       — Phase 5: Agent Communication Protocol
 │   ├── a2a.md                       — Phase 5: Agent2Agent negotiation
 │   ├── journal.md                   — Phase 7: Developer & Work Journal
+│   ├── claude-code-plugin.md        — Installing the JFYI Claude Code plugin (CLI, Desktop, web sessions)
 │   └── dashboard-ux-redesign.md     — Phase 7: Dashboard UX Redesign plan
+├── plugins/jfyi/       — Claude Code plugin (installable from this repo's marketplace; no instance data inside)
 ├── src/jfyi/           — Application source code
 ├── tests/              — Test suite (pytest, asyncio_mode=auto)
 ├── helm/               — Kubernetes Helm chart

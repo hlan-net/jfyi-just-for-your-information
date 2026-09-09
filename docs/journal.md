@@ -1,7 +1,7 @@
 # Developer & Work Journal
 
-**Target:** `v2.17.0` — Journal & Timeline Dimension  
-**Status:** Planned  
+**Target:** `v2.17.0` (Phase A: schema, API, MCP tools) / `v2.18.0` (Phases B–C: digest, standup, full UI)  
+**Status:** Phase A shipped in `v2.17.0`; Phases B–C planned  
 **Tag:** Core (via `recall_journal` read path) + Supplementary (human timeline & digest UX)
 
 ## Problem
@@ -150,19 +150,21 @@ A new tab in the JFYI Web Dashboard:
 
 ## Implementation Plan
 
-### Phase A: Core Schema & Backend (`v2.17.0`)
+### Phase A: Core Schema & Backend (`v2.17.0`) ✓ Shipped
 1. Add `journal_entries` table in `database.py` with migration v16.
 2. Implement CRUD methods in `database.py` with strict `user_id` scoping.
 3. Implement `GET /api/journal`, `POST /api/journal`, `PUT /api/journal/{id}`, `DELETE /api/journal/{id}` in `src/jfyi/web/app.py`.
 4. Add MCP tools `recall_journal` and `add_journal_note` in `src/jfyi/server.py`.
 
-### Phase B: Daily Digest & Standup Synthesis
+### Phase B: Daily Digest & Standup Synthesis (`v2.18.0`)
 1. Implement `generate_daily_digest(user_id, date)` in `src/jfyi/summarizer.py` (or `reports.py`).
 2. Aggregate sessions, git commit summaries (if available), and friction events for the day.
 3. Graceful degradation: heuristic bullet points when no LLM API key is present.
 
-### Phase C: Dashboard UI (`/journal`)
+### Phase C: Dashboard UI (`/insights/journal`, `v2.18.0`)
 1. Add Journal tab, timeline card rendering, quick entry composer, and standup copy modal to `src/jfyi/web/static/index.html`.
+
+> `v2.17.0` already ships a minimal timeline under `Insights → Journal` (entries grouped by day, type filter, quick-entry composer, delete) so agent-filed notes are visible for review. Digest cards, friction summaries and the standup export are Phase B/C.
 
 ## Success Criteria
 

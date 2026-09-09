@@ -17,6 +17,7 @@ JFYI (Just For Your Information) is a passive MCP server and analytics platform 
 | Profile | `add_profile_note` | Human in `/notes` UX | `get_developer_profile` (rules only) |
 | Analytics | `record_interaction` | `AnalyticsEngine` | `get_agent_analytics` |
 | Episodic | (background summarizer writes) | Background summarizer | `recall_episodic` |
+| Journal | `add_journal_note` | Human in `Insights → Journal` UX (+ daily digest engine, v2.18.0) | `recall_journal` (≤3 entries, 1,000-token cap) |
 
 **Test for new features.** *Does this serve the agent reading better-curated info about the user?* Yes → core. Maybe / opportunistic → supplementary. No → out of scope. Tools that let agents author curated artifacts directly invert the asymmetry and should be rejected.
 

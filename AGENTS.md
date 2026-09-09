@@ -17,6 +17,7 @@
 | Profile | `add_profile_note` | Human in `/notes` UX | `get_developer_profile` (rules only) |
 | Analytics | `record_interaction` | `AnalyticsEngine` | `get_agent_analytics` |
 | Episodic | (background summarizer) | Background summarizer | `recall_episodic` |
+| Journal | `add_journal_note` | Human in `Insights → Journal` UX | `recall_journal` |
 
 **Multi-tenant personal isolation by default:** All database entities, MCP tool invocations, and telemetry are strictly scoped per `user_id`. Never leak cross-user telemetry or profile rules.
 

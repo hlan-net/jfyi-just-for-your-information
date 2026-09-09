@@ -5,6 +5,26 @@ For planned future work and architectural phases, see [`ROADMAP.md`](ROADMAP.md)
 
 ---
 
+## [v2.17.0] — Journal Backend & Dashboard Restructure (Phase 7, Part 1)
+
+First half of Phase 7 ([docs/journal.md](docs/journal.md), [docs/dashboard-ux-redesign.md](docs/dashboard-ux-redesign.md)).
+
+### Developer & Work Journal — Schema, API & MCP tools
+- **`journal_entries` schema** (migration v16): per-user, optionally project-scoped entries typed `daily_digest` / `decision` / `reflection` / `note` with `source` provenance (`manual` / `agent` / `synthesizer`). Cascades on user delete and travels with account merges.
+- **REST CRUD** (`GET|POST /api/journal`, `GET|PUT|DELETE /api/journal/{id}`): date / project / type / source filters, DLP redaction on write, strict `CurrentUser` scoping.
+- **`recall_journal` MCP tool** (agent read path): at most 3 entries within a 1,000-token cap; ChromaDB ranking when `JFYI_ENABLE_VECTOR_DB=true`, lexical date-ordered fallback otherwise.
+- **`add_journal_note` MCP tool** (agent write path): lands as `entry_type='note'`, `source='agent'` for human review in the dashboard.
+
+### Dashboard UX Redesign — Phase 1
+- **Navigation restructure**: 7 history-driven tabs → 4 areas: `🏠 Overview` · `👤 Profile` · `💡 Insights ▾` (Journal / Agents / Trends / Memory) · `⚙️ Settings`. Old routes (`/connect`, `/notes`, `/analytics`, `/developer`, `/memory`, `/admin`) remain as redirects.
+- **Overview page** (new default landing): KPI cards, 7-day correction sparkline, top agents, recent activity feed, notes-inbox preview and journal preview — all from existing endpoints. Zero-state onboarding card for new users with a deep link into the profile interview.
+- **Profile merge**: Constitution and Notes Inbox as sub-tabs of one Profile page, with an unreviewed-notes badge in the nav.
+- **Settings merge**: Connect and (admin-only, collapsible) Administration on one page.
+- **Claude Code plugin** (`plugins/jfyi/`, [docs/claude-code-plugin.md](docs/claude-code-plugin.md), guide also under `Settings → Claude Code plugin`): installable from this repository's marketplace. SessionStart hook injects the constitution, `.mcp.json` connects the tools, and a skill guides their use. Instance URL and token are configured at install time (or via environment-backed `.mcp.json` in headless cloud sessions); nothing personal is committed anywhere.
+- **Journal timeline (minimal)**: `/insights/journal` lists entries grouped by day with type filter, quick-entry composer and delete. Daily digest cards, standup export and Memory Explorer follow in `v2.18.0`.
+
+---
+
 ## [v2.16.0] — Auth & Identity Linking
 
 - **Antigravity CLI Support & Case-insensitive Bearer tokens** ([#60](https://github.com/hlan-net/jfyi-just-for-your-information/pull/60)): Added support for Bearer token auth headers in any case format.

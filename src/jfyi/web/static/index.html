@@ -30,7 +30,34 @@
   nav { display: flex; gap: 0; padding: 0 2rem; background: var(--surface); border-bottom: 1px solid var(--border); }
   nav a { color: var(--muted); padding: 0.8rem 1.2rem; font-size: 0.9rem; border-bottom: 2px solid transparent; transition: all 0.2s; text-decoration: none; }
   nav a:hover { color: var(--text); text-decoration: none; }
-  nav a.router-link-active { color: var(--accent); border-bottom-color: var(--accent); }
+  nav a.router-link-active, nav a.nav-active { color: var(--accent); border-bottom-color: var(--accent); }
+  nav .nav-dd { position: relative; }
+  nav .nav-dd > a { display: inline-block; cursor: pointer; }
+  nav .nav-dd-menu { display: none; position: absolute; top: 100%; left: 0; min-width: 190px; background: var(--surface); border: 1px solid var(--border); border-radius: 0 0 8px 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.45); z-index: 50; padding: 0.35rem 0; }
+  nav .nav-dd:hover .nav-dd-menu, nav .nav-dd.open .nav-dd-menu { display: block; }
+  nav .nav-dd-menu a { display: block; padding: 0.55rem 1rem; border-bottom: none; border-left: 2px solid transparent; }
+  nav .nav-dd-menu a.router-link-active { border-left-color: var(--accent); }
+  .nav-badge { background: var(--accent); color: #0d1117; border-radius: 10px; padding: 0 6px; font-size: 0.7rem; font-weight: 700; margin-left: 5px; vertical-align: middle; }
+  .subtabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+  .subtabs a { padding: 0.6rem 1rem; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 0.9rem; }
+  .subtabs a:hover { color: var(--text); text-decoration: none; }
+  .subtabs a.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; }
+  .kpi .val { font-size: 1.9rem; font-weight: 700; }
+  .kpi .lbl { color: var(--muted); font-size: 0.8rem; margin-top: 0.25rem; }
+  .kpi .sub { color: var(--muted); font-size: 0.72rem; margin-top: 0.15rem; }
+  .overview-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 1.5rem; align-items: start; }
+  .feed-item { display: flex; gap: 0.6rem; padding: 0.45rem 0; border-bottom: 1px solid #21262d; font-size: 0.85rem; align-items: baseline; }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-item .when { color: var(--muted); font-family: monospace; font-size: 0.75rem; flex-shrink: 0; width: 5.2rem; }
+  .card-link { font-size: 0.8rem; margin-top: 0.75rem; display: inline-block; }
+  .onboard-step { display: flex; gap: 1rem; align-items: center; padding: 0.9rem 0; border-bottom: 1px solid var(--border); }
+  .onboard-step:last-child { border-bottom: none; }
+  .onboard-step .num { width: 2rem; height: 2rem; border-radius: 50%; background: #1f6feb22; color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+  .pg-pre { background: #0d1117; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid var(--border); overflow-x: auto; color: var(--text); font-family: monospace; font-size: 0.8rem; line-height: 1.45; white-space: pre; }
+  textarea.jf { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; font: inherit; background: #21262d; color: var(--text); resize: vertical; }
+  @media (max-width: 820px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } .overview-grid { grid-template-columns: 1fr; } }
   
   main { max-width: 1100px; margin: 2rem auto; padding: 0 2rem; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
@@ -118,13 +145,26 @@
     </header>
     
     <nav v-if="!isSetupOrLogin">
-      <router-link to="/connect">🔌 How to Connect</router-link>
-      <router-link to="/notes">📝 Notes</router-link>
-      <router-link to="/profile">👤 Developer Profile</router-link>
-      <router-link to="/analytics">📊 Agent Analytics</router-link>
-      <router-link to="/developer">📈 My Analytics</router-link>
-      <router-link to="/memory">🧠 Memory Explorer</router-link>
-      <router-link v-if="user?.is_admin" to="/admin">🛡️ Admin</router-link>
+      <router-link to="/">🏠 Overview</router-link>
+      <router-link to="/profile">👤 Profile<span v-if="inboxCount" class="nav-badge" :title="inboxCount + ' note(s) awaiting review'">{{ inboxCount }}</span></router-link>
+      <div class="nav-dd" :class="{ open: insightsOpen }" @mouseleave="insightsOpen = false">
+        <a href="#/insights/agents"
+           role="button"
+           aria-haspopup="true"
+           :aria-expanded="insightsOpen ? 'true' : 'false'"
+           :class="{ 'nav-active': isInsights }"
+           @click.prevent="insightsOpen = !insightsOpen"
+           @keydown.enter.prevent="insightsOpen = !insightsOpen"
+           @keydown.space.prevent="insightsOpen = !insightsOpen"
+           @keydown.esc="insightsOpen = false">💡 Insights ▾</a>
+        <div class="nav-dd-menu" role="menu" @click="insightsOpen = false">
+          <router-link to="/insights/journal" role="menuitem">📖 Journal</router-link>
+          <router-link to="/insights/agents" role="menuitem">📊 Agents</router-link>
+          <router-link to="/insights/trends" role="menuitem">📈 Trends</router-link>
+          <router-link to="/insights/memory" role="menuitem">🧠 Memory</router-link>
+        </div>
+      </div>
+      <router-link to="/settings">⚙️ Settings</router-link>
     </nav>
     
     <main>
@@ -294,7 +334,7 @@
           <button v-if="notes.length >= 2" @click="showSynthesis = true" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;">Synthesize</button>
         </div>
       </div>
-      <p class="desc">Observations agents have filed about how you work. Review them, then promote useful patterns into your <router-link to="/profile">Developer Profile</router-link> (the curated constitution agents see).</p>
+      <p class="desc">Observations agents have filed about how you work. Review them, then promote useful patterns into your <router-link to="/profile">Constitution</router-link> (the curated rules agents see).</p>
 
       <div v-if="loading" class="loading-screen" style="height: 100px;">Loading notes...</div>
       <div v-else-if="notes.length === 0 && !showInterview" class="empty">
@@ -411,7 +451,7 @@
   </div>
 </script>
 
-<script type="text/x-template" id="profile-template">
+<script type="text/x-template" id="constitution-template">
   <div>
     <div class="card">
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:0.5rem;">
@@ -458,7 +498,7 @@
           <a v-if="rules.length > 0" :href="API + '/api/export/agents-md'" class="btn btn-outline" style="padding:0.25rem 0.65rem;font-size:0.8rem;text-decoration:none;">Export AGENTS.md</a>
         </div>
       </div>
-      <p class="desc">Curated cross-project, cross-agent rules that describe how you work. This is what agents see at session start. Build it by promoting <router-link to="/notes">notes</router-link> agents have filed about you, or add rules directly.</p>
+      <p class="desc">Curated cross-project, cross-agent rules that describe how you work. This is what agents see at session start. Build it by promoting <router-link :to="{ path: '/profile', query: { tab: 'notes' } }">notes</router-link> agents have filed about you, or add rules directly.</p>
 
       <div v-if="loading" class="loading-screen" style="height: 100px;">Loading rules...</div>
       <div v-else-if="rules.length === 0" class="empty">
@@ -1232,8 +1272,329 @@
 <script type="text/x-template" id="memory-template">
   <div>
     <div class="card">
-      <h2>Friction Events</h2>
-      <div class="empty"><div class="icon">🧠</div>Memory module coming soon.</div>
+      <h2>🧠 Memory Explorer</h2>
+      <p class="desc">Session browser, friction event explorer and session replay.</p>
+      <div class="empty"><div class="icon">🧠</div>Coming in v2.18.0. Friction patterns are already visible under <router-link to="/insights/trends">Insights → Trends</router-link>.</div>
+    </div>
+  </div>
+</script>
+
+<script type="text/x-template" id="overview-template">
+  <div>
+    <div v-if="loading" class="loading-screen" style="height:200px;"><div class="spinner"></div></div>
+
+    <!-- Zero-state onboarding -->
+    <div v-else-if="isZeroState" class="card" style="max-width:640px;margin:2rem auto;">
+      <h2 style="font-size:1.4rem;margin-bottom:0.5rem;">👋 Welcome to JFYI!</h2>
+      <p class="desc">JFYI learns your coding style and helps AI agents work the way you prefer. Three steps to get going:</p>
+      <div class="onboard-step">
+        <div class="num">1</div>
+        <div style="flex:1;"><strong>🔌 Connect your agent</strong><div style="color:var(--muted);font-size:0.85rem;">Generate an MCP token and paste the config snippet into your agent.</div></div>
+        <router-link to="/settings" class="btn btn-outline" style="font-size:0.8rem;">Settings</router-link>
+      </div>
+      <div class="onboard-step">
+        <div class="num">2</div>
+        <div style="flex:1;"><strong>🎤 Take the style interview</strong><div style="color:var(--muted);font-size:0.85rem;">Two minutes, five questions — seeds your profile with raw notes.</div></div>
+        <router-link :to="{ path: '/profile', query: { tab: 'notes', interview: '1' } }" class="btn" style="font-size:0.8rem;">Start interview</router-link>
+      </div>
+      <div class="onboard-step">
+        <div class="num">3</div>
+        <div style="flex:1;"><strong>💻 Start coding</strong><div style="color:var(--muted);font-size:0.85rem;">JFYI observes silently in the background and learns as you work.</div></div>
+      </div>
+    </div>
+
+    <div v-else>
+      <!-- KPI row -->
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="val" style="color:var(--accent);">{{ summary.total_interactions ?? 0 }}</div>
+          <div class="lbl">Interactions</div>
+          <div class="sub">{{ sessions }} session{{ sessions === 1 ? '' : 's' }}</div>
+        </div>
+        <div class="kpi">
+          <div class="val" :style="{color: corrColor(summary.correction_rate)}">{{ alignment == null ? '—' : alignment + '%' }}</div>
+          <div class="lbl">Alignment</div>
+          <div class="sub">{{ summary.correction_rate == null ? 'no data yet' : (summary.correction_rate * 100).toFixed(1) + '% correction rate' }}</div>
+        </div>
+        <div class="kpi">
+          <div class="val" style="color:var(--purple);">{{ rules.length }}</div>
+          <div class="lbl">Rule{{ rules.length === 1 ? '' : 's' }}</div>
+          <div class="sub">{{ budget.token_count ? budget.token_count + ' tokens / call' : 'not served yet' }}</div>
+        </div>
+        <div class="kpi">
+          <div class="val" style="color:var(--text);">{{ agents.length }}</div>
+          <div class="lbl">Agent{{ agents.length === 1 ? '' : 's' }} tracked</div>
+          <div class="sub">{{ notes.length }} note{{ notes.length === 1 ? '' : 's' }} in inbox</div>
+        </div>
+      </div>
+
+      <div class="overview-grid">
+        <div>
+          <!-- 7-day trend -->
+          <div class="card">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <h2 style="margin:0;">7-Day Correction Trend</h2>
+              <router-link to="/insights/trends" class="card-link" style="margin:0;">Trends →</router-link>
+            </div>
+            <div v-if="trend.length < 2" class="empty" style="padding:1.5rem;">Not enough data for a trend yet.</div>
+            <svg v-else viewBox="0 0 300 70" width="100%" style="display:block;overflow:visible;margin-top:0.75rem;">
+              <path v-if="sparkArea" :d="sparkArea" fill="#58a6ff18" />
+              <path v-if="sparkPath" :d="sparkPath" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linejoin="round" />
+              <circle v-for="p in sparkPoints" :key="p.day" :cx="p.x" :cy="p.y" r="3" fill="#58a6ff"><title>{{ p.day }}: {{ (p.rate*100).toFixed(0) }}%</title></circle>
+              <text v-for="p in sparkLabels" :key="'l'+p.day" :x="p.x" y="68" text-anchor="middle" fill="#8b949e" font-size="8">{{ p.day.slice(5) }}</text>
+            </svg>
+          </div>
+
+          <!-- Top agents -->
+          <div class="card">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <h2 style="margin:0;">🤖 Top Agents</h2>
+              <router-link to="/insights/agents" class="card-link" style="margin:0;">All agents →</router-link>
+            </div>
+            <div v-if="!topAgents.length" class="empty" style="padding:1.5rem;">No agents yet — call <code>record_interaction</code> from your agent.</div>
+            <div v-else style="margin-top:0.75rem;">
+              <div v-for="a in topAgents" :key="a.name" style="margin-bottom:0.6rem;">
+                <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.2rem;">
+                  <span style="font-weight:500;">{{ a.name }}</span>
+                  <span :style="{color: corrColor(a.correction_rate_pct / 100)}">{{ a.alignment_score.toFixed(0) }}% aligned · {{ a.total_interactions }} calls</span>
+                </div>
+                <div style="height:8px;background:#21262d;border-radius:4px;overflow:hidden;"><div :style="{width: a.alignment_score + '%', background: corrColor(a.correction_rate_pct / 100), height:'100%'}"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent activity -->
+          <div class="card">
+            <h2>⚡ Recent Activity</h2>
+            <div v-if="!activity.length" class="empty" style="padding:1.5rem;">Nothing recorded yet.</div>
+            <div v-else>
+              <div v-for="(ev, i) in activity" :key="i" class="feed-item">
+                <span class="when">{{ fmtWhen(ev.at) }}</span>
+                <span :class="ev.kind === 'match' ? 'pill pill-green' : 'pill pill-red'" style="flex-shrink:0;">{{ ev.kind }}</span>
+                <span style="color:var(--muted);flex-shrink:0;">{{ ev.agent }}</span>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ ev.text }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <!-- Notes inbox preview -->
+          <div class="card">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <h2 style="margin:0;">📬 Notes Inbox<span v-if="notes.length" class="nav-badge">{{ notes.length }}</span></h2>
+              <router-link :to="{ path: '/profile', query: { tab: 'notes' } }" class="card-link" style="margin:0;">Review →</router-link>
+            </div>
+            <div v-if="!inboxPreview.length" class="empty" style="padding:1.5rem;">Inbox is empty — agents file observations here as you work.</div>
+            <div v-else style="margin-top:0.75rem;">
+              <div v-for="n in inboxPreview" :key="n.id" class="feed-item">
+                <span :class="'pill pill-' + catColor(n.category)" style="flex-shrink:0;">{{ n.category }}</span>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="n.text">{{ n.text }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Journal preview -->
+          <div class="card">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <h2 style="margin:0;">📖 Journal</h2>
+              <router-link to="/insights/journal" class="card-link" style="margin:0;">Open Journal →</router-link>
+            </div>
+            <div v-if="!journal.length" class="empty" style="padding:1.5rem;">No entries yet. Agents log decisions via <code>add_journal_note</code>.</div>
+            <div v-else style="margin-top:0.75rem;">
+              <div v-for="e in journal" :key="e.id" class="feed-item">
+                <span class="when">{{ e.entry_date.slice(5) }}</span>
+                <span :class="'pill pill-' + journalTypeColor(e.entry_type)" style="flex-shrink:0;">{{ e.entry_type }}</span>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="e.title">{{ e.title }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</script>
+
+<script type="text/x-template" id="profile-hub-template">
+  <div>
+    <div class="subtabs">
+      <router-link :to="{ path: '/profile' }" :class="{ active: tab === 'constitution' }">📜 Constitution</router-link>
+      <router-link :to="{ path: '/profile', query: { tab: 'notes' } }" :class="{ active: tab === 'notes' }">📬 Notes Inbox<span v-if="inboxCount" class="nav-badge">{{ inboxCount }}</span></router-link>
+    </div>
+    <notes-inbox v-if="tab === 'notes'"></notes-inbox>
+    <profile-constitution v-else></profile-constitution>
+  </div>
+</script>
+
+<script type="text/x-template" id="settings-template">
+  <div>
+    <connect-panel></connect-panel>
+    <plugin-guide></plugin-guide>
+    <div v-if="isAdmin">
+      <div class="card" role="button" tabindex="0" :aria-expanded="showAdmin ? 'true' : 'false'" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" @click="showAdmin = !showAdmin" @keydown.enter.prevent="showAdmin = !showAdmin" @keydown.space.prevent="showAdmin = !showAdmin">
+        <div>
+          <h2 style="margin:0;">🛡️ Administration</h2>
+          <p class="desc" style="margin:0.25rem 0 0;">Users, identity providers, registration and build info. Visible to admins only.</p>
+        </div>
+        <span style="color:var(--muted);font-size:0.85rem;">{{ showAdmin ? '▲ Collapse' : '▼ Expand' }}</span>
+      </div>
+      <admin-panel v-if="showAdmin"></admin-panel>
+    </div>
+  </div>
+</script>
+
+<script type="text/x-template" id="plugin-guide-template">
+  <div class="card">
+    <div role="button" tabindex="0" :aria-expanded="open ? 'true' : 'false'" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:1rem;" @click="open = !open" @keydown.enter.prevent="open = !open" @keydown.space.prevent="open = !open">
+      <div>
+        <h2 style="margin:0;">🧩 Claude Code plugin</h2>
+        <p class="desc" style="margin:0.25rem 0 0;">Make JFYI passive in the Claude Code CLI, the Desktop app and claude.ai/code web sessions: the constitution is injected at session start and the MCP tools are connected.</p>
+      </div>
+      <span style="color:var(--muted);font-size:0.85rem;white-space:nowrap;">{{ open ? '▲ Collapse' : '▼ Show guide' }}</span>
+    </div>
+
+    <div v-if="open" style="margin-top:1.25rem;">
+      <div class="guidance-box" style="border-left-color:var(--orange);">
+        <h3>🔒 Nothing personal goes into a repository</h3>
+        <p style="font-size:0.85rem;color:var(--text);margin:0;">The plugin is generic and lives in the public JFYI repo. Your instance URL and token are entered once at install time (the token goes to Claude Code's secure storage) or set as variables on a cloud environment. Don't fork the repo to bake them in, and don't commit them to your projects. Every snippet below is safe to commit as-is.</p>
+      </div>
+
+      <h3 style="font-size:0.95rem;margin:1.25rem 0 0.5rem;">1. Install for yourself (CLI and Desktop)</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
+        <span style="font-size:0.8rem;color:var(--muted);">Terminal</span>
+        <button class="btn btn-outline" style="font-size:0.75rem;padding:0.2rem 0.6rem;" @click="copy('install', files.install)">{{ copied === 'install' ? 'Copied!' : 'Copy' }}</button>
+      </div>
+      <pre class="pg-pre"><code>{{ files.install }}</code></pre>
+      <p class="desc">Then, inside a Claude Code session, run <code>/plugin configure jfyi@jfyi</code> and set <strong>JFYI base URL</strong> → <code>{{ origin }}</code> and <strong>JFYI MCP token</strong> → generate it in the Connect section above (or pass both with <code>--config KEY=VALUE</code> at install). Verify with <code>/mcp</code> (the <code>jfyi</code> server is connected) and <code>/context</code> (the injected constitution is visible).</p>
+
+      <h3 style="font-size:0.95rem;margin:1.25rem 0 0.5rem;">2. Enable for a project or team</h3>
+      <p class="desc">Commit this to the project's <code>.claude/settings.json</code>. It only references the public marketplace; each team member sets their own URL and token with <code>/plugin configure jfyi@jfyi</code>.</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
+        <code style="color:var(--accent);font-size:0.85rem;">.claude/settings.json</code>
+        <button class="btn btn-outline" style="font-size:0.75rem;padding:0.2rem 0.6rem;" @click="copy('settings', files.settings)">{{ copied === 'settings' ? 'Copied!' : 'Copy' }}</button>
+      </div>
+      <pre class="pg-pre"><code>{{ files.settings }}</code></pre>
+
+      <h3 style="font-size:0.95rem;margin:1.25rem 0 0.5rem;">3. Web sessions (claude.ai/code)</h3>
+      <div class="guidance-box">
+        <ol>
+          <li>Cloud sessions clone the repo fresh, so step 2's committed settings are what gets loaded. Plugins or MCP servers only in <code>~/.claude/*</code> are not.</li>
+          <li><strong>Environment variables</strong> on the cloud environment (never in the repo): <code>JFYI_URL={{ origin }}</code> and <code>JFYI_MCP_TOKEN=&lt;token&gt;</code>. The plugin's scripts fall back to them because a headless session can't answer install prompts. Anyone using the environment can read them; on Pro/Max plans an <em>API credential</em> scoped to <code>{{ host }}</code> keeps the token out of the VM.</li>
+          <li><strong>Network access:</strong> the default <em>Trusted</em> level only allows package registries and GitHub. Set the environment to <em>Custom</em> and add <code>{{ host }}</code>. JFYI must be served over TLS.</li>
+        </ol>
+      </div>
+      <p class="desc">Because headless cloud sessions cannot prompt for plugin <code>user_config</code>, commit a project <code>.mcp.json</code> to connect tools via environment variables — no URL, no token in the file (the plugin's bundled SessionStart hook already reads the environment fallback):</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
+        <code style="color:var(--accent);font-size:0.85rem;">.mcp.json</code>
+        <button class="btn btn-outline" style="font-size:0.75rem;padding:0.2rem 0.6rem;" @click="copy('webmcp', files.webmcp)">{{ copied === 'webmcp' ? 'Copied!' : 'Copy' }}</button>
+      </div>
+      <pre class="pg-pre"><code>{{ files.webmcp }}</code></pre>
+
+      <h3 style="font-size:0.95rem;margin:1.25rem 0 0.5rem;">4. What the plugin does</h3>
+      <div class="guidance-box">
+        <ol>
+          <li><strong>SessionStart hook</strong> fetches <code>GET /api/export/agents-md</code> and prints it — Claude Code adds that output to the model's context before the first prompt and again after <code>/compact</code>. This is the passive read path.</li>
+          <li><strong><code>.mcp.json</code></strong> connects <code>/mcp/sse</code> so <code>recall_journal</code>, <code>add_profile_note</code>, <code>add_journal_note</code> and <code>record_interaction</code> are callable.</li>
+          <li><strong>Skill</strong> tells the agent <em>when</em> to use those tools.</li>
+        </ol>
+      </div>
+      <pre class="pg-pre"><code>{{ files.layout }}</code></pre>
+      <p class="desc" style="margin-top:1rem;">Source and design notes: <a href="https://github.com/hlan-net/jfyi-just-for-your-information/tree/main/plugins/jfyi" target="_blank" rel="noopener">plugins/jfyi</a> · <a href="https://github.com/hlan-net/jfyi-just-for-your-information/blob/main/docs/claude-code-plugin.md" target="_blank" rel="noopener">docs/claude-code-plugin.md</a>.</p>
+    </div>
+  </div>
+</script>
+
+<!-- Plugin guide snippet sources, rendered verbatim by the PluginGuide component. Deliberately free of instance URLs and tokens. -->
+<script type="text/plain" id="pg-install">
+claude plugin marketplace add hlan-net/jfyi-just-for-your-information
+claude plugin install jfyi@jfyi
+</script>
+<script type="text/plain" id="pg-settings">
+{
+  "extraKnownMarketplaces": {
+    "jfyi": { "source": { "source": "github", "repo": "hlan-net/jfyi-just-for-your-information" } }
+  },
+  "enabledPlugins": { "jfyi@jfyi": true }
+}
+</script>
+<script type="text/plain" id="pg-webmcp">
+{
+  "mcpServers": {
+    "jfyi": {
+      "type": "sse",
+      "url": "${JFYI_URL}/mcp/sse",
+      "headers": { "Authorization": "Bearer ${JFYI_MCP_TOKEN}" }
+    }
+  }
+}
+</script>
+<script type="text/plain" id="pg-layout">
+plugins/jfyi/
+├── .claude-plugin/
+│   └── plugin.json            # manifest + userConfig (jfyi_url, jfyi_token[sensitive])
+├── .mcp.json                  # SSE server: ${user_config.jfyi_url}/mcp/sse
+├── hooks/
+│   └── hooks.json             # SessionStart hook
+├── scripts/
+│   └── session-start.sh       # injects the constitution; exits 0 if JFYI is unreachable
+└── skills/
+    └── jfyi/
+        └── SKILL.md           # usage guidance for the agent
+</script>
+
+<script type="text/x-template" id="journal-template">
+  <div>
+    <div class="card">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:0.5rem;gap:1rem;">
+        <h2 style="margin:0;">📖 Journal</h2>
+        <select v-model="typeFilter" @change="load" style="width:auto;background:#21262d;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.3rem 0.6rem;font-size:0.85rem;">
+          <option value="all">All types</option>
+          <option value="decision">Decisions</option>
+          <option value="note">Notes</option>
+          <option value="reflection">Reflections</option>
+          <option value="daily_digest">Daily digests</option>
+        </select>
+      </div>
+      <p class="desc">Your temporal timeline of decisions, reflections and agent-filed notes. Agents recall curated entries via <code>recall_journal</code> and file raw notes via <code>add_journal_note</code>. Daily digests and standup export arrive in v2.18.0.</p>
+
+      <!-- Quick entry -->
+      <div style="border:1px solid var(--border);border-radius:8px;padding:0.75rem;margin-bottom:1.25rem;background:#0d1117;">
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap;">
+          <input type="text" v-model="draft.title" placeholder="Title — e.g. Why I chose X over Y" style="flex:2;min-width:200px;" />
+          <select v-model="draft.entry_type" style="width:auto;flex:0 0 auto;">
+            <option value="decision">decision</option>
+            <option value="note">note</option>
+            <option value="reflection">reflection</option>
+          </select>
+          <input type="text" v-model="draft.project_id" placeholder="project (optional)" style="flex:1;min-width:120px;" />
+        </div>
+        <textarea v-model="draft.content_md" rows="2" class="jf" placeholder="Markdown — what was decided and why"></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;">
+          <span v-if="error" style="color:var(--red);font-size:0.8rem;">{{ error }}</span><span v-else></span>
+          <button class="btn" @click="save" :disabled="saving || !draft.title.trim()" style="font-size:0.85rem;">{{ saving ? 'Saving…' : 'Add entry' }}</button>
+        </div>
+      </div>
+
+      <div v-if="loading" class="loading-screen" style="height:100px;">Loading journal…</div>
+      <div v-else-if="!entries.length" class="empty"><div class="icon">📖</div>No journal entries yet. Add one above, or ask your agent to call <code>add_journal_note</code> after a milestone.</div>
+      <div v-else>
+        <div v-for="g in grouped" :key="g.date" style="margin-bottom:1.25rem;">
+          <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem;">{{ g.label }}</div>
+          <div v-for="e in g.items" :key="e.id" style="border:1px solid var(--border);border-radius:8px;padding:0.85rem 1rem;margin-bottom:0.6rem;">
+            <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:baseline;">
+              <div><span :class="'pill pill-' + typeColor(e.entry_type)">{{ e.entry_type }}</span> <strong style="margin-left:0.4rem;">{{ e.title }}</strong></div>
+              <div style="display:flex;gap:0.4rem;align-items:center;white-space:nowrap;">
+                <span v-if="e.project_id" style="font-size:0.75rem;color:var(--accent);">📁 {{ e.project_id }}</span>
+                <span :class="e.source === 'agent' ? 'pill pill-green' : e.source === 'synthesizer' ? 'pill pill-orange' : 'pill pill-purple'" :title="'source: ' + e.source">{{ e.source }}</span>
+                <button v-if="e.source === 'agent'" class="btn-sm" style="margin-right:2px;" @click="promote(e.id)" title="Promote agent note to manual curated entry">↑ Promote</button>
+                <button class="btn-danger" style="border:none;cursor:pointer;" @click="remove(e.id)" title="Delete entry">×</button>
+              </div>
+            </div>
+            <p v-if="e.content_md" style="white-space:pre-wrap;font-size:0.88rem;margin-top:0.5rem;">{{ e.content_md }}</p>
+            <div v-if="e.tags && e.tags.length" style="margin-top:0.4rem;"><span v-for="t in e.tags" :key="t" class="pill pill-blue" style="margin-right:4px;">#{{ t }}</span></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </script>
@@ -1249,8 +1610,17 @@ const API = '';
 const globalState = reactive({
   system: { has_idp: false, has_admin: false, is_ready: false, providers: [], single_user_mode: false },
   user: null,
+  inboxCount: 0,
   loading: true
 });
+
+// Refresh the Notes Inbox badge shown in the nav and on the Profile sub-tab.
+async function refreshInboxCount() {
+  try {
+    const res = await fetch(API + '/api/profile/notes');
+    if (res.ok) globalState.inboxCount = (await res.json()).length;
+  } catch { /* badge is best-effort */ }
+}
 
 const PROVIDER_LABELS = { github: 'GitHub', google: 'Google', entra: 'Microsoft Entra ID', custom_oidc: 'Custom OIDC' };
 
@@ -1611,7 +1981,7 @@ const Notes = {
       loading.value = true;
       try {
         const res = await fetch(API + '/api/profile/notes');
-        if (res.ok) notes.value = await res.json();
+        if (res.ok) { notes.value = await res.json(); globalState.inboxCount = notes.value.length; }
       } finally { loading.value = false; }
     };
 
@@ -1695,7 +2065,12 @@ const Notes = {
 
     const onApplied = () => { showSynthesis.value = false; loadNotes(); };
 
-    onMounted(loadNotes);
+    const route = VueRouter.useRoute();
+    onMounted(async () => {
+      await loadNotes();
+      // Deep-link from the Overview zero-state: /profile?tab=notes&interview=1
+      if (route.query.interview === '1') startInterview();
+    });
 
     return {
       notes, loading, showSynthesis, showCompose, selected,
@@ -1712,8 +2087,8 @@ const Notes = {
   }
 };
 
-const Profile = {
-  template: '#profile-template',
+const Constitution = {
+  template: '#constitution-template',
   setup() {
     const rules = ref([]);
     const loading = ref(true);
@@ -2131,17 +2506,268 @@ const DeveloperAnalytics = {
 
 const Memory = { template: '#memory-template' };
 
+// ── v2.17.0 Dashboard UX Redesign (Phase 1) ─────────────────────────────────
+// Four areas: Overview (living home), Profile (Constitution + Notes Inbox),
+// Insights (Journal / Agents / Trends / Memory), Settings (Connect + Admin).
+
+const catColorOf = (c) => ({ style:'orange', architecture:'purple', testing:'green', docs:'blue', workflow:'blue' }[c] || 'blue');
+const journalTypeColorOf = (t) => ({ decision:'purple', daily_digest:'blue', reflection:'orange', note:'green' }[t] || 'blue');
+
+const Overview = {
+  template: '#overview-template',
+  setup() {
+    const loading = ref(true);
+    const summary = ref({ total_interactions: 0, correction_rate: null, avg_friction: null, total_rules: 0 });
+    const budget = ref({ rule_count: 0, token_count: 0, trend: [] });
+    const rules = ref([]);
+    const notes = ref([]);
+    const agents = ref([]);
+    const trend = ref([]);
+    const events = ref([]);
+    const matches = ref([]);
+    const journal = ref([]);
+
+    // Every widget degrades independently: a failing endpoint yields its fallback.
+    const safeJson = async (url, fallback) => {
+      try { const r = await fetch(API + url); return r.ok ? await r.json() : fallback; }
+      catch { return fallback; }
+    };
+
+    const loadAll = async () => {
+      loading.value = true;
+      try {
+        const [s, b, r, n, a, t, e, m, j] = await Promise.all([
+          safeJson('/api/developer/summary', summary.value),
+          safeJson('/api/developer/constitution-budget', budget.value),
+          safeJson('/api/profile/rules', []),
+          safeJson('/api/profile/notes', []),
+          safeJson('/api/analytics/agents', []),
+          safeJson('/api/developer/trend?days=7', []),
+          safeJson('/api/analytics/friction-events?limit=6', []),
+          safeJson('/api/developer/vibe-matches?limit=6', []),
+          safeJson('/api/journal?limit=4', []),
+        ]);
+        summary.value = s || summary.value;
+        budget.value = b || budget.value;
+        rules.value = Array.isArray(r) ? r : [];
+        notes.value = Array.isArray(n) ? n : [];
+        agents.value = Array.isArray(a) ? a : [];
+        trend.value = Array.isArray(t) ? t : [];
+        events.value = Array.isArray(e) ? e : [];
+        matches.value = Array.isArray(m) ? m : [];
+        journal.value = Array.isArray(j) ? j : [];
+        globalState.inboxCount = notes.value.length;
+      } finally { loading.value = false; }
+    };
+
+    const isZeroState = computed(() =>
+      summary.value.total_interactions <= 0 && !notes.value.length && !rules.value.length && !journal.value.length
+    );
+    const alignment = computed(() =>
+      summary.value.correction_rate == null ? null : Math.round((1 - summary.value.correction_rate) * 100)
+    );
+    const sessions = computed(() => agents.value.reduce((n, a) => n + (a.sessions || 0), 0));
+    const topAgents = computed(() =>
+      [...agents.value].sort((x, y) => y.alignment_score - x.alignment_score).slice(0, 3)
+    );
+    const inboxPreview = computed(() =>
+      [...notes.value].sort((x, y) => (y.created_at || '').localeCompare(x.created_at || '')).slice(0, 5)
+    );
+    const activity = computed(() => {
+      const items = [
+        ...events.value.map(ev => ({ kind: 'friction', agent: ev.agent_name || '', text: ev.description || ev.event_type || 'friction event', at: ev.created_at })),
+        ...matches.value.map(vm => ({ kind: 'match', agent: vm.agent_name || '', text: `Accepted without edits (${(vm.response_length || 0).toLocaleString()} chars)`, at: vm.created_at })),
+      ];
+      return items.sort((x, y) => (y.at || '').localeCompare(x.at || '')).slice(0, 6);
+    });
+
+    // Sparkline: viewBox 0 0 300 70, plot area x 6..294, y 6..56
+    const SX = 6, EX = 294, SY = 6, EY = 56;
+    const sparkPoints = computed(() => {
+      const len = trend.value.length;
+      return trend.value.map((d, i) => ({
+        x: SX + (len > 1 ? (i / (len - 1)) * (EX - SX) : (EX - SX) / 2),
+        y: EY - (d.rate || 0) * (EY - SY),
+        day: d.day, rate: d.rate || 0,
+      }));
+    });
+    const sparkPath = computed(() => {
+      const pts = sparkPoints.value;
+      return pts.length < 2 ? '' : 'M ' + pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+    });
+    const sparkArea = computed(() => {
+      const pts = sparkPoints.value;
+      if (pts.length < 2) return '';
+      const line = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ');
+      return `M ${pts[0].x.toFixed(1)},${EY} L ${line} L ${pts[pts.length-1].x.toFixed(1)},${EY} Z`;
+    });
+    const sparkLabels = computed(() => {
+      const pts = sparkPoints.value;
+      if (!pts.length) return [];
+      return pts.filter((_, i) => i === 0 || i === pts.length - 1 || pts.length <= 7);
+    });
+
+    const corrColor = (v) => {
+      if (v === null || v === undefined) return 'var(--muted)';
+      if (v < 0.2) return 'var(--green)';
+      if (v < 0.5) return 'var(--orange)';
+      return 'var(--red)';
+    };
+    const fmtWhen = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+      const today = new Date();
+      const sameDay = d.toDateString() === today.toDateString();
+      return sameDay ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    };
+
+    onMounted(loadAll);
+
+    return {
+      loading, summary, budget, rules, notes, agents, trend, journal,
+      isZeroState, alignment, sessions, topAgents, inboxPreview, activity,
+      sparkPoints, sparkPath, sparkArea, sparkLabels,
+      corrColor, fmtWhen, catColor: catColorOf, journalTypeColor: journalTypeColorOf,
+    };
+  }
+};
+
+const ProfileHub = {
+  template: '#profile-hub-template',
+  setup() {
+    const route = VueRouter.useRoute();
+    const tab = computed(() => route.query.tab === 'notes' ? 'notes' : 'constitution');
+    return { tab, inboxCount: computed(() => globalState.inboxCount) };
+  }
+};
+
+const SettingsPage = {
+  template: '#settings-template',
+  setup() {
+    const showAdmin = ref(true);
+    return { showAdmin, isAdmin: computed(() => !!globalState.user?.is_admin) };
+  }
+};
+
+const PluginGuide = {
+  template: '#plugin-guide-template',
+  setup() {
+    const open = ref(false);
+    const copied = ref('');
+    const origin = globalThis.location.origin;
+    const host = globalThis.location.host;
+    // Snippets are rendered verbatim: they must stay free of instance URLs and tokens.
+    const snippet = (id) => (document.getElementById(id)?.textContent || '').trim();
+    const files = {
+      install: snippet('pg-install'),
+      settings: snippet('pg-settings'),
+      webmcp: snippet('pg-webmcp'),
+      layout: snippet('pg-layout'),
+    };
+    const copy = (key, text) => {
+      navigator.clipboard.writeText(text + '\n').then(() => {
+        copied.value = key;
+        setTimeout(() => { if (copied.value === key) copied.value = ''; }, 2000);
+      }).catch(() => alert('Failed to copy to clipboard.'));
+    };
+    return { open, copied, origin, host, files, copy };
+  }
+};
+
+const Journal = {
+  template: '#journal-template',
+  setup() {
+    const entries = ref([]);
+    const loading = ref(true);
+    const saving = ref(false);
+    const error = ref('');
+    const typeFilter = ref('all');
+    const draft = reactive({ title: '', content_md: '', entry_type: 'decision', project_id: '' });
+
+    const load = async () => {
+      loading.value = true;
+      try {
+        const q = typeFilter.value === 'all' ? '' : `?type=${typeFilter.value}`;
+        const res = await fetch(API + '/api/journal' + q);
+        entries.value = res.ok ? await res.json() : [];
+      } finally { loading.value = false; }
+    };
+
+    const save = async () => {
+      saving.value = true;
+      error.value = '';
+      try {
+        const body = { title: draft.title.trim(), content_md: draft.content_md, entry_type: draft.entry_type };
+        if (draft.project_id.trim()) body.project_id = draft.project_id.trim();
+        const res = await fetch(API + '/api/journal', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to save entry'); }
+        draft.title = ''; draft.content_md = '';
+        await load();
+      } catch (e) {
+        error.value = e.message || 'Failed to save entry';
+      } finally { saving.value = false; }
+    };
+
+    const remove = async (id) => {
+      if (!confirm('Delete this journal entry?')) return;
+      const res = await fetch(API + `/api/journal/${id}`, { method: 'DELETE' });
+      if (res.ok) load();
+    };
+
+    const promote = async (id) => {
+      const res = await fetch(API + `/api/journal/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'manual' }),
+      });
+      if (res.ok) await load();
+    };
+
+    const dayLabel = (date) => {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const d = new Date(date + 'T00:00:00');
+      const diff = Math.round((today - d) / 86400000);
+      if (diff === 0) return 'Today';
+      if (diff === 1) return 'Yesterday';
+      if (diff > 1 && diff < 7) return `${diff} days ago · ${date}`;
+      return date;
+    };
+    const grouped = computed(() => {
+      const map = new Map();
+      for (const e of entries.value) {
+        if (!map.has(e.entry_date)) map.set(e.entry_date, { date: e.entry_date, label: dayLabel(e.entry_date), items: [] });
+        map.get(e.entry_date).items.push(e);
+      }
+      return [...map.values()];
+    });
+
+    onMounted(load);
+
+    return { entries, loading, saving, error, typeFilter, draft, grouped, load, save, remove, promote, typeColor: journalTypeColorOf };
+  }
+};
+
 const routes = [
-  { path: '/', redirect: '/connect' },
+  { path: '/', component: Overview },
   { path: '/setup', component: SetupWizard },
   { path: '/login', component: Login },
-  { path: '/connect', component: Connect },
-  { path: '/notes', component: Notes },
-  { path: '/profile', component: Profile },
-  { path: '/analytics', component: Analytics },
-  { path: '/developer', component: DeveloperAnalytics },
-  { path: '/memory', component: Memory },
-  { path: '/admin', component: Admin, meta: { requiresAdmin: true } }
+  { path: '/profile', component: ProfileHub },
+  { path: '/insights', redirect: '/insights/agents' },
+  { path: '/insights/journal', component: Journal },
+  { path: '/insights/agents', component: Analytics },
+  { path: '/insights/trends', component: DeveloperAnalytics },
+  { path: '/insights/memory', component: Memory },
+  { path: '/settings', component: SettingsPage },
+  // Pre-v2.17.0 routes kept as redirects for bookmarks and external links.
+  { path: '/connect', redirect: '/settings' },
+  { path: '/notes', redirect: (to) => ({ path: '/profile', query: { ...to.query, tab: 'notes' } }) },
+  { path: '/analytics', redirect: '/insights/agents' },
+  { path: '/developer', redirect: '/insights/trends' },
+  { path: '/memory', redirect: '/insights/memory' },
+  { path: '/admin', redirect: '/settings' },
 ];
 
 const router = createRouter({
@@ -2167,6 +2793,8 @@ const App = {
       const path = router.currentRoute.value.path;
       return path === '/setup' || path === '/login';
     });
+    const isInsights = computed(() => router.currentRoute.value.path.startsWith('/insights'));
+    const insightsOpen = ref(false);
     
     const logout = async () => {
       if (globalState.system.single_user_mode) return;
@@ -2186,6 +2814,7 @@ const App = {
           const userRes = await fetch(API + '/api/me');
           if (userRes.ok) {
             globalState.user = await userRes.json();
+            refreshInboxCount();
           }
         }
       } catch (e) {
@@ -2208,13 +2837,25 @@ const App = {
       loading: computed(() => globalState.loading),
       user: computed(() => globalState.user),
       system: computed(() => globalState.system),
+      inboxCount: computed(() => globalState.inboxCount),
       isSetupOrLogin,
+      isInsights,
+      insightsOpen,
       logout
     };
   }
 };
 
-createApp(App).use(router).component('IdpWizard', IdpWizard).component('RuleSynthesis', RuleSynthesis).mount('#app');
+createApp(App)
+  .use(router)
+  .component('IdpWizard', IdpWizard)
+  .component('RuleSynthesis', RuleSynthesis)
+  .component('NotesInbox', Notes)
+  .component('ProfileConstitution', Constitution)
+  .component('ConnectPanel', Connect)
+  .component('AdminPanel', Admin)
+  .component('PluginGuide', PluginGuide)
+  .mount('#app');
 </script>
 </body>
 </html>
