@@ -1,7 +1,7 @@
 {
   "jfyi": {
-    "type": "sse",
-    "url": "${user_config.jfyi_url}/mcp/sse",
+    "type": "http",
+    "url": "${user_config.jfyi_url}/mcp",
     "headers": {
       "Authorization": "Bearer ${user_config.jfyi_token}"
     }
