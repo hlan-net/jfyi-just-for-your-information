@@ -211,6 +211,7 @@ docker-compose up
 │   ├── payload-minification.md      — Phase 1: compact token serialization
 │   ├── read-only-injection.md       — Phase 1: prompt-injection hardening
 │   ├── oauth-rbac.md                — Phase 1: OAuth 2.1 + JWT RBAC
+│   ├── token-lifecycle.md           — Rotating signing keys and revocable MCP tokens
 │   ├── compiled-view-memory.md      — Phase 2: artifact handle memory
 │   ├── context-compaction.md        — Phase 2: rolling summarization
 │   ├── three-tiered-memory.md       — Phase 2: short/long/episodic tiers
