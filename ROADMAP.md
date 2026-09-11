@@ -69,6 +69,7 @@ The following items are specified and deferred for future evaluation when scale 
 - **Corpus Governance & Drift Telemetry:** Continuous evaluation of retrieval precision and corpus health.
 
 ### Security & Hardening
+- **[Token Lifecycle](docs/token-lifecycle.md) (Planned):** Rotating signing keys held in the database (16-month life, new key every 4 months, selected by `kid` from an in-memory set) and per-token `jti` records that make an individual MCP token revocable. Closes [#73](https://github.com/hlan-net/jfyi-just-for-your-information/issues/73) and [#74](https://github.com/hlan-net/jfyi-just-for-your-information/issues/74).
 - **[Sandboxed Execution](docs/sandboxed-execution.md) (Deferred):** Container-level isolation for local script execution when moving beyond single-user homelab environments.
 - **LLM-assisted Contradiction Detection:** Semantic contradiction identification between rules to complement syntactic duplicate detection.
 
