@@ -1501,7 +1501,7 @@
       <div class="guidance-box">
         <ol>
           <li><strong>SessionStart hook</strong> fetches <code>GET /api/export/agents-md</code> and prints it — Claude Code adds that output to the model's context before the first prompt and again after <code>/compact</code>. This is the passive read path.</li>
-          <li><strong><code>.mcp.json</code></strong> connects <code>/mcp/sse</code> so <code>recall_journal</code>, <code>add_profile_note</code>, <code>add_journal_note</code> and <code>record_interaction</code> are callable.</li>
+          <li><strong><code>.mcp.json</code></strong> connects <code>POST /mcp</code> (stateless Streamable HTTP) so <code>recall_journal</code>, <code>add_profile_note</code>, <code>add_journal_note</code> and <code>record_interaction</code> are callable.</li>
           <li><strong>Skill</strong> tells the agent <em>when</em> to use those tools.</li>
         </ol>
       </div>
@@ -1528,8 +1528,8 @@ claude plugin install jfyi@jfyi
 {
   "mcpServers": {
     "jfyi": {
-      "type": "sse",
-      "url": "${JFYI_URL}/mcp/sse",
+      "type": "http",
+      "url": "${JFYI_URL}/mcp",
       "headers": { "Authorization": "Bearer ${JFYI_MCP_TOKEN}" }
     }
   }
@@ -1539,7 +1539,7 @@ claude plugin install jfyi@jfyi
 plugins/jfyi/
 ├── .claude-plugin/
 │   └── plugin.json            # manifest + userConfig (jfyi_url, jfyi_token[sensitive])
-├── .mcp.json                  # SSE server: ${user_config.jfyi_url}/mcp/sse
+├── .mcp.json                  # Streamable HTTP: ${user_config.jfyi_url}/mcp
 ├── hooks/
 │   └── hooks.json             # SessionStart hook
 ├── scripts/

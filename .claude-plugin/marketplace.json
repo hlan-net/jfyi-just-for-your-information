@@ -8,7 +8,7 @@
       "name": "jfyi",
       "source": "./plugins/jfyi",
       "description": "JFYI developer constitution, journal recall and telemetry for Claude Code. Configure your own instance URL and token at install time; nothing is hard-coded.",
-      "version": "0.1.1"
+      "version": "0.1.2"
     }
   ]
 }

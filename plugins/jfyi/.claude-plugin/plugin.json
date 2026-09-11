@@ -1,7 +1,7 @@
 {
   "name": "jfyi",
   "displayName": "JFYI — Just For Your Information",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Serves your JFYI developer constitution at session start and lets agents file notes, journal entries and interaction telemetry.",
   "homepage": "https://github.com/hlan-net/jfyi-just-for-your-information",
   "repository": "https://github.com/hlan-net/jfyi-just-for-your-information",

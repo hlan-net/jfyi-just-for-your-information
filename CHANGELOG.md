@@ -5,6 +5,12 @@ For planned future work and architectural phases, see [`ROADMAP.md`](ROADMAP.md)
 
 ---
 
+## [Unreleased]
+
+- **Claude Code plugin 0.1.2 — Streamable HTTP transport** ([#71](https://github.com/hlan-net/jfyi-just-for-your-information/issues/71)): `plugins/jfyi/.mcp.json` now connects `POST /mcp` (stateless, a fresh MCP server per request) instead of the legacy SSE endpoint. Previously a JFYI restart or redeploy dropped the SSE stream, and every tool call for the rest of that Claude Code session failed with `-32602 "Invalid request parameters"` while the SessionStart hook kept injecting the constitution over REST, so the session looked healthy. Server-side change: none — `/mcp` already existed and `/mcp/sse` stays for legacy clients. `docs/claude-code-plugin.md` gains a troubleshooting section.
+
+---
+
 ## [v2.17.1] — Overview layout fix
 
 - **Overview no longer overflows narrow-but-not-mobile windows**: `.overview-grid` used bare `3fr 2fr` columns, which cannot shrink below their min-content width. Combined with `white-space: nowrap` on the Notes Inbox, Journal and Recent Activity feed text, the right-hand column pushed past the viewport and was clipped at the window edge — visible in any browser window narrower than ~1100px, such as a squared-off window on a wide display.
