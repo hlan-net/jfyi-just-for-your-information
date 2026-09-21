@@ -15,6 +15,10 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("openai_key", re.compile(r"sk-[A-Za-z0-9]{20,}")),
     ("bearer_token", re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE)),
     (
+        "jwt",
+        re.compile(r"eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}"),
+    ),
+    (
         "private_key_pem",
         re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
     ),

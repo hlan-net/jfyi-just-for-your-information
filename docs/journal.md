@@ -4,6 +4,22 @@
 **Status:** Phase A shipped in `v2.17.0`; Phases B–C planned  
 **Tag:** Core (via `recall_journal` read path) + Supplementary (human timeline & digest UX)
 
+## Focus: agent-usage tracking
+
+The Journal tracks **how the developer works with AI agents**, not the progress of individual projects. Task and product-decision tracking already have better homes (GitHub issues, PRs, `CLAUDE.md`, project docs) and do not serve JFYI's mission of telling the agent about the human.
+
+| Belongs in the Journal | Belongs elsewhere |
+|---|---|
+| Which agents, models or workflows suited which kind of work | Project task status, milestones → issues / PRs |
+| Where corrections concentrated; which instruction helped or backfired | Product or design decisions of one project → project docs |
+| Tooling and configuration facts about using agents (plugin setup, endpoints) | Repository conventions → `CLAUDE.md` |
+| Decisions about agent use or workflow (e.g. *"step branches for speculative work"*) | General habits and preferences of the developer → `add_profile_note` |
+| — | Secrets or PII → never recorded (DLP redacts what it recognises and tells the agent) |
+
+`project_id` stays as an optional **substance identifier**: it keeps entries about unrelated areas of work apart so they do not collapse into one pool. It scopes the observation; it does not make the entry a project task log. `daily_digest` and `reflection` are the main content; `decision` is kept for decisions about agent use.
+
+These boundaries are stated explicitly in the `add_journal_note` / `add_profile_note` tool descriptions and the `jfyi:jfyi` plugin skill, so the model does not have to infer them.
+
 ## Problem
 
 JFYI effectively captures developer preferences and telemetry, but lacks a **temporal and reflective dimension**:
@@ -117,16 +133,16 @@ Allows agents to semantically search or retrieve recent journal entries and arch
 
 ### 2. `add_journal_note` (Agent Write Path - Raw)
 
-Allows agents to log a raw decision note at the conclusion of a major refactor or task:
+Allows agents to log a raw observation or decision about agent use when they learn something about working with the developer:
 
 ```json
 {
   "name": "add_journal_note",
-  "description": "Log an architectural decision or technical milestone to the developer's journal inbox.",
+  "description": "Log an observation or decision about how the developer works with AI agents to the journal inbox.",
   "parameters": {
-    "title": {"type": "string", "description": "Short title of the decision or milestone"},
-    "content": {"type": "string", "description": "Markdown explanation of what was decided and why"},
-    "project_id": {"type": "string", "description": "Optional project scope"}
+    "title": {"type": "string", "description": "Short title of the agent-usage observation or decision"},
+    "content": {"type": "string", "description": "Markdown explanation of what was observed or decided and why"},
+    "project_id": {"type": "string", "description": "Optional substance identifier"}
   }
 }
 ```
@@ -139,9 +155,9 @@ A new tab in the JFYI Web Dashboard:
 
 1. **Timeline Stream:** Cards organized by date (Today, Yesterday, Last 7 Days).
 2. **Daily Digest Card:**
-   - **Highlights:** What was built across interaction sessions.
+   - **Highlights:** Which agents and workflows were used, and for what kind of work.
    - **Friction & Learnings:** Where corrections occurred and what principles were derived.
-   - **Decisions Made:** Key technical choices tagged with `#decision`.
+   - **Decisions Made:** Decisions about agent use, tagged with `#decision`.
 3. **Quick Entry Bar:** Markdown text box for immediate thoughts/decisions (*"Why I chose X over Y"*).
 4. **Standup Export Button:** Copies a formatted markdown standup report to clipboard:
    - 🚀 **Done Yesterday**
@@ -168,7 +184,8 @@ A new tab in the JFYI Web Dashboard:
 
 ## Success Criteria
 
-1. Developers can browse a daily timeline of what they and their agents accomplished.
-2. Agents calling `recall_journal` receive high-signal decision context without context bloat (< 1,000 tokens).
+1. Developers can browse a daily timeline of how they used agents and what worked.
+2. Agents calling `recall_journal` receive high-signal agent-usage context without context bloat (< 1,000 tokens).
 3. Zero cross-user data leakage in multi-tenant environments.
 4. Comprehensive test coverage for API, database scoping, and MCP dispatching in `tests/test_journal.py`.
+5. Agents are told what not to record (scope, exclusions, secrets) by the tool descriptions and skill, and secret-shaped input is redacted with a notice in the tool response.

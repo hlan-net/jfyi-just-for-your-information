@@ -8,6 +8,9 @@ For planned future work and architectural phases, see [`ROADMAP.md`](ROADMAP.md)
 ## [Unreleased]
 
 - **Claude Code plugin 0.1.2 — Streamable HTTP transport** ([#71](https://github.com/hlan-net/jfyi-just-for-your-information/issues/71)): `plugins/jfyi/.mcp.json` now connects `POST /mcp` (stateless, a fresh MCP server per request) instead of the legacy SSE endpoint. Previously a JFYI restart or redeploy dropped the SSE stream, and every tool call for the rest of that Claude Code session failed with `-32602 "Invalid request parameters"` while the SessionStart hook kept injecting the constitution over REST, so the session looked healthy. Server-side change: none — `/mcp` already existed and `/mcp/sse` stays for legacy clients. `docs/claude-code-plugin.md` gains a troubleshooting section.
+- **Journal scope**: the Journal now tracks how the developer works with AI agents (which agents/workflows suit which work, where corrections concentrate, tooling facts about agent use) rather than per-project task and decision tracking. `project_id` stays as an optional substance identifier. Spec, dashboard copy and the `jfyi:jfyi` plugin skill updated.
+- **Explicit write boundaries**: `add_journal_note` and `add_profile_note` descriptions now state what to record, where other things belong (issues / PRs / `CLAUDE.md`) and that secrets are never recorded.
+- **DLP**: new `jwt` rule catches bare JWTs (not only `Bearer …`). `add_profile_note` / `add_journal_note` responses now say which rules redacted the input.
 
 ---
 

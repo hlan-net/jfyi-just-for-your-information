@@ -80,7 +80,7 @@ JFYI runs as a single container on port 8080, serving three roles simultaneously
 - `get_agent_analytics` — returns comparative friction metrics across agents
 - `add_profile_note` — files a raw observation about developer preferences for human curation
 - `recall_journal` — budget-capped semantic recall of past decisions and work history
-- `add_journal_note` — files an architectural decision or technical note into the journal
+- `add_journal_note` — files an observation or decision about how you work with agents into the journal
 - `discover_tools` — progressive disclosure router (Phase 3)
 
 ## Installation (Helm)
@@ -159,7 +159,7 @@ Access at `http://localhost:8080/` after port-forwarding. The dashboard provides
 
 - **🏠 Overview** — living home page: KPIs, 7-day correction trend, top agents, recent activity, notes inbox and journal previews; onboarding card for new users
 - **👤 Profile** — the Constitution (curated rules, AGENTS.md export, linked identities) and the Notes Inbox (raw agent observations, synthesis wizard, style interview) as sub-tabs
-- **💡 Insights** — Journal (decisions and agent-filed notes), Agents (comparative correction rate, friction, latency), Trends (self-analytics, rule health), Memory (v2.18.0)
+- **💡 Insights** — Journal (agent-usage observations and agent-filed notes), Agents (comparative correction rate, friction, latency), Trends (self-analytics, rule health), Memory (v2.18.0)
 - **⚙️ Settings** — generate Bearer tokens for agent authentication; admins also manage identity providers (including custom OIDC), users, and registration
 
 ## Privacy
