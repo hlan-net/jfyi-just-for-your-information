@@ -1407,7 +1407,7 @@
               <h2 style="margin:0;">📖 Journal</h2>
               <router-link to="/insights/journal" class="card-link" style="margin:0;">Open Journal →</router-link>
             </div>
-            <div v-if="!journal.length" class="empty" style="padding:1.5rem;">No entries yet. Agents log decisions via <code>add_journal_note</code>.</div>
+            <div v-if="!journal.length" class="empty" style="padding:1.5rem;">No entries yet. Agents log how you work with them via <code>add_journal_note</code>.</div>
             <div v-else style="margin-top:0.75rem;">
               <div v-for="e in journal" :key="e.id" class="feed-item">
                 <span class="when">{{ e.entry_date.slice(5) }}</span>
@@ -1562,7 +1562,7 @@ plugins/jfyi/
           <option value="daily_digest">Daily digests</option>
         </select>
       </div>
-      <p class="desc">Your temporal timeline of decisions, reflections and agent-filed notes. Agents recall curated entries via <code>recall_journal</code> and file raw notes via <code>add_journal_note</code>. Daily digests and standup export arrive in v2.18.0.</p>
+      <p class="desc">Your timeline of how you work with agents: observations, decisions about agent use, reflections and agent-filed notes. Agents recall curated entries via <code>recall_journal</code> and file raw notes via <code>add_journal_note</code>. Daily digests and standup export arrive in v2.18.0.</p>
 
       <!-- Quick entry -->
       <div style="border:1px solid var(--border);border-radius:8px;padding:0.75rem;margin-bottom:1.25rem;background:#0d1117;">
@@ -1583,7 +1583,7 @@ plugins/jfyi/
       </div>
 
       <div v-if="loading" class="loading-screen" style="height:100px;">Loading journal…</div>
-      <div v-else-if="!entries.length" class="empty"><div class="icon">📖</div>No journal entries yet. Add one above, or ask your agent to call <code>add_journal_note</code> after a milestone.</div>
+      <div v-else-if="!entries.length" class="empty"><div class="icon">📖</div>No journal entries yet. Add one above, or ask your agent to call <code>add_journal_note</code> when it learns something about working with you.</div>
       <div v-else>
         <div v-for="g in grouped" :key="g.date" style="margin-bottom:1.25rem;">
           <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem;">{{ g.label }}</div>

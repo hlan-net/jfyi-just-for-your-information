@@ -139,7 +139,10 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
             "File a raw observation about the developer's coding habits or preferences "
             "as a note in the long-term tier. The developer will review notes and may "
             "promote them into the curated rule constitution. Write notes at the same "
-            "level of generality as rules — developer patterns, not project specifics."
+            "level of generality as rules — developer patterns, not project specifics. "
+            "Do not record: project task status or product decisions (use issues, PRs or "
+            "CLAUDE.md), agent-usage observations tied to one area of work "
+            "(use add_journal_note), or secrets such as tokens and keys."
         ),
         "token_cost": 60,
         "always_on": False,
@@ -314,10 +317,15 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
     },
     "add_journal_note": {
         "description": (
-            "Log an architectural decision or technical milestone to the developer's "
-            "journal inbox. Call at the conclusion of a major refactor or task so the "
-            "rationale survives beyond this session. Entries land as raw notes the "
-            "developer reviews and curates in the dashboard."
+            "Log an observation or decision about how the developer works with AI agents "
+            "to the journal inbox: which agents, models or workflows suited which kind of "
+            "work, where corrections concentrated, which instructions helped or backfired, "
+            "and tooling or configuration facts about using agents. Optionally scope it "
+            "with project_id. Do not record: project task status, project product "
+            "decisions or repository conventions (use issues, PRs, CLAUDE.md or project "
+            "docs), general habits of the developer (use add_profile_note), or secrets "
+            "such as tokens and keys. Entries land as raw notes the developer reviews "
+            "and curates in the dashboard."
         ),
         "token_cost": 60,
         "always_on": False,
@@ -327,22 +335,26 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
             "properties": {
                 "title": {
                     "type": "string",
-                    "description": "Short title of the decision or milestone.",
+                    "description": "Short title of the agent-usage observation or decision.",
                 },
                 "content": {
                     "type": "string",
-                    "description": "Markdown explanation of what was decided and why.",
+                    "description": "Markdown explanation of what was observed or decided and why.",
                 },
                 "project_id": {
                     "type": "string",
-                    "description": "Optional project scope (git remote URL or directory name).",
+                    "description": (
+                        "Optional substance identifier that keeps unrelated areas of work "
+                        "apart (git remote URL or directory name)."
+                    ),
                 },
             },
         },
         "example": (
             "discover_tools(tool_name='add_journal_note',"
-            " arguments={'title': 'Switched to httpx',"
-            " 'content': 'requests lacks async streaming', 'project_id': 'jfyi'})"
+            " arguments={'title': 'Step branches suit speculative work',"
+            " 'content': 'Cherry-picking from local step branches kept review clean',"
+            " 'project_id': 'jfyi'})"
         ),
     },
     "run_local_script": {
@@ -494,6 +506,14 @@ async def _handle_warm_agent(
 # recall_journal read-path budget: at most this many entries / whitespace tokens.
 _JOURNAL_RECALL_MAX_ENTRIES = 3
 _JOURNAL_RECALL_TOKEN_BUDGET = 1000
+
+
+def _dlp_notice(fired: list[str]) -> str:
+    """Tell the agent that DLP redacted its input, so it stops sending secrets."""
+    if not fired:
+        return ""
+    rules = ", ".join(sorted(set(fired)))
+    return f" Redacted before storage ({rules}). Never include secrets or PII in notes."
 
 
 def _format_journal_meta(e: dict[str, Any]) -> str:
@@ -777,8 +797,9 @@ async def dispatch_tool(
         note_text = str(arguments.get("text") or arguments.get("note") or "").strip()
         if not note_text:
             return [TextContent(type="text", text="add_profile_note requires non-empty text.")]
+        fired: list[str] = []
         if settings.dlp_enabled:
-            note_text, _ = redact(note_text)
+            note_text, fired = redact(note_text)
         note_id = db.add_note(
             user_id=user_id,
             text=note_text,
@@ -787,7 +808,7 @@ async def dispatch_tool(
             source="manual",
             agent_name=arguments.get("agent_name"),
         )
-        return [TextContent(type="text", text=f"Note added (id={note_id}).")]
+        return [TextContent(type="text", text=f"Note added (id={note_id}).{_dlp_notice(fired)}")]
 
     if name == "remember_short_term":
         memory = MemoryFacade(db)
@@ -848,11 +869,14 @@ async def dispatch_tool(
         project_id = arguments.get("project_id")
         if not title:
             return [TextContent(type="text", text="add_journal_note requires a non-empty title.")]
+        fired: list[str] = []
         if settings.dlp_enabled:
-            title, _ = redact(title)
-            content, _ = redact(content)
+            title, fired_title = redact(title)
+            content, fired_content = redact(content)
+            fired = fired_title + fired_content
             if project_id:
-                project_id, _ = redact(str(project_id))
+                project_id, fired_project = redact(str(project_id))
+                fired += fired_project
         entry_id = await asyncio.to_thread(
             db.journal_add,
             user_id,
@@ -865,7 +889,10 @@ async def dispatch_tool(
         return [
             TextContent(
                 type="text",
-                text=f"Journal note added (id={entry_id}). It awaits review in the dashboard.",
+                text=(
+                    f"Journal note added (id={entry_id}). It awaits review in the dashboard."
+                    f"{_dlp_notice(fired)}"
+                ),
             )
         ]
 

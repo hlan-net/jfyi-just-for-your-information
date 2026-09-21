@@ -56,3 +56,10 @@ def test_empty_string() -> None:
     redacted, fired = redact("")
     assert redacted == ""
     assert fired == []
+
+
+def test_redacts_bare_jwt() -> None:
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwiaXNzIjoiamZ5aSJ9.abcdefghijklmnop"
+    redacted, fired = redact(f"token was {jwt} in the log")
+    assert "jwt" in fired
+    assert jwt not in redacted

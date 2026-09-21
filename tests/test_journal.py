@@ -622,3 +622,46 @@ def test_journal_project_id_sanitized(db):
     assert "[system-immutable]" not in updated["project_id"].lower()
     assert "</jfyi:" not in updated["project_id"].lower()
     assert updated["project_id"] == "updated-projectinjection>"
+
+
+async def test_add_journal_note_reports_redaction(ctx):
+    db, analytics = ctx
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwiaXNzIjoiamZ5aSJ9.abcdefghijklmnop"
+    result = await dispatch_tool(
+        "add_journal_note",
+        {"title": "Endpoint diagnosis", "content": f"probe used {jwt}"},
+        db,
+        analytics,
+    )
+    assert "Journal note added" in result[0].text
+    assert "Redacted before storage (jwt)" in result[0].text
+    assert jwt not in db.journal_list(1)[0]["content_md"]
+
+
+async def test_add_journal_note_clean_input_has_no_redaction_notice(ctx):
+    db, analytics = ctx
+    result = await dispatch_tool(
+        "add_journal_note",
+        {"title": "Token budget", "content": "the word token alone is fine"},
+        db,
+        analytics,
+    )
+    assert "Redacted" not in result[0].text
+
+
+async def test_add_profile_note_reports_redaction(ctx):
+    db, analytics = ctx
+    result = await dispatch_tool(
+        "add_profile_note", {"text": "uses Authorization: Bearer abc.def.ghi"}, db, analytics
+    )
+    assert "Note added" in result[0].text
+    assert "bearer_token" in result[0].text
+
+
+def test_write_tool_descriptions_state_boundaries():
+    from jfyi.server import _TOOL_CATALOGUE as TOOL_CATALOGUE
+
+    for name in ("add_journal_note", "add_profile_note"):
+        desc = TOOL_CATALOGUE[name]["description"]
+        assert "Do not record" in desc
+        assert "secrets" in desc
