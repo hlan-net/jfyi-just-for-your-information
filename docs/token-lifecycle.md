@@ -140,13 +140,29 @@ At JFYI's scale one small indexed write per MCP call is not worth avoiding: SQLi
 
 Rejections are indistinguishable from the caller's side: all of them yield the same `401`.
 
-### Async boundary
+### One authentication path, and its async boundary
 
-The current `_authenticate` (`src/jfyi/cli.py:36`) is synchronous and is called from async endpoints (`cli.py:103`, `:131`); `verify_mcp_jwt` (`src/jfyi/auth.py:88`) is synchronous too. Database work inside that path would block the event loop, and wrapping individual statements is not viable inside a synchronous function. The plan therefore splits the path:
+Two places authenticate an MCP bearer token today, and both call `verify_mcp_jwt` (`src/jfyi/auth.py:88`) directly:
 
-- Stage 1 (`verify_mcp_jwt`) stays synchronous and pure: it only touches the in-memory key set.
-- Stage 2 (the conditional update) and any key-cache reload or rotation are synchronous database methods that the async caller invokes through `asyncio.to_thread`.
-- `_authenticate` becomes `async`, and both call sites `await` it.
+- the MCP endpoints, through the synchronous `_authenticate` (`src/jfyi/cli.py:36`) called from async handlers (`cli.py:103`, `:131`);
+- the REST API, through the `get_current_user` dependency (`src/jfyi/web/app.py:163-208`, Bearer branch at `:195`), which is also what will guard the new key-management endpoints.
+
+If only the first were updated, a revoked token would still authenticate `/api/*`, including `GET /api/keys` and `POST /api/keys`. So stage 2 must not live in one caller. The plan replaces both direct calls with a single shared function:
+
+```
+authenticate_mcp_token(db, token) -> payload | None   # synchronous, in auth.py
+    stage 1: signature, expiry, iss, type  (in-memory key set)
+    stage 2: conditional UPDATE on mcp_tokens by jti
+```
+
+`verify_mcp_jwt` is reduced to stage 1 and is no longer called from anywhere except `authenticate_mcp_token`. Key-cache reloads and rotation, which touch the database, are called from inside the same function.
+
+The execution boundary differs per caller, because the two callers differ:
+
+- **MCP endpoints** are async handlers. `_authenticate` becomes `async` and runs `authenticate_mcp_token` through `asyncio.to_thread`; both call sites `await` it.
+- **`get_current_user`** is a synchronous dependency, which FastAPI already runs in its worker thread pool, so it calls `authenticate_mcp_token` directly. It must not be made async without also offloading the call.
+
+The dashboard session-cookie branch of `get_current_user` does not involve MCP tokens and is unchanged.
 
 ## REST API
 
@@ -154,17 +170,20 @@ The current `_authenticate` (`src/jfyi/cli.py:36`) is synchronous and is called 
 |---|---|---|
 | `GET` | `/api/keys` | List the current user's tokens: id, label, created, last used, use count, revoked. Never the token string |
 | `POST` | `/api/keys` | Mint a token, optional `label`. Returns the string once, at creation, and never again |
-
-`/api/keys` is not the only issuance path. `POST /mcp/oauth/token` (`src/jfyi/web/app.py:1466`) also calls `create_mcp_jwt`. Every path that issues a token must persist an `mcp_tokens` row, otherwise the token it returns has no `jti` record and the new verification path rejects it. To make that structural rather than a convention, both call sites go through one `issue_mcp_token(user_id, label)` function that creates the record and signs the token; `create_mcp_jwt` is no longer called directly. OAuth-issued tokens get a label such as `oauth` so they appear, and can be revoked, in the dashboard table.
 | `DELETE` | `/api/keys/{id}` | Revoke one token |
 
 All three are scoped to `CurrentUser`. Revoking a token belonging to another user returns `404`, matching how every other resource in the API behaves.
+
+`/api/keys` is not the only issuance path. `POST /mcp/oauth/token` (`src/jfyi/web/app.py:1466`) also calls `create_mcp_jwt`. Every path that issues a token must persist an `mcp_tokens` row, otherwise the token it returns has no `jti` record and the new verification path rejects it. To make that structural rather than a convention, both call sites go through one `issue_mcp_token(user_id, label)` function that creates the record and signs the token; `create_mcp_jwt` is no longer called directly. OAuth-issued tokens get a label such as `oauth` so they appear, and can be revoked, in the dashboard table.
+
 
 ## Dashboard
 
 `Settings → Connect` gains a table above the existing **Generate New Token** button: label, created, last used, uses, and a Revoke button per row. The generate flow gains an optional label field. A row that has never been used is marked, since that is the one most likely to be forgotten or leaked.
 
 ## Migration (v17)
+
+`PRAGMA user_version` only moves forward, so a version number can be used by exactly one migration. Migration **v17 creates both `signing_keys` and `mcp_tokens`**, and Phases A and B ship together in the same release. They are not independently deployable: a phase that shipped alone would need its own migration number, and because the cutover below is a one-time reconfiguration of every agent, splitting the phases would force two cutovers (first to tokens with a `kid` but no `jti`, then again to revocable ones). The first PR of the series adds v17 with both tables; no later phase adds a second v17. If the phases ever had to ship separately, Phase B would take v18 and the release notes would have to describe both cutovers.
 
 Tokens issued before this change carry neither `kid` nor `jti`, so they cannot be placed in the new model.
 
@@ -177,15 +196,15 @@ The release notes must say this plainly, because the symptom otherwise looks lik
 ## Implementation Plan
 
 ### Phase A — Signing keys
-1. Migration v17 adds `signing_keys`; `KeyManager` handles load, serialized rotation, rate-limited cache reload and the negative `kid` cache.
+1. Migration v17 adds both `signing_keys` and `mcp_tokens` (Phase B does not add a second migration); `KeyManager` handles load, serialized rotation, rate-limited cache reload and the negative `kid` cache.
 2. `create_mcp_jwt` writes a `kid` header, signs with the newest key after the pre-signing rotation check, enforces the 365-day cap and clamps `exp` to the key's expiry; `verify_mcp_jwt` selects by `kid`.
 3. Startup wiring in `cli.py`, plus the daily rotation check.
 
 ### Phase B — Token records and revocation
-1. Migration v17 adds `mcp_tokens`; `jti` written at creation, checked at verification.
+1. `mcp_tokens` (created by v17 in Phase A); `jti` written at creation, checked at verification. Phases A and B ship together.
 2. `issue_mcp_token` becomes the single issuance path, used by `POST /api/keys` **and** `POST /mcp/oauth/token`; the OAuth `expires_in` is corrected to 365 days.
 3. `GET` and `DELETE /api/keys`, and `POST` extended with `label`.
-4. The conditional-update verification, with `_authenticate` made async as described above.
+4. `authenticate_mcp_token` as the single verification path, used by both `cli._authenticate` (async, via `asyncio.to_thread`) and `web.app.get_current_user` (sync dependency), with the conditional-update stage 2.
 
 ### Phase C — Dashboard
 1. Token table and Revoke button under `Settings → Connect`.
@@ -200,4 +219,4 @@ The release notes must say this plainly, because the symptom otherwise looks lik
 5. A user can see how many tokens they hold, when each was last used, and which have never been used.
 6. Token strings are returned once at creation and never by a listing endpoint.
 7. Tests cover verification ordering, revocation, per-user isolation, `kid` selection across a rotation, the unknown-`kid` reload, and migration idempotency.
-8. Additional tests cover: a token issued through the OAuth endpoint verifies and appears in the token list; `expires_in_days > 365` is rejected and `exp` never exceeds the signing key's `expires_at`; two concurrent rotations produce one key; a stream of unique forged `kid` values causes bounded database queries; a revocation racing a request never lets the revoked token through.
+8. Additional tests cover: a token issued through the OAuth endpoint verifies and appears in the token list; `expires_in_days > 365` is rejected and `exp` never exceeds the signing key's `expires_at`; two concurrent rotations produce one key; a stream of unique forged `kid` values causes bounded database queries; a revocation racing a request never lets the revoked token through; a revoked token is refused on both the MCP endpoints and the REST API (`/api/*`, including `/api/keys`); the v17 migration creates both tables and is idempotent.
