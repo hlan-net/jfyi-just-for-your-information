@@ -34,6 +34,8 @@ Add `authlib`, `itsdangerous`, and `pyjwt`. Configure the OAuth registry for IdP
 ### Phase 3: Backend API Restructuring
 Add `SessionMiddleware` for OAuth flows (`/auth/login/{provider}`, `/auth/callback/{provider}`). Implement Fastapi dependencies `get_current_user` and `get_admin_user` to secure routes. Expose `/api/keys` for users to generate MCP API keys.
 
+> **Planned change:** MCP token issuance and verification are being reworked in [Token Lifecycle](token-lifecycle.md): rotating signing keys and per-token `jti` records that make each token revocable. `/api/keys` gains list and revoke endpoints and the OAuth token endpoint must persist the same records. The migration is a **hard cutover**: tokens issued before it stop verifying and every agent is reconfigured once with a new token.
+
 ### Phase 4: MCP Server Authentication
 Protect the `/mcp/sse` and `/mcp/messages/` endpoints. Pass the authenticated `user_id` into the `dispatch_tool` execution context.
 
