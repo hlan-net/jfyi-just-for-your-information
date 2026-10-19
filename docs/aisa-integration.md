@@ -17,7 +17,7 @@ Opportunistic features that are not behind a flag (`warm_agent`, the Vibe Profil
 ### Model selection
 
 * **Anthropic** — `JFYI_SUMMARIZER_MODEL` / `JFYI_INFERENCE_MODEL` (default `claude-haiku-4-5-20251001`).
-* **OpenAI-compatible** — `JFYI_LLM_MODEL` (or unprefixed `LLM_MODEL`) wins. A per-feature `JFYI_SUMMARIZER_MODEL` / `JFYI_INFERENCE_MODEL` is honoured only when you set it explicitly, because its default is an Anthropic id. With neither, JFYI calls `GET /v1/models` once and uses the first model advertised — AISA only lists models backed by a healthy provider, so this is a safe default for small deployments. Pin `JFYI_LLM_MODEL` for anything you care about.
+* **OpenAI-compatible** — `JFYI_LLM_MODEL` (or unprefixed `LLM_MODEL`, or `OPENAI_MODEL` should AISA reconcile a default model into its Secret) wins. A per-feature `JFYI_SUMMARIZER_MODEL` / `JFYI_INFERENCE_MODEL` is honoured only when you set it explicitly, because its default is an Anthropic id. With neither, JFYI calls `GET /v1/models` once and uses the first model advertised — AISA only lists models backed by a healthy provider, so this is a safe default for small deployments. Pin `JFYI_LLM_MODEL` for anything you care about.
 
 No vendor SDK is involved: both providers are driven over `httpx`. The `[harness]` extra is now empty and kept only so existing install commands keep working.
 
@@ -95,7 +95,7 @@ The rule-synthesis dialog (`Profile → Synthesize`) offers a **Server-managed (
 |---------|-------------|
 | `JFYI_SUMMARIZER_ENABLED=true but no inference endpoint is configured` at startup | No tier matched. Bind the AISA Secret (and restart after it exists), set a direct key, or leave `JFYI_LLM_LOCAL_FALLBACK_URL` at its default with Ollama running. |
 | `No model configured and .../models advertised none. Set JFYI_LLM_MODEL.` | The endpoint lists no healthy models. Check AISA's provider health, or pin `JFYI_LLM_MODEL`. |
-| `401` from the proxy | The AISA key was rotated after the pod started — restart the pod. |
+| `401` from the proxy | The AISA key was rotated after the pod started; `envFrom` is read only at container start. AISA keeps the superseded key valid for a grace period (7 days at the time of writing), so restart within it — or run a Secret-watching controller such as [Stakater Reloader](https://github.com/stakater/Reloader) to restart the Deployment automatically when the Secret changes. |
 | Dashboard says *Server-managed — not configured on this instance* | Same as the first row; `GET /api/llm/models` returns `{"configured": false}`. |
 | Summaries come from Claude although AISA is bound | `JFYI_ANTHROPIC_API_KEY` is set (tier 1 wins). Remove it to route through AISA. |
 

@@ -67,8 +67,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("JFYI_OPENAI_API_KEY", "OPENAI_API_KEY"),
     )
     # Model requested from an OpenAI-compatible endpoint. Empty → first id from GET /v1/models.
+    # OPENAI_MODEL is accepted so a default model AISA may reconcile into its Secret applies.
     llm_model: str | None = Field(
-        default=None, validation_alias=AliasChoices("JFYI_LLM_MODEL", "LLM_MODEL")
+        default=None,
+        validation_alias=AliasChoices("JFYI_LLM_MODEL", "LLM_MODEL", "OPENAI_MODEL"),
     )
     # Tier 3 of the resolution order. Empty string disables the local fallback.
     llm_local_fallback_url: str = "http://localhost:11434/v1"

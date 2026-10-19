@@ -25,6 +25,7 @@ _ENV_KEYS = (
     "JFYI_OPENAI_API_KEY",
     "LLM_MODEL",
     "JFYI_LLM_MODEL",
+    "OPENAI_MODEL",
     "JFYI_LLM_LOCAL_FALLBACK_URL",
     "JFYI_SUMMARIZER_MODEL",
 )
@@ -70,6 +71,12 @@ def test_settings_accept_prefixed_openai_env_too(env):
 
 def test_settings_read_llm_model_unprefixed(env):
     env(LLM_MODEL="qwen3:8b")
+    assert _settings().llm_model == "qwen3:8b"
+
+
+def test_settings_read_openai_model_from_aisa_secret(env):
+    """Forward-compat: a default model AISA reconciles into its Secret as OPENAI_MODEL."""
+    env(OPENAI_MODEL="qwen3:8b")
     assert _settings().llm_model == "qwen3:8b"
 
 
@@ -276,5 +283,6 @@ async def test_http_error_raises():
 
 
 def test_unknown_provider_rejected():
+    config = LLMConfig("bedrock", "k")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="Unknown provider"):
-        LLMClient(LLMConfig("bedrock", "k"))  # type: ignore[arg-type]
+        LLMClient(config)
