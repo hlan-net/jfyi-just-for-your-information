@@ -122,10 +122,21 @@ def _build_sse_handler(
 def _build_streamable_handler(
     db, analytics, build_mcp_server, settings, verify_mcp_jwt, retriever=None
 ):
-    """MCP Streamable HTTP transport (single POST endpoint, stateless per request)."""
-    import anyio
-    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    """MCP Streamable HTTP transport (single POST endpoint, stateless per request).
+
+    Authentication is HTTP-level (401 + ``WWW-Authenticate`` carrying the OAuth
+    resource metadata), and the MCP server is built per request, bound to the
+    authenticated user. The SDK's ``StreamableHTTPSessionManager`` in stateless
+    mode owns the per-request transport lifecycle — including terminating it
+    once the response is written, so no server task outlives the request.
+    """
+    import logging
+
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     from starlette.requests import Request
+
+    # The manager announces every start/stop at INFO; per request that is noise.
+    logging.getLogger("mcp.server.streamable_http_manager").setLevel(logging.WARNING)
 
     async def handle_streamable(request: Request):
         user_id = _authenticate(request, db, settings, verify_mcp_jwt)
@@ -133,35 +144,14 @@ def _build_streamable_handler(
             return _unauthorized(request)
 
         mcp_server = build_mcp_server(db, analytics, user_id=user_id, retriever=retriever)
-        transport = StreamableHTTPServerTransport(
-            mcp_session_id=None,
-            is_json_response_enabled=False,
-        )
 
         class StreamableResponse:
             async def __call__(self, scope, receive, send):
-                async with anyio.create_task_group() as tg:
-
-                    async def run_server(*, task_status=anyio.TASK_STATUS_IGNORED):
-                        async with transport.connect() as (read_stream, write_stream):
-                            task_status.started()
-                            await mcp_server.run(
-                                read_stream,
-                                write_stream,
-                                _init_options(mcp_server),
-                                stateless=True,
-                            )
-
-                    try:
-                        await tg.start(run_server)
-                        await transport.handle_request(scope, receive, send)
-                    finally:
-                        # The server task only ends once its read stream closes.
-                        # Terminate the per-request transport (shielded, so a
-                        # cancelled request still cleans up) or the task group
-                        # never exits and every request leaks a server task.
-                        with anyio.CancelScope(shield=True):
-                            await transport.terminate()
+                manager = StreamableHTTPSessionManager(
+                    app=mcp_server, stateless=True, json_response=False
+                )
+                async with manager.run():
+                    await manager.handle_request(scope, receive, send)
 
         return StreamableResponse()
 

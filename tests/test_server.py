@@ -192,52 +192,134 @@ async def test_unknown_tool(ctx):
     assert "Unknown tool" in result[0].text
 
 
+async def _handle(srv, method: str, params):
+    """Invoke a registered mcp 2.x request handler directly (handlers ignore ctx)."""
+    entry = srv.get_request_handler(method)
+    assert entry is not None, f"no handler for {method}"
+    return await entry.handler(None, params)
+
+
 def test_build_mcp_server_registers_tool_handlers(ctx):
-    from mcp.types import CallToolRequest, ListToolsRequest
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    assert srv.get_request_handler("tools/list") is not None
+    assert srv.get_request_handler("tools/call") is not None
+    caps = srv.get_capabilities()
+    assert caps.tools is not None
+    assert caps.resources is not None
+
+
+async def test_tools_list_exposes_router_and_always_on_tools(ctx):
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    result = await _handle(srv, "tools/list", None)
+    names = {t.name for t in result.tools}
+    assert "discover_tools" in names
+    assert "get_developer_profile" in names
+    assert "run_local_script" not in names  # progressive disclosure: not always-on
+
+
+async def test_call_tool_handler_dispatches(ctx):
+    from mcp.types import CallToolRequestParams
 
     db, analytics = ctx
     srv = build_mcp_server(db, analytics)
-    assert ListToolsRequest in srv.request_handlers
-    assert CallToolRequest in srv.request_handlers
+    result = await _handle(
+        srv, "tools/call", CallToolRequestParams(name="get_developer_profile", arguments={})
+    )
+    assert result.is_error is not True
+    assert result.content[0].text
+
+
+async def test_call_tool_handler_reports_exceptions_as_error_result(ctx):
+    """A crashing tool must come back as isError, not as a JSON-RPC error."""
+    from unittest.mock import AsyncMock, patch
+
+    from mcp.types import CallToolRequestParams
+
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    with patch("jfyi.server.dispatch_tool", AsyncMock(side_effect=RuntimeError("boom"))):
+        result = await _handle(
+            srv, "tools/call", CallToolRequestParams(name="get_developer_profile", arguments={})
+        )
+    assert result.is_error is True
+    assert "boom" in result.content[0].text
+
+
+async def test_call_tool_handler_validates_arguments_against_schema(ctx):
+    """1.x validated listed tools' inputs; the 2.x handler must keep doing so."""
+    from mcp.types import CallToolRequestParams
+
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    result = await _handle(
+        srv,
+        "tools/call",
+        CallToolRequestParams(
+            name="record_interaction",
+            arguments={"agent_name": "claude", "prompt": "p", "response": "r", "was_corrected": 2},
+        ),
+    )
+    assert result.is_error is True
+    assert "Input validation error" in result.content[0].text
+    assert "was_corrected" in result.content[0].text or "2" in result.content[0].text
+    # Nothing was written: the invalid call never reached dispatch_tool.
+    assert db.get_agent_stats(user_id=1) == []
+
+
+async def test_call_tool_handler_rejects_missing_required_arguments(ctx):
+    from mcp.types import CallToolRequestParams
+
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    result = await _handle(
+        srv, "tools/call", CallToolRequestParams(name="add_profile_note", arguments={})
+    )
+    assert result.is_error is True
+    assert "'text' is a required property" in result.content[0].text
+    assert db.get_notes(1) == []
+
+
+def test_tool_input_schema_lookup_covers_router_and_catalogue():
+    from jfyi.server import _DISCOVER_SCHEMA, _TOOL_CATALOGUE, _tool_input_schema
+
+    assert _tool_input_schema("discover_tools") is _DISCOVER_SCHEMA
+    for name, info in _TOOL_CATALOGUE.items():
+        assert _tool_input_schema(name) is info["inputSchema"]
+    assert _tool_input_schema("no_such_tool") is None
 
 
 # ── Vibe Telemetry MCP resources ───────────────────────────────────────────────
 
 
 def test_build_mcp_server_registers_resource_handlers(ctx):
-    from mcp.types import ListResourcesRequest, ReadResourceRequest
-
     db, analytics = ctx
     srv = build_mcp_server(db, analytics)
-    assert ListResourcesRequest in srv.request_handlers
-    assert ReadResourceRequest in srv.request_handlers
+    assert srv.get_request_handler("resources/list") is not None
+    assert srv.get_request_handler("resources/read") is not None
 
 
 async def test_list_resources_returns_telemetry_resource(ctx):
-    from mcp.types import ListResourcesRequest
-
     db, analytics = ctx
     srv = build_mcp_server(db, analytics)
-    req = ListResourcesRequest(method="resources/list", params=None)
-    result = await srv.request_handlers[ListResourcesRequest](req)
-    resources = result.root.resources
+    result = await _handle(srv, "resources/list", None)
+    resources = result.resources
     assert len(resources) == 1
     assert "telemetry" in str(resources[0].uri)
-    assert resources[0].mimeType == "application/json"
+    assert resources[0].mime_type == "application/json"
 
 
 async def test_read_resource_empty_session_returns_perfect_score(ctx):
     import json
 
-    from mcp.types import ReadResourceRequest, ReadResourceRequestParams
-    from pydantic import AnyUrl
+    from mcp.types import ReadResourceRequestParams
 
     db, analytics = ctx
     srv = build_mcp_server(db, analytics)
-    params = ReadResourceRequestParams(uri=AnyUrl("jfyi://sessions/no-such-session/telemetry"))
-    req = ReadResourceRequest(method="resources/read", params=params)
-    result = await srv.request_handlers[ReadResourceRequest](req)
-    contents = result.root.contents
+    params = ReadResourceRequestParams(uri="jfyi://sessions/no-such-session/telemetry")
+    result = await _handle(srv, "resources/read", params)
+    contents = result.contents
     payload = json.loads(contents[0].text)
     assert payload["alignment_score"] == pytest.approx(100.0)
     assert payload["window_interactions"] == 0
@@ -247,8 +329,7 @@ async def test_read_resource_empty_session_returns_perfect_score(ctx):
 async def test_read_resource_reflects_corrections(ctx):
     import json
 
-    from mcp.types import ReadResourceRequest, ReadResourceRequestParams
-    from pydantic import AnyUrl
+    from mcp.types import ReadResourceRequestParams
 
     db, analytics = ctx
     agent_id = db.get_or_create_agent(1, "claude")
@@ -261,10 +342,9 @@ async def test_read_resource_reflects_corrections(ctx):
             friction_score=0.6 if i < 2 else 0.0,
         )
     srv = build_mcp_server(db, analytics)
-    params = ReadResourceRequestParams(uri=AnyUrl("jfyi://sessions/s1/telemetry"))
-    req = ReadResourceRequest(method="resources/read", params=params)
-    result = await srv.request_handlers[ReadResourceRequest](req)
-    payload = json.loads(result.root.contents[0].text)
+    params = ReadResourceRequestParams(uri="jfyi://sessions/s1/telemetry")
+    result = await _handle(srv, "resources/read", params)
+    payload = json.loads(result.contents[0].text)
     assert payload["session_id"] == "s1"
     assert payload["recent_corrections"] == 2
     assert payload["alignment_score"] == pytest.approx(50.0)
@@ -273,8 +353,7 @@ async def test_read_resource_reflects_corrections(ctx):
 async def test_read_resource_corrective_hints_populated(ctx):
     import json
 
-    from mcp.types import ReadResourceRequest, ReadResourceRequestParams
-    from pydantic import AnyUrl
+    from mcp.types import ReadResourceRequestParams
 
     db, analytics = ctx
     agent_id = db.get_or_create_agent(1, "claude")
@@ -293,11 +372,19 @@ async def test_read_resource_corrective_hints_populated(ctx):
         interaction_id=interaction_id,
     )
     srv = build_mcp_server(db, analytics)
-    params = ReadResourceRequestParams(uri=AnyUrl("jfyi://sessions/s1/telemetry"))
-    req = ReadResourceRequest(method="resources/read", params=params)
-    result = await srv.request_handlers[ReadResourceRequest](req)
-    payload = json.loads(result.root.contents[0].text)
+    params = ReadResourceRequestParams(uri="jfyi://sessions/s1/telemetry")
+    result = await _handle(srv, "resources/read", params)
+    payload = json.loads(result.contents[0].text)
     assert "Output was too verbose" in payload["corrective_hints"]
+
+
+async def test_read_resource_unknown_uri_raises(ctx):
+    from mcp.types import ReadResourceRequestParams
+
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    with pytest.raises(ValueError, match="Unknown resource URI"):
+        await _handle(srv, "resources/read", ReadResourceRequestParams(uri="jfyi://nope"))
 
 
 # ── warm_agent ──────────────────────────────────────────────────────────────────

@@ -182,6 +182,28 @@ async def test_resources_read_telemetry(client):
     assert payload["alignment_score"] == pytest.approx(100.0)
 
 
+async def test_invalid_tool_arguments_are_an_error_result_not_stored(client, db):
+    result = await _result(
+        client,
+        _rpc(
+            "tools/call",
+            {
+                "name": "record_interaction",
+                "arguments": {
+                    "agent_name": "claude",
+                    "prompt": "p",
+                    "response": "r",
+                    "was_corrected": 2,
+                },
+            },
+        ),
+        token=create_mcp_jwt(1),
+    )
+    assert result["isError"] is True
+    assert "Input validation error" in result["content"][0]["text"]
+    assert db.get_agent_stats(user_id=1) == []
+
+
 async def test_unknown_tool_is_reported_not_raised(client):
     result = await _result(
         client,
