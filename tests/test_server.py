@@ -247,6 +247,49 @@ async def test_call_tool_handler_reports_exceptions_as_error_result(ctx):
     assert "boom" in result.content[0].text
 
 
+async def test_call_tool_handler_validates_arguments_against_schema(ctx):
+    """1.x validated listed tools' inputs; the 2.x handler must keep doing so."""
+    from mcp.types import CallToolRequestParams
+
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    result = await _handle(
+        srv,
+        "tools/call",
+        CallToolRequestParams(
+            name="record_interaction",
+            arguments={"agent_name": "claude", "prompt": "p", "response": "r", "was_corrected": 2},
+        ),
+    )
+    assert result.is_error is True
+    assert "Input validation error" in result.content[0].text
+    assert "was_corrected" in result.content[0].text or "2" in result.content[0].text
+    # Nothing was written: the invalid call never reached dispatch_tool.
+    assert db.get_agent_stats(user_id=1) == []
+
+
+async def test_call_tool_handler_rejects_missing_required_arguments(ctx):
+    from mcp.types import CallToolRequestParams
+
+    db, analytics = ctx
+    srv = build_mcp_server(db, analytics)
+    result = await _handle(
+        srv, "tools/call", CallToolRequestParams(name="add_profile_note", arguments={})
+    )
+    assert result.is_error is True
+    assert "'text' is a required property" in result.content[0].text
+    assert db.get_notes(1) == []
+
+
+def test_tool_input_schema_lookup_covers_router_and_catalogue():
+    from jfyi.server import _DISCOVER_SCHEMA, _TOOL_CATALOGUE, _tool_input_schema
+
+    assert _tool_input_schema("discover_tools") is _DISCOVER_SCHEMA
+    for name, info in _TOOL_CATALOGUE.items():
+        assert _tool_input_schema(name) is info["inputSchema"]
+    assert _tool_input_schema("no_such_tool") is None
+
+
 # ── Vibe Telemetry MCP resources ───────────────────────────────────────────────
 
 

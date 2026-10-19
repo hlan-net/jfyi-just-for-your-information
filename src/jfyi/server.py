@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 import re
 
+import jsonschema
 from mcp import types
 from mcp.server import Server
 from mcp.server.context import ServerRequestContext
@@ -989,12 +990,26 @@ def build_mcp_server(
     async def on_call_tool(
         ctx: ServerRequestContext[Any], params: types.CallToolRequestParams
     ) -> types.CallToolResult:
-        # Mirror the 1.x decorator: a failing tool is reported to the agent as
-        # an error result, not surfaced as a JSON-RPC error that ends the turn.
+        # Mirror the 1.x call_tool decorator: validate the arguments against the
+        # tool's declared input schema first (the 2.x low-level Server leaves
+        # that to the handler), and report any failure as an error result, not
+        # as a JSON-RPC error that ends the agent's turn.
+        arguments = params.arguments or {}
+        schema = _tool_input_schema(params.name)
+        if schema is not None:
+            try:
+                jsonschema.validate(instance=arguments, schema=schema)
+            except jsonschema.ValidationError as exc:
+                return types.CallToolResult(
+                    content=[
+                        TextContent(type="text", text=f"Input validation error: {exc.message}")
+                    ],
+                    isError=True,
+                )
         try:
             content = await dispatch_tool(
                 params.name,
-                params.arguments or {},
+                arguments,
                 db,
                 analytics,
                 user_id=user_id,
@@ -1056,11 +1071,20 @@ def build_mcp_server(
     return Server(
         "jfyi",
         version=__version__,
+        get_tool_input_schema=_tool_input_schema,
         on_list_tools=on_list_tools,
         on_call_tool=on_call_tool,
         on_list_resources=on_list_resources,
         on_read_resource=on_read_resource,
     )
+
+
+def _tool_input_schema(name: str) -> dict[str, Any] | None:
+    """Declared input schema for a JFYI tool (router included), or None if unknown."""
+    if name == "discover_tools":
+        return _DISCOVER_SCHEMA
+    info = _TOOL_CATALOGUE.get(name)
+    return info["inputSchema"] if info else None
 
 
 def _json_resource(uri: str, payload: str) -> types.ReadResourceResult:
