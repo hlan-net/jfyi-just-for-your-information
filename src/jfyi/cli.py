@@ -152,12 +152,66 @@ def _build_streamable_handler(
                                 stateless=True,
                             )
 
-                    await tg.start(run_server)
-                    await transport.handle_request(scope, receive, send)
+                    try:
+                        await tg.start(run_server)
+                        await transport.handle_request(scope, receive, send)
+                    finally:
+                        # The server task only ends once its read stream closes.
+                        # Terminate the per-request transport (shielded, so a
+                        # cancelled request still cleans up) or the task group
+                        # never exits and every request leaks a server task.
+                        with anyio.CancelScope(shield=True):
+                            await transport.terminate()
 
         return StreamableResponse()
 
     return handle_streamable
+
+
+def _mount_mcp_routes(web_app, db, analytics, retriever=None):
+    """Attach both MCP transports to the dashboard app.
+
+    - ``GET /mcp/sse`` opens a legacy SSE long-poll stream; its JSON-RPC
+      messages arrive on ``POST /mcp/messages/``.
+    - ``POST /mcp`` (canonical) and ``POST /mcp/sse`` are MCP Streamable HTTP,
+      stateless per request — the transport Claude Code, Gemini, Cursor and
+      opencode use. A fresh MCP server bound to the authenticated user is built
+      for every request, so a JFYI restart cannot strand a live session.
+
+    Kept separate from ``serve()`` so the route table and the per-request
+    handlers can be exercised in tests through an ASGI client.
+    """
+    from mcp.server.sse import SseServerTransport
+
+    from .auth import verify_mcp_jwt
+    from .config import settings
+    from .server import build_mcp_server
+
+    sse_transport = SseServerTransport("/mcp/messages/")
+
+    handle_sse = _build_sse_handler(
+        db,
+        analytics,
+        sse_transport,
+        build_mcp_server,
+        settings,
+        verify_mcp_jwt,
+        retriever=retriever,
+    )
+    handle_streamable = _build_streamable_handler(
+        db,
+        analytics,
+        build_mcp_server,
+        settings,
+        verify_mcp_jwt,
+        retriever=retriever,
+    )
+
+    web_app.add_route("/mcp/sse", handle_sse, methods=["GET", "HEAD", "OPTIONS"])
+    web_app.add_route("/mcp", handle_streamable, methods=["POST", "DELETE"])
+    web_app.add_route("/mcp/sse", handle_streamable, methods=["POST", "DELETE"])
+    web_app.mount("/mcp/messages/", app=sse_transport.handle_post_message)
+    return web_app
 
 
 @app.command()
@@ -194,44 +248,13 @@ def serve(
             f"[cyan]Starting JFYI MCP server v{__version__} (SSE) on {host}:{port}…[/cyan]"
         )
         import uvicorn
-        from mcp.server.sse import SseServerTransport
 
-        from .auth import verify_mcp_jwt
-        from .config import settings
-        from .server import build_mcp_server
         from .web.app import create_app
 
         web_app = create_app(
             db, analytics, summarizer=summarizer, inference_engine=inference_engine
         )
-        sse_transport = SseServerTransport("/mcp/messages/")
-
-        handle_sse = _build_sse_handler(
-            db,
-            analytics,
-            sse_transport,
-            build_mcp_server,
-            settings,
-            verify_mcp_jwt,
-            retriever=retriever,
-        )
-        handle_streamable = _build_streamable_handler(
-            db,
-            analytics,
-            build_mcp_server,
-            settings,
-            verify_mcp_jwt,
-            retriever=retriever,
-        )
-
-        # GET opens a legacy SSE long-poll stream.
-        web_app.add_route("/mcp/sse", handle_sse, methods=["GET", "HEAD", "OPTIONS"])
-        # POST is MCP Streamable HTTP (Gemini, Claude, Cursor, opencode, …); stateless per request.
-        # Exposed at both /mcp and /mcp/sse so clients can use the canonical /mcp path.
-        web_app.add_route("/mcp", handle_streamable, methods=["POST", "DELETE"])
-        web_app.add_route("/mcp/sse", handle_streamable, methods=["POST", "DELETE"])
-        # Legacy SSE clients POST JSON-RPC messages here after opening the GET stream.
-        web_app.mount("/mcp/messages/", app=sse_transport.handle_post_message)
+        _mount_mcp_routes(web_app, db, analytics, retriever=retriever)
 
         uvicorn.run(web_app, host=host, port=port, proxy_headers=True, forwarded_allow_ips="*")
 
