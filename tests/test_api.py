@@ -1,5 +1,7 @@
 """Tests for the JFYI web dashboard API."""
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -498,3 +500,115 @@ def test_interview_requires_auth(tmp_path, monkeypatch):
     c = TestClient(app)
     resp = c.get("/api/profile/interview")
     assert resp.status_code == 401
+
+
+# ── Server-managed synthesis provider (AISA / in-cluster endpoint) ─────────────
+
+
+def test_save_synthesis_config_server_provider_needs_no_key(client):
+    resp = client.put(
+        "/api/profile/synthesis-config",
+        json={"provider": "server", "model": ""},
+    )
+    assert resp.status_code == 200
+    cfg = client.get("/api/profile/synthesis-config").json()
+    assert cfg["provider"] == "server"
+    assert cfg["model"] == ""
+    assert cfg["has_key"] is True  # the server endpoint carries its own credentials
+
+
+def test_switching_from_server_to_direct_provider_requires_key(client):
+    client.put("/api/profile/synthesis-config", json={"provider": "server"})
+    resp = client.put(
+        "/api/profile/synthesis-config", json={"provider": "openai", "model": "llama3"}
+    )
+    assert resp.status_code == 400
+
+
+def _two_notes(client) -> list[int]:
+    ids = []
+    for text in ("Use small functions", "Prefer early returns"):
+        resp = client.post(
+            "/api/profile/notes", json={"text": text, "category": "style", "confidence": 0.8}
+        )
+        ids.append(resp.json()["id"])
+    return ids
+
+
+def test_synthesize_with_server_provider_unconfigured_returns_400(client):
+    from unittest.mock import patch
+
+    note_ids = _two_notes(client)
+    client.put("/api/profile/synthesis-config", json={"provider": "server"})
+
+    with patch("jfyi.synthesizer.create_llm_client", return_value=None):
+        resp = client.post(
+            "/api/profile/notes/synthesize",
+            json={"note_ids": note_ids, "priorities": {str(i): 3 for i in note_ids}},
+        )
+    assert resp.status_code == 400
+    assert "not configured" in resp.json()["detail"]
+
+
+def test_synthesize_with_server_provider_uses_server_endpoint(client):
+    from unittest.mock import AsyncMock, patch
+
+    from jfyi.llm import LLMConfig, LLMResponse
+
+    note_ids = _two_notes(client)
+    client.put("/api/profile/synthesis-config", json={"provider": "server", "model": "qwen3:8b"})
+
+    fake = AsyncMock()
+    fake.config = LLMConfig("openai", "aisa", "http://aisa/v1", None, "openai_env")
+    fake.complete.return_value = LLMResponse(
+        json.dumps(
+            [
+                {
+                    "text": "Keep functions small",
+                    "category": "style",
+                    "confidence": 0.9,
+                    "source_note_ids": note_ids,
+                }
+            ]
+        ),
+        50,
+    )
+    with (
+        patch("jfyi.synthesizer.create_llm_client", return_value=fake),
+        patch("jfyi.synthesizer.LLMClient", return_value=fake) as pinned,
+    ):
+        resp = client.post(
+            "/api/profile/notes/synthesize",
+            json={"note_ids": note_ids, "priorities": {str(i): 3 for i in note_ids}},
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["synthesized"][0]["text"] == "Keep functions small"
+    # The user's pinned model overrides the server default.
+    assert pinned.call_args.args[0].model == "qwen3:8b"
+
+
+def test_llm_models_endpoint_unconfigured(client):
+    from unittest.mock import patch
+
+    with patch("jfyi.web.app.create_llm_client", return_value=None):
+        resp = client.get("/api/llm/models")
+    assert resp.status_code == 200
+    assert resp.json() == {"configured": False, "models": []}
+
+
+def test_llm_models_endpoint_lists_models_without_key(client):
+    from unittest.mock import AsyncMock, patch
+
+    from jfyi.llm import LLMConfig
+
+    fake = AsyncMock()
+    fake.config = LLMConfig("openai", "aisa-secret", "http://aisa/v1", None, "openai_env")
+    fake.list_models.return_value = ["qwen3:8b", "llama3"]
+    with patch("jfyi.web.app.create_llm_client", return_value=fake):
+        resp = client.get("/api/llm/models")
+    data = resp.json()
+    assert data["configured"] is True
+    assert data["provider"] == "openai"
+    assert data["base_url"] == "http://aisa/v1"
+    assert data["models"] == ["qwen3:8b", "llama3"]
+    assert "aisa-secret" not in resp.text

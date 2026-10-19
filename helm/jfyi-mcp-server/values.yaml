@@ -91,6 +91,36 @@ jwtSecret:
   # is generated on first install and preserved across upgrades.
   value: ""
 
+# Inference endpoint for the server-side LLM features (background summarizer,
+# inference engine, friction-cluster summaries, Vibe Profile narrative,
+# warm_agent) and the dashboard's "Server-managed" rule-synthesis provider.
+# Inside the container JFYI resolves, in order:
+#   1. JFYI_ANTHROPIC_API_KEY                  (inference.direct.anthropicApiKey)
+#   2. OPENAI_BASE_URL + OPENAI_API_KEY        (inference.aisa or inference.direct.openai*)
+#   3. local Ollama fallback — only for engines you explicitly enabled
+# See docs/aisa-integration.md. Enabling the engines themselves is still done
+# via env (JFYI_SUMMARIZER_ENABLED / JFYI_INFERENCE_ENABLED / JFYI_ENABLE_CLUSTERING).
+inference:
+  # Model to request from an OpenAI-compatible endpoint (JFYI_LLM_MODEL). Leave
+  # empty and JFYI picks the first id advertised by GET /v1/models.
+  model: ""
+  # In-cluster AISA: bind the Secret that aisa's reconciler writes into this
+  # namespace (keys OPENAI_BASE_URL + OPENAI_API_KEY). The reference is optional
+  # so the pod starts even before AISA has minted the key. Declare the consumer
+  # in AISA with namespace=<this namespace> and secret=<secretName>.
+  aisa:
+    enabled: false
+    secretName: ""  # Defaults to <fullname>-aisa-key
+  # Direct provider credentials — no AISA. Either set values here (rendered
+  # into a chart-managed Secret) or point existingSecret at one that carries
+  # JFYI_ANTHROPIC_API_KEY and/or OPENAI_API_KEY (+ OPENAI_BASE_URL).
+  direct:
+    enabled: false
+    existingSecret: ""
+    anthropicApiKey: ""
+    openaiApiKey: ""
+    openaiBaseUrl: ""  # e.g. https://api.openai.com/v1 or http://ollama.ollama.svc:11434/v1
+
 # List of envFrom sources (configMapRef or secretRef) injected into the container.
 # Example: [{ secretRef: { name: jfyi-jwt } }]
 extraEnvFrom: []

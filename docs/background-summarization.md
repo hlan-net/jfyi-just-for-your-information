@@ -40,15 +40,14 @@ A hard daily token budget (`JFYI_SUMMARIZER_DAILY_TOKEN_CAP`, default 100,000 to
 JFYI_SUMMARIZER_ENABLED=true
 JFYI_SUMMARIZER_INTERVAL_S=300
 JFYI_SUMMARIZER_DAILY_TOKEN_CAP=100000
-JFYI_ANTHROPIC_API_KEY=<key>          # required if summarizer is enabled
-JFYI_SUMMARIZER_MODEL=claude-haiku-4-5-20251001
+JFYI_SUMMARIZER_MODEL=claude-haiku-4-5-20251001   # Anthropic only; see below for OpenAI-compatible
 ```
 
-The `anthropic` package is added as an optional dependency group (`pip install jfyi-mcp-server[harness]`). If the package is absent or `JFYI_SUMMARIZER_ENABLED=false`, the background task does not start and no error is raised.
+The endpoint comes from the shared resolver in `jfyi.llm` — `JFYI_ANTHROPIC_API_KEY`, else `OPENAI_BASE_URL` + `OPENAI_API_KEY` (the AISA Secret contract, model via `JFYI_LLM_MODEL` or discovered from `/v1/models`), else a local Ollama fallback. See [Inference Endpoints & AISA Integration](aisa-integration.md). If no endpoint resolves or `JFYI_SUMMARIZER_ENABLED=false`, the background task does not start and no error is raised. No vendor SDK is required.
 
 ### Prompt Caching
 
-The summarizer's system prompt (instructions, output format) is stable across all sessions. It is placed at the beginning of the request using `cache_control: {"type": "ephemeral"}` to maximize KV cache reuse across turns, as described in [Context Compaction](context-compaction.md).
+The summarizer's system prompt (instructions, output format) is stable across all sessions. On the Anthropic provider it is placed at the beginning of the request using `cache_control: {"type": "ephemeral"}` to maximize KV cache reuse across turns, as described in [Context Compaction](context-compaction.md). OpenAI-compatible endpoints receive it as the `system` message.
 
 ## Success Criteria
 
@@ -56,8 +55,8 @@ The summarizer's system prompt (instructions, output format) is stable across al
 - The lightweight model (`claude-haiku-4-5-20251001`) is used, not the primary model.
 - Summaries appear in the episodic memory tier and are retrievable by `session_id`.
 - Daily token cap prevents API calls once the cap is exceeded.
-- System prompt is cache-control-annotated in every API request.
-- Server starts and runs normally when `anthropic` is not installed (`JFYI_SUMMARIZER_ENABLED=false`).
+- System prompt is cache-control-annotated in every Anthropic API request.
+- Server starts and runs normally with no inference endpoint configured (`JFYI_SUMMARIZER_ENABLED=false`).
 
 ## Related
 

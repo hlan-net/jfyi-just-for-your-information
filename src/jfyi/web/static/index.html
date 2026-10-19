@@ -617,16 +617,17 @@
 
       <!-- Step 2: Model configuration -->
       <div v-if="step === 2">
-        <p class="desc" style="margin-bottom:1rem;">Configure the model that will draw rules from the selected notes. The API key is stored on your JFYI instance only.</p>
+        <p class="desc" style="margin-bottom:1rem;">Configure the model that will draw rules from the selected notes. Your own API keys are stored on your JFYI instance only; the server-managed endpoint needs none.</p>
 
         <!-- Saved-config status banner -->
         <div v-if="savedCfg.configured" style="margin-bottom:1rem; padding:0.6rem 0.75rem; background:rgba(var(--green-rgb,34,197,94), 0.08); border:1px solid var(--green,#22c55e); border-radius:4px; font-size:0.82rem; color:var(--fg);">
-          <strong>Currently saved:</strong> {{ savedCfg.provider === 'anthropic' ? 'Anthropic' : 'OpenAI-compatible' }} · {{ savedCfg.model || '—' }}<span v-if="savedCfg.base_url"> · {{ savedCfg.base_url }}</span>
+          <strong>Currently saved:</strong> {{ providerLabel(savedCfg.provider) }} · {{ savedCfg.model || (savedCfg.provider === 'server' ? 'auto' : '—') }}<span v-if="savedCfg.base_url"> · {{ savedCfg.base_url }}</span>
         </div>
 
         <div style="margin-bottom:1.25rem; padding:0.75rem; background:rgba(var(--purple-rgb), 0.05); border:1px dashed var(--purple); border-radius:4px; display:flex; flex-direction:column; gap:0.5rem;">
-          <div style="font-size:0.85rem; color:var(--purple); font-weight:500;">Quick setup for local models:</div>
-          <div style="display:flex; gap:0.5rem;">
+          <div style="font-size:0.85rem; color:var(--purple); font-weight:500;">Quick setup:</div>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button v-if="serverLlm.configured" @click="useServer" class="btn btn-outline" style="flex:1; font-size:0.75rem; padding:0.3rem 0.6rem; border-color:var(--purple); color:var(--purple);">Server-managed</button>
             <button @click="useLocalHailo" class="btn btn-outline" style="flex:1; font-size:0.75rem; padding:0.3rem 0.6rem; border-color:var(--purple); color:var(--purple);">Local Hailo (10H)</button>
             <button @click="useLocalOllama" class="btn btn-outline" style="flex:1; font-size:0.75rem; padding:0.3rem 0.6rem; border-color:var(--purple); color:var(--purple);">Standard Ollama</button>
           </div>
@@ -635,16 +636,36 @@
         <div class="form-group">
           <label>Provider</label>
           <select v-model="cfg.provider">
+            <option value="server" :disabled="!serverLlm.configured">Server-managed (in-cluster / AISA){{ serverLlm.configured ? '' : ' — not configured on this instance' }}</option>
             <option value="anthropic">Anthropic</option>
             <option value="openai">OpenAI-compatible (OpenAI, Groq, Ollama…)</option>
           </select>
         </div>
-        <div class="form-group">
+
+        <!-- Server-managed: endpoint is fixed by the operator; only the model is a choice -->
+        <template v-if="cfg.provider === 'server'">
+          <div style="margin-bottom:1rem; padding:0.6rem 0.75rem; background:var(--surface); border:1px solid var(--border); border-radius:4px; font-size:0.82rem; color:var(--muted);">
+            Inference runs through the endpoint configured on this JFYI instance
+            (<strong style="color:var(--text);">{{ serverLlm.provider === 'anthropic' ? 'Anthropic' : 'OpenAI-compatible' }}</strong><span v-if="serverLlm.base_url"> · <code>{{ serverLlm.base_url }}</code></span>).
+            No API key is stored for you.
+            <div v-if="serverLlm.error" style="margin-top:0.3rem; color:var(--orange);">⚠ {{ serverLlm.error }}</div>
+          </div>
+          <div class="form-group">
+            <label>Model <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
+            <select v-if="serverLlm.models.length" v-model="cfg.model">
+              <option value="">Auto — {{ serverLlm.model || serverLlm.models[0] }} (first available)</option>
+              <option v-for="m in serverLlm.models" :key="m" :value="m">{{ m }}</option>
+            </select>
+            <input v-else type="text" v-model="cfg.model" :placeholder="serverLlm.model || 'leave blank for the server default'" />
+          </div>
+        </template>
+
+        <div v-if="cfg.provider !== 'server'" class="form-group">
           <label>Model</label>
           <input type="text" v-model="cfg.model"
             :placeholder="cfg.provider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'" />
         </div>
-        <div class="form-group">
+        <div v-if="cfg.provider !== 'server'" class="form-group">
           <label>
             API Key
             <span v-if="providerChanged" style="color:var(--red);font-weight:500;"> (required — provider changed)</span>
@@ -671,7 +692,7 @@
         <div style="display:flex;justify-content:space-between;margin-top:0.25rem;">
           <button @click="step = 1" class="btn btn-outline">Back</button>
           <button @click="runSynthesis" class="btn"
-            :disabled="synthesizing || !cfg.provider || !cfg.model || (!cfg.api_key && !savedCfg.has_key) || (providerChanged && !cfg.api_key)">
+            :disabled="synthesizing || !cfg.provider || (cfg.provider === 'server' ? !serverLlm.configured : (!cfg.model || (!cfg.api_key && !savedCfg.has_key) || (providerChanged && !cfg.api_key)))">
             {{ synthesizing ? 'Synthesizing…' : 'Synthesize' }}
           </button>
         </div>
@@ -1771,6 +1792,9 @@ const RuleSynthesis = {
     const priorities = reactive({});
     const cfg = reactive({ provider: 'anthropic', model: '', api_key: '', base_url: '' });
     const savedCfg = reactive({ configured: false, has_key: false, provider: '', model: '', base_url: '' });
+    // Server-managed inference endpoint (AISA Secret, direct key…) as reported by GET /api/llm/models.
+    const serverLlm = reactive({ configured: false, provider: '', base_url: '', model: '', models: [], error: '' });
+    const providerLabel = (p) => ({ anthropic: 'Anthropic', openai: 'OpenAI-compatible', server: 'Server-managed' }[p] || p);
     const showKey = ref(false);
     const synthesizing = ref(false);
     const applying = ref(false);
@@ -1784,8 +1808,9 @@ const RuleSynthesis = {
 
     // True when the user has changed the provider away from the last saved value.
     // In that case we must require a new API key — the old key belongs to a different provider.
+    // (Irrelevant for the server-managed provider, which stores no key.)
     const providerChanged = computed(() =>
-      savedCfg.configured && !!savedCfg.provider && savedCfg.provider !== cfg.provider
+      savedCfg.configured && !!savedCfg.provider && savedCfg.provider !== cfg.provider && cfg.provider !== 'server'
     );
 
     // Derive a user-friendly hint from the raw error string.
@@ -1797,6 +1822,9 @@ const RuleSynthesis = {
       }
       if (msg.includes('connect') || msg.includes('refused') || msg.includes('network') || msg.includes('timeout')) {
         return 'Cannot reach the model server. Check the Base URL and make sure the server is running.';
+      }
+      if (msg.includes('not configured')) {
+        return 'This JFYI instance has no server-managed inference endpoint. Pick Anthropic or OpenAI-compatible, or ask the operator to bind one (see docs/aisa-integration.md).';
       }
       if (msg.includes('provider') && msg.includes('key')) {
         return 'Enter a new API key for the selected provider.';
@@ -1813,6 +1841,13 @@ const RuleSynthesis = {
     const selectAll = () => props.rules.forEach(r => { selected[r.id] = true; });
     const deselectAll = () => props.rules.forEach(r => { selected[r.id] = false; });
     const setPriority = (id, stars) => { priorities[id] = stars; };
+
+    const useServer = () => {
+      cfg.provider = 'server';
+      cfg.model = '';
+      cfg.api_key = '';
+      cfg.base_url = '';
+    };
 
     const useLocalHailo = () => {
       cfg.provider = 'openai';
@@ -1833,6 +1868,16 @@ const RuleSynthesis = {
       return cfg.base_url.replace('{host}', window.location.hostname || 'localhost');
     });
 
+    const loadServerLlm = async () => {
+      try {
+        const res = await fetch(API + '/api/llm/models');
+        if (res.ok) {
+          const data = await res.json();
+          Object.assign(serverLlm, { configured: false, provider: '', base_url: '', model: '', models: [], error: '' }, data);
+        }
+      } catch (e) { /* endpoint info is a convenience; the dialog still works without it */ }
+    };
+
     const loadSavedCfg = async () => {
       const res = await fetch(API + '/api/profile/synthesis-config');
       if (res.ok) {
@@ -1842,25 +1887,38 @@ const RuleSynthesis = {
           cfg.provider = data.provider || 'anthropic';
           cfg.model = data.model || '';
           cfg.base_url = data.base_url || '';
+        } else if (serverLlm.configured) {
+          // First run on an instance with a server-managed endpoint: default to it.
+          cfg.provider = 'server';
         }
       }
     };
 
-    watch(() => props.show, (val) => { if (val) { step.value = 1; error.value = ''; synthesized.value = []; loadSavedCfg(); } });
+    // A model name saved for another provider (e.g. a Claude id) must not be pinned on the
+    // server-managed endpoint; keep it only if that endpoint actually advertises it.
+    watch(() => cfg.provider, (p) => {
+      if (p === 'server' && cfg.model && !serverLlm.models.includes(cfg.model)) cfg.model = '';
+    });
+
+    watch(() => props.show, async (val) => {
+      if (val) { step.value = 1; error.value = ''; synthesized.value = []; await loadServerLlm(); await loadSavedCfg(); }
+    });
 
     const runSynthesis = async () => {
       synthesizing.value = true;
       error.value = '';
       try {
-        const saveBody = { provider: cfg.provider, model: cfg.model, base_url: resolvedUrl.value || null };
-        if (cfg.api_key) saveBody.api_key = cfg.api_key;
+        const saveBody = cfg.provider === 'server'
+          ? { provider: 'server', model: cfg.model || '' }
+          : { provider: cfg.provider, model: cfg.model, base_url: resolvedUrl.value || null };
+        if (cfg.provider !== 'server' && cfg.api_key) saveBody.api_key = cfg.api_key;
         const saveRes = await fetch(API + '/api/profile/synthesis-config', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(saveBody),
         });
         if (!saveRes.ok) { const d = await saveRes.json(); throw new Error(d.detail || 'Failed to save config'); }
-        Object.assign(savedCfg, { configured: true, has_key: true, provider: cfg.provider, model: cfg.model, base_url: resolvedUrl.value || cfg.base_url });
+        Object.assign(savedCfg, { configured: true, has_key: true, provider: cfg.provider, model: cfg.model, base_url: cfg.provider === 'server' ? '' : (resolvedUrl.value || cfg.base_url) });
 
         const prioritiesObj = {};
         selectedIds.value.forEach(id => { prioritiesObj[id] = priorities[id] || 3; });
@@ -1907,12 +1965,12 @@ const RuleSynthesis = {
     };
 
     return {
-      step, selected, priorities, cfg, savedCfg, showKey,
+      step, selected, priorities, cfg, savedCfg, serverLlm, providerLabel, showKey,
       synthesizing, applying, synthesized, error,
       selectedCount, catColor, noteById,
       providerChanged, errorHint,
       selectAll, deselectAll, setPriority, runSynthesis,
-      useLocalHailo, useLocalOllama, resolvedUrl,
+      useServer, useLocalHailo, useLocalOllama, resolvedUrl,
       applyRules, close,
     };
   }

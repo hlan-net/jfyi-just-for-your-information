@@ -1,12 +1,13 @@
 """Tests for the JFYI semantic rule inference engine."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from jfyi.database import Database
 from jfyi.inference import _extract_factor_context
+from jfyi.llm import LLMClient, LLMResponse
 
 
 @pytest.fixture
@@ -18,16 +19,10 @@ def db(tmp_path):
 
 @pytest.fixture
 def engine(db):
-    """InferenceEngine with anthropic mocked out (not installed in test env)."""
-    with (
-        patch("jfyi.inference._ANTHROPIC_AVAILABLE", True),
-        patch("jfyi.inference.AsyncAnthropic") as mock_cls,
-    ):
-        mock_cls.return_value = MagicMock()
-        from jfyi.inference import InferenceEngine
+    """InferenceEngine with a mocked LLMClient."""
+    from jfyi.inference import InferenceEngine
 
-        eng = InferenceEngine(db=db, api_key="test-key")
-    return eng
+    return InferenceEngine(db=db, llm=AsyncMock(spec=LLMClient))
 
 
 # ── Database helpers ────────────────────────────────────────────────────────────
@@ -95,15 +90,7 @@ def test_mark_event_inferred_is_idempotent(db):
 
 
 def _make_llm_response(text: str):
-    content = MagicMock()
-    content.text = text
-    usage = MagicMock()
-    usage.input_tokens = 50
-    usage.output_tokens = 30
-    response = MagicMock()
-    response.content = [content]
-    response.usage = usage
-    return response
+    return LLMResponse(text=text, tokens=80)
 
 
 @pytest.mark.asyncio
@@ -123,7 +110,7 @@ async def test_infer_from_friction_writes_note(engine, db):
     note_payload = json.dumps(
         {"text": "Prefer explicit error handling", "category": "style", "confidence": 0.3}
     )
-    engine._client.messages.create = AsyncMock(return_value=_make_llm_response(note_payload))
+    engine._llm.complete = AsyncMock(return_value=_make_llm_response(note_payload))
 
     await engine._infer_from_friction(1, events[0])
 
@@ -154,7 +141,7 @@ async def test_infer_from_friction_parses_markdown_fenced_json(engine, db):
         + json.dumps({"text": "Prefer explicit types", "category": "style", "confidence": 0.3})
         + "\n```"
     )
-    engine._client.messages.create = AsyncMock(return_value=_make_llm_response(fenced))
+    engine._llm.complete = AsyncMock(return_value=_make_llm_response(fenced))
 
     await engine._infer_from_friction(1, events[0])
 
@@ -179,7 +166,7 @@ async def test_infer_from_friction_marks_event_processed(engine, db):
     )
     events = db.get_uninferred_friction_events(1)
     note_payload = json.dumps({"text": "Use early returns", "category": "style", "confidence": 0.3})
-    engine._client.messages.create = AsyncMock(return_value=_make_llm_response(note_payload))
+    engine._llm.complete = AsyncMock(return_value=_make_llm_response(note_payload))
 
     await engine._infer_from_friction(1, events[0])
 
@@ -200,7 +187,7 @@ async def test_infer_from_friction_skips_invalid_json(engine, db):
         interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
-    engine._client.messages.create = AsyncMock(return_value=_make_llm_response("not json"))
+    engine._llm.complete = AsyncMock(return_value=_make_llm_response("not json"))
 
     await engine._infer_from_friction(1, events[0])
 
@@ -221,7 +208,7 @@ async def test_infer_from_friction_skips_json_array(engine, db):
         interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
-    engine._client.messages.create = AsyncMock(return_value=_make_llm_response('[{"text": "bad"}]'))
+    engine._llm.complete = AsyncMock(return_value=_make_llm_response('[{"text": "bad"}]'))
 
     await engine._infer_from_friction(1, events[0])
 
@@ -242,7 +229,7 @@ async def test_infer_from_friction_skips_empty_text(engine, db):
         interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
-    engine._client.messages.create = AsyncMock(
+    engine._llm.complete = AsyncMock(
         return_value=_make_llm_response(json.dumps({"text": "  ", "category": "style"}))
     )
 
@@ -265,7 +252,7 @@ async def test_infer_from_friction_falls_back_on_bad_confidence(engine, db):
         interaction_id=interaction_id,
     )
     events = db.get_uninferred_friction_events(1)
-    engine._client.messages.create = AsyncMock(
+    engine._llm.complete = AsyncMock(
         return_value=_make_llm_response(
             json.dumps({"text": "Use early returns", "category": "style", "confidence": "high"})
         )
@@ -309,9 +296,9 @@ async def test_tick_respects_daily_token_cap(engine, db):
         description="Output corrected",
         interaction_id=interaction_id,
     )
-    engine._client.messages.create = AsyncMock()
+    engine._llm.complete = AsyncMock()
     await engine._tick()
-    engine._client.messages.create.assert_not_called()
+    engine._llm.complete.assert_not_called()
 
 
 # ── create_inference_engine factory ───────────────────────────────────────────
@@ -326,14 +313,38 @@ def test_create_inference_engine_disabled_by_default(db):
     assert result is None
 
 
-def test_create_inference_engine_no_api_key(db):
+def test_create_inference_engine_no_endpoint(db):
     from jfyi.inference import create_inference_engine
 
     with patch("jfyi.config.settings") as mock_settings:
         mock_settings.inference_enabled = True
         mock_settings.anthropic_api_key = None
+        mock_settings.openai_base_url = None
+        mock_settings.openai_api_key = None
+        mock_settings.llm_local_fallback_url = ""
         result = create_inference_engine(db)
     assert result is None
+
+
+def test_create_inference_engine_local_fallback(db):
+    """An explicitly enabled engine may fall back to the local OpenAI-compatible URL."""
+    from jfyi.inference import create_inference_engine
+
+    with patch("jfyi.config.settings") as mock_settings:
+        mock_settings.inference_enabled = True
+        mock_settings.anthropic_api_key = None
+        mock_settings.openai_base_url = None
+        mock_settings.openai_api_key = None
+        mock_settings.llm_model = None
+        mock_settings.inference_model = "claude-haiku-4-5-20251001"
+        mock_settings.llm_local_fallback_url = "http://localhost:11434/v1"
+        mock_settings.inference_interval_s = 600
+        mock_settings.inference_daily_token_cap = 50_000
+        result = create_inference_engine(db)
+    assert result is not None
+    assert result._llm.config.source == "local_default"
+    # The Anthropic default model id must not leak onto an OpenAI-compatible endpoint.
+    assert result._llm.model is None
 
 
 # ── Utility helpers ────────────────────────────────────────────────────────────

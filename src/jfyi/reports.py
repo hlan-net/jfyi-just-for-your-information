@@ -3,31 +3,25 @@
 Renders a print-styled HTML document via GET /reports/vibe-profile. The browser's
 native Print → Save as PDF produces the document; no PDF library is required.
 
-The narrative section uses the Anthropic SDK (the [harness] extra) and degrades
-gracefully when no JFYI_ANTHROPIC_API_KEY is set — structured sections render
-on their own. The LLM call pattern mirrors server._handle_warm_agent.
+The narrative section uses whichever inference endpoint ``jfyi.llm`` resolves
+(JFYI_ANTHROPIC_API_KEY or OPENAI_BASE_URL+OPENAI_API_KEY) and degrades
+gracefully when none is configured — structured sections render on their own.
+The LLM call pattern mirrors server._handle_warm_agent.
 """
 
 from __future__ import annotations
 
-import asyncio
 import html
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from .llm import create_llm_client
+
 if TYPE_CHECKING:
     from .analytics import AnalyticsEngine
     from .database import Database
-
-try:
-    from anthropic import Anthropic as _Anthropic
-
-    _ANTHROPIC_AVAILABLE = True
-except ImportError:
-    _Anthropic = None
-    _ANTHROPIC_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -70,23 +64,15 @@ def build_vibe_profile(user_id: int, db: Database, analytics: AnalyticsEngine) -
 
 
 async def synthesise_narrative(sections: dict[str, Any]) -> str | None:
-    """LLM prose portrait. Returns None when no SDK / no key / on error."""
-    from .config import settings
-
-    if not _ANTHROPIC_AVAILABLE or not settings.anthropic_api_key:
+    """LLM prose portrait. Returns None when no endpoint is configured / on error."""
+    client = create_llm_client()
+    if client is None:
         return None
 
     context = _format_context_for_llm(sections)
     try:
-        client = _Anthropic(api_key=settings.anthropic_api_key)
-        response = await asyncio.to_thread(
-            client.messages.create,
-            model="claude-haiku-4-5-20251001",
-            max_tokens=600,
-            system=_NARRATIVE_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": context}],
-        )
-        return response.content[0].text.strip()
+        response = await client.complete(_NARRATIVE_SYSTEM_PROMPT, context, max_tokens=600)
+        return response.text.strip()
     except Exception:
         logger.exception("synthesise_narrative: LLM call failed")
         return None

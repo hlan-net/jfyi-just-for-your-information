@@ -58,6 +58,12 @@ open http://localhost:8080/
 | `persistence.storageClass` | string | `""` | Override the default StorageClass |
 | `persistence.accessMode` | string | `ReadWriteOnce` | |
 | `env` | map | `JFYI_*` defaults | Environment variables injected into the container |
+| `inference.aisa.enabled` | bool | `false` | Bind the AISA-managed Secret (`OPENAI_BASE_URL` + `OPENAI_API_KEY`) via `envFrom` (optional ref — pod starts before the Secret exists). Declare the consumer in AISA with `secret: <inference.aisa.secretName>` |
+| `inference.aisa.secretName` | string | `""` (→ `<fullname>-aisa-key`) | Name of the Secret aisa writes into this namespace |
+| `inference.direct.enabled` | bool | `false` | Use direct provider credentials instead of (or alongside) AISA |
+| `inference.direct.existingSecret` | string | `""` | Pre-existing Secret with `JFYI_ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` + `OPENAI_BASE_URL` |
+| `inference.direct.anthropicApiKey` / `openaiApiKey` / `openaiBaseUrl` | string | `""` | Rendered into a chart-managed Secret when `existingSecret` is empty |
+| `inference.model` | string | `""` | `JFYI_LLM_MODEL` — model requested from an OpenAI-compatible endpoint; empty → first id from `GET /v1/models` |
 | `resources.requests` | object | `100m` CPU / `256Mi` RAM | |
 | `resources.limits` | object | `500m` CPU / `512Mi` RAM | |
 | `livenessProbe` / `readinessProbe` | object | HTTP GET `/api/profile/rules` on port `mcp` | Probe config |

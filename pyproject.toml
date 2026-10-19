@@ -26,9 +26,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-harness = [
-    "anthropic>=0.40.0",
-]
+# LLM features (summarizer, inference engine, synthesis, …) run over httpx against
+# Anthropic or any OpenAI-compatible endpoint — no vendor SDK. The extra is kept
+# empty so `pip install ".[harness]"` in existing scripts keeps working.
+harness = []
 # Production runtime: thin HTTP client. Conflicts with the full chromadb
 # package (shared `chromadb` import path), so the two extras are mutually
 # exclusive. The Dockerfile installs `.[vector]`. Tests install `.[dev]`

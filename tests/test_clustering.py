@@ -6,6 +6,7 @@ import pytest
 
 from jfyi.clustering import _MIN_EVENTS, ClusteringEngine
 from jfyi.database import Database
+from jfyi.llm import LLMResponse
 
 
 @pytest.fixture
@@ -166,7 +167,7 @@ def test_get_clusters_returns_empty_on_computation_error(db):
 
 
 def test_get_clusters_fallback_summary_without_llm(db):
-    engine = ClusteringEngine(db, k=2, api_key=None)
+    engine = ClusteringEngine(db, k=2, llm=None)
     _add_events(db, 10)
     clusters = engine.get_clusters(1)
     # Summaries should be non-empty (fallback uses representative descriptions)
@@ -175,27 +176,23 @@ def test_get_clusters_fallback_summary_without_llm(db):
 
 def test_summarize_uses_llm_when_available(db):
     mock_llm = MagicMock()
-    mock_response = MagicMock()
-    mock_response.content = [MagicMock(text="Avoid overly verbose output")]
-    mock_llm.messages.create.return_value = mock_response
+    mock_llm.complete_sync.return_value = LLMResponse("Avoid overly verbose output", 40)
 
-    engine = ClusteringEngine(db, k=2, api_key="test-key")
-    engine._llm = mock_llm
+    engine = ClusteringEngine(db, k=2, llm=mock_llm)
 
     _add_events(db, 10)
     clusters = engine.get_clusters(1)
 
-    mock_llm.messages.create.assert_called()
+    mock_llm.complete_sync.assert_called()
     # At least one cluster should have the LLM summary
     assert any(c["summary"] == "Avoid overly verbose output" for c in clusters)
 
 
 def test_summarize_falls_back_on_llm_error(db):
     mock_llm = MagicMock()
-    mock_llm.messages.create.side_effect = RuntimeError("API error")
+    mock_llm.complete_sync.side_effect = RuntimeError("API error")
 
-    engine = ClusteringEngine(db, k=2, api_key="test-key")
-    engine._llm = mock_llm
+    engine = ClusteringEngine(db, k=2, llm=mock_llm)
 
     _add_events(db, 10)
     # Should not raise; falls back to description-based summary

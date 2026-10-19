@@ -5,6 +5,13 @@ For planned future work and architectural phases, see [`ROADMAP.md`](ROADMAP.md)
 
 ---
 
+## [Unreleased]
+
+- **Inference endpoints & AISA integration** (`docs/aisa-integration.md`): every server-side LLM feature — background summarizer, inference engine, friction-cluster summaries, Vibe Profile narrative, `warm_agent` — now resolves one endpoint through the new `jfyi.llm` module, in order: `JFYI_ANTHROPIC_API_KEY` → `OPENAI_BASE_URL` + `OPENAI_API_KEY` (the standard, unprefixed names, so an AISA-managed Secret routes JFYI through the in-cluster proxy with no code change; `JFYI_OPENAI_*` accepted too) → local Ollama fallback (`JFYI_LLM_LOCAL_FALLBACK_URL`, explicitly enabled engines only). Model for OpenAI-compatible endpoints via `JFYI_LLM_MODEL` / `LLM_MODEL`, else discovered once from `GET /v1/models`. Direct Anthropic keys keep working unchanged and always take precedence.
+- **No vendor SDK**: both providers are driven over `httpx`; the `anthropic` package is no longer imported anywhere and the `[harness]` extra is now empty (kept so existing install commands succeed). Prompt caching on Anthropic is preserved.
+- **Helm**: `inference.aisa.enabled` binds AISA's Secret (`<fullname>-aisa-key`, `optional: true` so the pod starts before AISA mints the key; release notes print the consumer declaration); `inference.direct.*` renders a chart-managed Secret or references `existingSecret`; `inference.model` sets `JFYI_LLM_MODEL`.
+- **Dashboard rule synthesis**: new **Server-managed (in-cluster / AISA)** provider next to Anthropic and OpenAI-compatible — uses the instance endpoint, stores no key for the user, model picker filled from the new `GET /api/llm/models` (proxies `/v1/models`, never exposes the key). Pre-selected on instances where an endpoint is configured; disabled with a hint otherwise. `RuleSynthesizer` gains `from_user_config` / `from_server_config` and shares the same client.
+
 ## [v2.17.2] — Plugin transport fix, Journal refocus and MCP SDK security floor
 
 - **Security: `mcp` requirement raised to `>=1.28.1,<2`**: 1.27.1 and earlier carry high-severity advisories in the SDK's HTTP transports (GHSA-jpw9-pfvf-9f58, session requests served without verifying the authenticated principal; GHSA-hvrp-rf83-w775, experimental task handlers) and 1.28.1 fixes the WebSocket Host/Origin one (GHSA-vj7q-gjh5-988w). The `<2` ceiling stays: `mcp` 2.x removes the low-level `Server` decorators and `Server.run(stateless=)`, and is scheduled for v2.18.0.

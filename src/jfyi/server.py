@@ -24,17 +24,10 @@ from pydantic import AnyUrl
 
 from .analytics import AnalyticsEngine
 from .database import Database
+from .llm import create_llm_client
 from .memory import MemoryFacade
 from .prompt import count_tokens, render_read_only_block, trim_rules_to_budget
 from .serializer import PayloadSerializer
-
-try:
-    from anthropic import Anthropic as _Anthropic
-
-    _ANTHROPIC_AVAILABLE = True
-except ImportError:
-    _Anthropic = None  # type: ignore[assignment,misc]
-    _ANTHROPIC_AVAILABLE = False
 
 _serializer = PayloadSerializer()
 
@@ -473,26 +466,18 @@ async def _handle_warm_agent(
             )
         return [TextContent(type="text", text="\n".join(lines))]
 
-    # Try LLM synthesis
-    from .config import settings
-
-    if _ANTHROPIC_AVAILABLE and settings.anthropic_api_key:
+    # Try LLM synthesis via whichever endpoint jfyi.llm resolves
+    client = create_llm_client()
+    if client is not None:
         try:
-            client = _Anthropic(api_key=settings.anthropic_api_key)
             sample_text = "\n".join(f"- {s}" for s in summaries[:15])
-            response = await asyncio.to_thread(
-                client.messages.create,
-                model="claude-haiku-4-5-20251001",
-                max_tokens=400,
-                system=_WARM_AGENT_PROMPT,
-                messages=[{"role": "user", "content": sample_text}],
-            )
-            brief = response.content[0].text.strip()
+            response = await client.complete(_WARM_AGENT_PROMPT, sample_text, max_tokens=400)
+            brief = response.text.strip()
             return [TextContent(type="text", text=f"Developer Vibe Brief:\n{brief}")]
         except Exception:
             pass  # fall through to summary-based fallback
 
-    # No API key or LLM failure — join representative summaries
+    # No endpoint configured or LLM failure — join representative summaries
     agent_name = arguments.get("agent_name", "agent")
     brief = "\n".join(f"- {s}" for s in summaries[:5])
     return [

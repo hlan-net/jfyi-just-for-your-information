@@ -48,3 +48,14 @@ WARNING: persistence.enabled=false — the SQLite store uses an emptyDir and
 will be wiped when the pod restarts. Set persistence.enabled=true for any
 non-throwaway deployment.
 {{- end }}
+
+{{- if .Values.inference.aisa.enabled }}
+
+Inference via AISA is enabled. Declare this consumer in AISA (Admin UI → Create
+Consumer, or Consul KV aisa/consumers/<name>) with:
+   Namespace:     {{ .Release.Namespace }}
+   Target Secret: {{ include "jfyi-mcp-server.aisaSecretName" . }}
+The pod starts without the Secret and picks the credentials up on its next
+restart once aisa has written it. Check with:
+   kubectl get secret -n {{ .Release.Namespace }} {{ include "jfyi-mcp-server.aisaSecretName" . }}
+{{- end }}

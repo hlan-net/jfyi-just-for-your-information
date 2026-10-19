@@ -1,8 +1,9 @@
 """Background summarizer — distils session interactions into episodic memory.
 
-Requires the optional `anthropic` package (pip install jfyi-mcp-server[harness]).
-If the package is absent or JFYI_SUMMARIZER_ENABLED=false, this module loads
-safely but create_summarizer() returns None and no background task is started.
+The LLM endpoint is resolved through ``jfyi.llm`` (Anthropic key, OpenAI-compatible
+env such as an AISA-managed Secret, or the local fallback). If nothing is
+configured or JFYI_SUMMARIZER_ENABLED=false, create_summarizer() returns None
+and no background task is started.
 """
 
 from __future__ import annotations
@@ -12,16 +13,10 @@ import logging
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 
+from .llm import LLMClient, create_llm_client
+
 if TYPE_CHECKING:
     from .database import Database
-
-try:
-    from anthropic import AsyncAnthropic
-
-    _ANTHROPIC_AVAILABLE = True
-except ImportError:
-    AsyncAnthropic = None  # type: ignore[assignment,misc]
-    _ANTHROPIC_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -89,21 +84,15 @@ class Summarizer:
     def __init__(
         self,
         db: Database,
-        api_key: str,
-        model: str = "claude-haiku-4-5-20251001",
+        llm: LLMClient,
         interval_s: int = 300,
         daily_token_cap: int = 100_000,
         min_interactions: int = 3,
         compaction_trigger_count: int = 10,
         compaction_batch_size: int = 5,
     ) -> None:
-        if not _ANTHROPIC_AVAILABLE:
-            raise RuntimeError(
-                "anthropic package is required: pip install 'jfyi-mcp-server[harness]'"
-            )
         self._db = db
-        self._client = AsyncAnthropic(api_key=api_key)
-        self._model = model
+        self._llm = llm
         self._interval_s = interval_s
         self._daily_token_cap = daily_token_cap
         self._min_interactions = min_interactions
@@ -195,19 +184,8 @@ class Summarizer:
         formatted = "\n".join(
             f"[{i + 1}] {e['event_type']}: {e['summary']}" for i, e in enumerate(entries)
         )
-        response = await self._client.messages.create(
-            model=self._model,
-            max_tokens=500,
-            system=[
-                {
-                    "type": "text",
-                    "text": _COMPACTION_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=[{"role": "user", "content": formatted}],
-        )
-        tokens = response.usage.input_tokens + response.usage.output_tokens
+        response = await self._llm.complete(_COMPACTION_PROMPT, formatted, max_tokens=500)
+        tokens = response.tokens
         self._tokens_used_today += tokens
 
         entry_ids = [e["id"] for e in entries]
@@ -215,7 +193,7 @@ class Summarizer:
             self._db.episodic_compact,
             session_id=session_id,
             user_id=user_id,
-            summary=response.content[0].text,
+            summary=response.text,
             context={"compacted_entry_ids": entry_ids, "tokens_used": tokens},
             entry_ids_to_delete=entry_ids,
         )
@@ -233,21 +211,10 @@ class Summarizer:
             return
 
         user_message = _format_session(data)
-        response = await self._client.messages.create(
-            model=self._model,
-            max_tokens=500,
-            system=[
-                {
-                    "type": "text",
-                    "text": _SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=[{"role": "user", "content": user_message}],
-        )
-        tokens = response.usage.input_tokens + response.usage.output_tokens
+        response = await self._llm.complete(_SYSTEM_PROMPT, user_message, max_tokens=500)
+        tokens = response.tokens
         self._tokens_used_today += tokens
-        summary_text = response.content[0].text
+        summary_text = response.text
 
         interaction_ids = [i["id"] for i in data["interactions"]]
         await asyncio.to_thread(
@@ -272,19 +239,18 @@ def create_summarizer(db: Database) -> Summarizer | None:
 
     if not settings.summarizer_enabled:
         return None
-    if not settings.anthropic_api_key:
-        logger.warning("JFYI_SUMMARIZER_ENABLED=true but JFYI_ANTHROPIC_API_KEY is not set.")
-        return None
-    if not _ANTHROPIC_AVAILABLE:
+    llm = create_llm_client("summarizer_model", allow_local_fallback=True)
+    if llm is None:
         logger.warning(
-            "JFYI_SUMMARIZER_ENABLED=true but anthropic package is not installed. "
-            "Run: pip install 'jfyi-mcp-server[harness]'"
+            "JFYI_SUMMARIZER_ENABLED=true but no inference endpoint is configured "
+            "(JFYI_ANTHROPIC_API_KEY, OPENAI_BASE_URL+OPENAI_API_KEY or "
+            "JFYI_LLM_LOCAL_FALLBACK_URL)."
         )
         return None
+    logger.info("Summarizer inference endpoint: %s", llm.config.public())
     return Summarizer(
         db=db,
-        api_key=settings.anthropic_api_key,
-        model=settings.summarizer_model,
+        llm=llm,
         interval_s=settings.summarizer_interval_s,
         daily_token_cap=settings.summarizer_daily_token_cap,
         min_interactions=settings.summarizer_min_interactions,

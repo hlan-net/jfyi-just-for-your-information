@@ -37,7 +37,7 @@ Full framing in [`docs/architecture.md`](docs/architecture.md).
 - Optional features require extras and env flags:
   - **Vector search**: `pip install -e ".[vector]"` + `JFYI_ENABLE_VECTOR_DB=true`
   - **Clustering**: `pip install -e ".[cluster]"` + `JFYI_ENABLE_CLUSTERING=true`
-  - **LLM features**: `pip install -e ".[harness]"` + `JFYI_ANTHROPIC_API_KEY=sk-...`
+  - **LLM features**: no extra needed. Set `JFYI_ANTHROPIC_API_KEY=sk-...`, or `OPENAI_BASE_URL` + `OPENAI_API_KEY` for any OpenAI-compatible endpoint (in-cluster AISA, Ollama…); see `docs/aisa-integration.md`
 - The `vector` extra (`chromadb-client`) and `dev` extra (full `chromadb`) share the same import path and are mutually exclusive in production images.
 
 ## Testing Quirks

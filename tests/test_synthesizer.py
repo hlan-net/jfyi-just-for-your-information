@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
+import httpx
 import pytest
 
+from jfyi.llm import LLMClient, LLMConfig
 from jfyi.synthesizer import RuleSynthesizer, _format_rules, _parse_response
 
 # ── Pure helper tests ──────────────────────────────────────────────────────────
@@ -92,23 +94,38 @@ def test_parse_response_non_array_raises():
 
 def test_synthesizer_rejects_unknown_provider():
     with pytest.raises(ValueError, match="Unknown provider"):
-        RuleSynthesizer("ollama", "llama3", "key")
+        RuleSynthesizer.from_user_config("ollama", "llama3", "key")
 
 
 async def test_synthesizer_too_few_rules_raises():
-    synth = RuleSynthesizer("anthropic", "claude-haiku", "sk-ant-test")
+    synth = RuleSynthesizer.from_user_config("anthropic", "claude-haiku", "sk-ant-test")
     with pytest.raises(ValueError, match="At least 2"):
         await synth.synthesize([{"id": 1, "text": "Only rule", "category": "general"}], {1: 3})
 
 
-# ── RuleSynthesizer HTTP calls (mocked) ───────────────────────────────────────
+def test_from_server_config_none_when_unconfigured():
+    with patch("jfyi.synthesizer.create_llm_client", return_value=None):
+        assert RuleSynthesizer.from_server_config() is None
 
 
-def _make_mock_response(body: dict) -> MagicMock:
-    mock = MagicMock()
-    mock.raise_for_status = MagicMock()
-    mock.json.return_value = body
-    return mock
+def test_from_server_config_pins_model_override():
+    client = LLMClient(LLMConfig("openai", "aisa-key", "http://aisa/v1", None, "openai_env"))
+    with patch("jfyi.synthesizer.create_llm_client", return_value=client):
+        synth = RuleSynthesizer.from_server_config(model="qwen3:8b")
+    assert synth is not None
+    assert synth.client.model == "qwen3:8b"
+    assert synth.client.base_url == "http://aisa/v1"
+
+
+# ── RuleSynthesizer HTTP calls (mocked transport) ─────────────────────────────
+
+
+def _transport_returning(body: dict, seen: list[httpx.Request]) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=body)
+
+    return httpx.MockTransport(handler)
 
 
 async def test_synthesize_anthropic_provider():
@@ -120,21 +137,22 @@ async def test_synthesize_anthropic_provider():
             "source_note_ids": [1, 2],
         }
     ]
-    anthropic_response = {"content": [{"text": json.dumps(synth_output)}]}
+    anthropic_response = {"content": [{"type": "text", "text": json.dumps(synth_output)}]}
 
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value.post = AsyncMock(
-        return_value=_make_mock_response(anthropic_response)
+    seen: list[httpx.Request] = []
+    synth = RuleSynthesizer.from_user_config(
+        "anthropic", "claude-haiku-4-5-20251001", "sk-ant-test"
     )
+    synth.client._transport = _transport_returning(anthropic_response, seen)
+    rules = [
+        {"id": 1, "text": "Use dependency injection", "category": "architecture"},
+        {"id": 2, "text": "Avoid global state", "category": "architecture"},
+    ]
+    result = await synth.synthesize(rules, {1: 5, 2: 4})
 
-    with patch("jfyi.synthesizer.httpx.AsyncClient", return_value=mock_ctx):
-        synth = RuleSynthesizer("anthropic", "claude-haiku-4-5-20251001", "sk-ant-test")
-        rules = [
-            {"id": 1, "text": "Use dependency injection", "category": "architecture"},
-            {"id": 2, "text": "Avoid global state", "category": "architecture"},
-        ]
-        result = await synth.synthesize(rules, {1: 5, 2: 4})
-
+    assert seen[0].url == "https://api.anthropic.com/v1/messages"
+    assert seen[0].headers["x-api-key"] == "sk-ant-test"
+    assert json.loads(seen[0].content)["model"] == "claude-haiku-4-5-20251001"
     assert len(result) == 1
     assert result[0]["text"] == "Prefer DI over globals"
     assert result[0]["category"] == "architecture"
@@ -152,19 +170,17 @@ async def test_synthesize_openai_provider():
     ]
     openai_response = {"choices": [{"message": {"content": json.dumps(synth_output)}}]}
 
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value.post = AsyncMock(
-        return_value=_make_mock_response(openai_response)
-    )
+    seen: list[httpx.Request] = []
+    synth = RuleSynthesizer.from_user_config("openai", "gpt-4o-mini", "sk-test")
+    synth.client._transport = _transport_returning(openai_response, seen)
+    rules = [
+        {"id": 1, "text": "Write unit tests", "category": "testing"},
+        {"id": 2, "text": "Follow TDD", "category": "testing"},
+    ]
+    result = await synth.synthesize(rules, {1: 4, 2: 5})
 
-    with patch("jfyi.synthesizer.httpx.AsyncClient", return_value=mock_ctx):
-        synth = RuleSynthesizer("openai", "gpt-4o-mini", "sk-test")
-        rules = [
-            {"id": 1, "text": "Write unit tests", "category": "testing"},
-            {"id": 2, "text": "Follow TDD", "category": "testing"},
-        ]
-        result = await synth.synthesize(rules, {1: 4, 2: 5})
-
+    assert seen[0].url == "https://api.openai.com/v1/chat/completions"
+    assert seen[0].headers["authorization"] == "Bearer sk-test"
     assert len(result) == 1
     assert result[0]["text"] == "Write tests first"
     assert result[0]["source_note_ids"] == [2]
