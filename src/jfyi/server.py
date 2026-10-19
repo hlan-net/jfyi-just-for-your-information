@@ -12,16 +12,17 @@ if TYPE_CHECKING:
 
 import re
 
+from mcp import types
 from mcp.server import Server
-from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.server.context import ServerRequestContext
 from mcp.server.models import InitializationOptions
 from mcp.types import (
     Resource,
     TextContent,
     Tool,
 )
-from pydantic import AnyUrl
 
+from . import __version__
 from .analytics import AnalyticsEngine
 from .database import Database
 from .llm import create_llm_client
@@ -949,12 +950,16 @@ def build_mcp_server(
     user_id: int = 1,
     retriever: Retriever | None = None,
 ) -> Server:
-    """Build and configure the MCP server with all JFYI tools."""
+    """Build and configure the MCP server with all JFYI tools.
 
-    server = Server("jfyi")
+    mcp 2.x wires request handlers through the ``Server`` constructor
+    (``on_list_tools`` …); each handler receives the per-request
+    ``ServerRequestContext`` and the parsed params and returns a typed result.
+    """
 
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
+    async def on_list_tools(
+        ctx: ServerRequestContext[Any], params: types.PaginatedRequestParams | None
+    ) -> types.ListToolsResult:
         # Progressive disclosure: expose only the router + always-on tools.
         # Agents call discover_tools() to access the rest without pre-loading
         # full schemas into context.
@@ -967,41 +972,62 @@ def build_mcp_server(
             for tname, info in _TOOL_CATALOGUE.items()
             if info["always_on"]
         ]
-        return [
-            Tool(
-                name="discover_tools",
-                description=(
-                    "List available JFYI capabilities or get full schema for a specific tool. "
-                    "Call this before assuming a tool does not exist."
+        return types.ListToolsResult(
+            tools=[
+                Tool(
+                    name="discover_tools",
+                    description=(
+                        "List available JFYI capabilities or get full schema for a specific "
+                        "tool. Call this before assuming a tool does not exist."
+                    ),
+                    inputSchema=_DISCOVER_SCHEMA,
                 ),
-                inputSchema=_DISCOVER_SCHEMA,
-            ),
-            *always_on,
-        ]
-
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        return await dispatch_tool(
-            name, arguments, db, analytics, user_id=user_id, retriever=retriever
+                *always_on,
+            ]
         )
 
-    @server.list_resources()
-    async def list_resources() -> list[Resource]:
-        return [
-            Resource(
-                uri=AnyUrl("jfyi://sessions/current/telemetry"),
-                name="Vibe Telemetry",
-                description=(
-                    "Real-time session alignment score, friction trend, and corrective hints. "
-                    "Use jfyi://sessions/{session_id}/telemetry for a specific session."
-                ),
-                mimeType="application/json",
+    async def on_call_tool(
+        ctx: ServerRequestContext[Any], params: types.CallToolRequestParams
+    ) -> types.CallToolResult:
+        # Mirror the 1.x decorator: a failing tool is reported to the agent as
+        # an error result, not surfaced as a JSON-RPC error that ends the turn.
+        try:
+            content = await dispatch_tool(
+                params.name,
+                params.arguments or {},
+                db,
+                analytics,
+                user_id=user_id,
+                retriever=retriever,
             )
-        ]
+        except Exception as exc:
+            return types.CallToolResult(
+                content=[TextContent(type="text", text=str(exc))], isError=True
+            )
+        return types.CallToolResult(content=content)
 
-    @server.read_resource()
-    async def read_resource(uri: AnyUrl | str) -> list[ReadResourceContents]:
-        uri_str = str(uri)
+    async def on_list_resources(
+        ctx: ServerRequestContext[Any], params: types.PaginatedRequestParams | None
+    ) -> types.ListResourcesResult:
+        return types.ListResourcesResult(
+            resources=[
+                Resource(
+                    uri="jfyi://sessions/current/telemetry",
+                    name="Vibe Telemetry",
+                    description=(
+                        "Real-time session alignment score, friction trend, and corrective "
+                        "hints. Use jfyi://sessions/{session_id}/telemetry for a specific "
+                        "session."
+                    ),
+                    mimeType="application/json",
+                )
+            ]
+        )
+
+    async def on_read_resource(
+        ctx: ServerRequestContext[Any], params: types.ReadResourceRequestParams
+    ) -> types.ReadResourceResult:
+        uri_str = str(params.uri)
         match = re.match(r"jfyi://sessions/([^/]+)/telemetry$", uri_str)
         if not match:
             raise ValueError(f"Unknown resource URI: {uri_str}")
@@ -1020,14 +1046,27 @@ def build_mcp_server(
                         "corrective_hints": [],
                     }
                 )
-                return [ReadResourceContents(content=payload, mime_type="application/json")]
+                return _json_resource(uri_str, payload)
         else:
             session_id = session_id_raw
 
         telemetry = await asyncio.to_thread(db.get_session_telemetry, user_id, session_id)
-        return [ReadResourceContents(content=json.dumps(telemetry), mime_type="application/json")]
+        return _json_resource(uri_str, json.dumps(telemetry))
 
-    return server
+    return Server(
+        "jfyi",
+        version=__version__,
+        on_list_tools=on_list_tools,
+        on_call_tool=on_call_tool,
+        on_list_resources=on_list_resources,
+        on_read_resource=on_read_resource,
+    )
+
+
+def _json_resource(uri: str, payload: str) -> types.ReadResourceResult:
+    return types.ReadResourceResult(
+        contents=[types.TextResourceContents(uri=uri, mimeType="application/json", text=payload)]
+    )
 
 
 async def run_stdio(
@@ -1051,10 +1090,8 @@ async def run_stdio(
                 write_stream,
                 InitializationOptions(
                     server_name="jfyi",
-                    server_version="2.1.0",
-                    capabilities=server.get_capabilities(
-                        notification_options=None, experimental_capabilities={}
-                    ),
+                    server_version=__version__,
+                    capabilities=server.get_capabilities(),
                 ),
             )
     finally:
