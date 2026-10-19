@@ -96,6 +96,16 @@ helm install my-jfyi \
 
 Pin a specific version with `--version <x.y.z>`. See the [GHCR package listing](https://github.com/hlan-net/jfyi-just-for-your-information/pkgs/container/charts%2Fjfyi-mcp-server) for available versions.
 
+### Inference (LLM features)
+
+The background summarizer, rule inference, cluster summaries, Vibe Profile narrative and `warm_agent` all resolve one inference endpoint, in this order: `JFYI_ANTHROPIC_API_KEY` → `OPENAI_BASE_URL` + `OPENAI_API_KEY` (any OpenAI-compatible server) → local Ollama fallback for explicitly enabled engines.
+
+- **In-cluster via [AISA](docs/aisa-integration.md):** `--set inference.aisa.enabled=true`, then declare JFYI as a consumer in AISA. AISA writes the `OPENAI_*` Secret into the namespace; nothing else to configure.
+- **Direct keys:** `--set inference.direct.enabled=true --set inference.direct.anthropicApiKey=sk-ant-...` (or `openaiBaseUrl` + `openaiApiKey`, or `existingSecret`).
+- **Standalone / Docker:** export the same variables. No vendor SDK is needed.
+
+Full details, model selection and troubleshooting: [`docs/aisa-integration.md`](docs/aisa-integration.md).
+
 ## Client Configuration
 
 ### Port-forward the service

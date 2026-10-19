@@ -1,7 +1,10 @@
 """Rule Synthesizer — condenses a developer constitution via an LLM.
 
 Supports Anthropic Messages API and any OpenAI-compatible endpoint (OpenAI,
-Groq, Ollama, etc.) using httpx — no extra SDK dependency required.
+Groq, Ollama, an in-cluster AISA proxy, …) through :class:`jfyi.llm.LLMClient`.
+The dashboard lets each user bring their own credentials
+(:meth:`RuleSynthesizer.from_user_config`) or reuse the server-managed endpoint
+(:meth:`RuleSynthesizer.from_server_config`).
 """
 
 from __future__ import annotations
@@ -9,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 
-import httpx
+from .llm import LLMClient, LLMConfig, create_llm_client
 
 _SYSTEM_PROMPT = (
     "You are a developer-constitution curator for JFYI. "
@@ -76,74 +79,57 @@ def _parse_response(text: str) -> list[dict]:
     return result
 
 
+SERVER_PROVIDER = "server"
+USER_PROVIDERS = ("anthropic", "openai")
+
+
 class RuleSynthesizer:
     """Condenses a developer constitution via a configured LLM."""
 
-    ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-    OPENAI_DEFAULT_BASE = "https://api.openai.com/v1"
+    def __init__(self, client: LLMClient) -> None:
+        self._client = client
 
-    def __init__(
-        self,
+    @classmethod
+    def from_user_config(
+        cls,
         provider: str,
         model: str,
         api_key: str,
         base_url: str | None = None,
         timeout_s: float = 60.0,
-    ) -> None:
-        if provider not in ("anthropic", "openai"):
+    ) -> RuleSynthesizer:
+        """Build from credentials the user saved in the dashboard."""
+        if provider not in USER_PROVIDERS:
             raise ValueError(f"Unknown provider '{provider}'. Use 'anthropic' or 'openai'.")
-        self._provider = provider
-        self._model = model
-        self._api_key = api_key
-        self._base_url = (base_url or self.OPENAI_DEFAULT_BASE).rstrip("/")
-        self._timeout = timeout_s
+        config = LLMConfig(
+            provider=provider,  # type: ignore[arg-type]
+            api_key=api_key,
+            base_url=base_url.rstrip("/") if base_url else None,
+            model=model or None,
+            source="user",
+        )
+        return cls(LLMClient(config, timeout_s=timeout_s))
+
+    @classmethod
+    def from_server_config(
+        cls, model: str | None = None, timeout_s: float = 60.0
+    ) -> RuleSynthesizer | None:
+        """Build on the server-managed endpoint (AISA Secret, direct key, …), or None."""
+        client = create_llm_client(timeout_s=timeout_s)
+        if client is None:
+            return None
+        if model:
+            client = LLMClient(client.config.with_model(model), timeout_s=timeout_s)
+        return cls(client)
+
+    @property
+    def client(self) -> LLMClient:
+        return self._client
 
     async def synthesize(self, rules: list[dict], priorities: dict[int, int]) -> list[dict]:
-        """Return synthesized rules as {rule, category, confidence} dicts."""
+        """Return synthesized rules as {text, category, confidence, source_note_ids} dicts."""
         if len(rules) < 2:
             raise ValueError("At least 2 rules are required for synthesis.")
         user_message = _format_rules(rules, priorities)
-        if self._provider == "anthropic":
-            raw = await self._call_anthropic(user_message)
-        else:
-            raw = await self._call_openai(user_message)
-        return _parse_response(raw)
-
-    async def _call_anthropic(self, user_message: str) -> str:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                self.ANTHROPIC_URL,
-                headers={
-                    "x-api-key": self._api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": self._model,
-                    "max_tokens": 2000,
-                    "system": _SYSTEM_PROMPT,
-                    "messages": [{"role": "user", "content": user_message}],
-                },
-            )
-        resp.raise_for_status()
-        return resp.json()["content"][0]["text"]
-
-    async def _call_openai(self, user_message: str) -> str:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                f"{self._base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": self._model,
-                    "max_tokens": 2000,
-                    "messages": [
-                        {"role": "system", "content": _SYSTEM_PROMPT},
-                        {"role": "user", "content": user_message},
-                    ],
-                },
-            )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
+        response = await self._client.complete(_SYSTEM_PROMPT, user_message, max_tokens=2000)
+        return _parse_response(response.text)

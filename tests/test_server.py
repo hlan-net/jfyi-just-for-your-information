@@ -336,7 +336,7 @@ async def test_warm_agent_returns_brief_without_llm(ctx):
 
 
 async def test_warm_agent_uses_llm_when_available(ctx):
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import AsyncMock, patch
 
     db, analytics = ctx
     agent_id = db.get_or_create_agent(1, "claude")
@@ -345,26 +345,22 @@ async def test_warm_agent_uses_llm_when_available(ctx):
     )
     db.episodic_add("s1", 1, "interaction_summary", "Prefers explicit types over implicit ones")
 
-    mock_client = MagicMock()
-    mock_response = MagicMock()
-    mock_response.content = [MagicMock(text="- Prefer explicit types\n- Avoid verbose output")]
-    mock_client.messages.create.return_value = mock_response
-    mock_anthropic_cls = MagicMock(return_value=mock_client)
+    from jfyi.llm import LLMResponse
 
-    with (
-        patch("jfyi.server._ANTHROPIC_AVAILABLE", True),
-        patch("jfyi.server._Anthropic", mock_anthropic_cls),
-        patch("jfyi.config.settings") as mock_settings,
-    ):
-        mock_settings.anthropic_api_key = "test-key"
+    mock_client = AsyncMock()
+    mock_client.complete.return_value = LLMResponse(
+        "- Prefer explicit types\n- Avoid verbose output", 60
+    )
+
+    with patch("jfyi.server.create_llm_client", return_value=mock_client):
         result = await dispatch_tool("warm_agent", {}, db, analytics)
 
     assert "Vibe Brief" in result[0].text
-    mock_client.messages.create.assert_called_once()
+    mock_client.complete.assert_called_once()
 
 
 async def test_warm_agent_falls_back_on_llm_error(ctx):
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import AsyncMock, patch
 
     db, analytics = ctx
     agent_id = db.get_or_create_agent(1, "claude")
@@ -372,16 +368,10 @@ async def test_warm_agent_falls_back_on_llm_error(ctx):
         1, agent_id=agent_id, session_id="s1", was_corrected=False, friction_score=0.0
     )
 
-    mock_client = MagicMock()
-    mock_client.messages.create.side_effect = RuntimeError("API error")
-    mock_anthropic_cls = MagicMock(return_value=mock_client)
+    mock_client = AsyncMock()
+    mock_client.complete.side_effect = RuntimeError("API error")
 
-    with (
-        patch("jfyi.server._ANTHROPIC_AVAILABLE", True),
-        patch("jfyi.server._Anthropic", mock_anthropic_cls),
-        patch("jfyi.config.settings") as mock_settings,
-    ):
-        mock_settings.anthropic_api_key = "test-key"
+    with patch("jfyi.server.create_llm_client", return_value=mock_client):
         result = await dispatch_tool("warm_agent", {}, db, analytics)
 
     assert result[0].text  # non-empty fallback, no exception raised

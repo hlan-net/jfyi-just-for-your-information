@@ -1,6 +1,6 @@
 """Tests for the Vibe Coder Profile report (jfyi.reports)."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from jfyi.analytics import AnalyticsEngine
 from jfyi.auth import create_session_cookie
 from jfyi.database import Database
+from jfyi.llm import LLMResponse
 from jfyi.reports import (
     build_vibe_profile,
     render_vibe_profile_html,
@@ -77,19 +78,11 @@ def test_build_vibe_profile_includes_high_confidence_rules(ctx):
 
 
 @pytest.mark.asyncio
-async def test_synthesise_narrative_none_when_no_anthropic():
-    with patch("jfyi.reports._ANTHROPIC_AVAILABLE", False):
-        result = await synthesise_narrative({"constitution": {}})
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_synthesise_narrative_none_when_no_api_key():
-    with (
-        patch("jfyi.reports._ANTHROPIC_AVAILABLE", True),
-        patch("jfyi.config.settings") as mock_settings,
-    ):
+async def test_synthesise_narrative_none_when_no_endpoint():
+    with patch("jfyi.config.settings") as mock_settings:
         mock_settings.anthropic_api_key = None
+        mock_settings.openai_base_url = None
+        mock_settings.openai_api_key = None
         sections = {
             "constitution": {},
             "signature_patterns": {"high_confidence_rules": [], "vibe_matches": []},
@@ -103,11 +96,8 @@ async def test_synthesise_narrative_none_when_no_api_key():
 
 @pytest.mark.asyncio
 async def test_synthesise_narrative_returns_llm_text():
-    mock_client = MagicMock()
-    mock_response = MagicMock()
-    mock_response.content = [MagicMock(text="You are a developer who values clarity.")]
-    mock_client.messages.create.return_value = mock_response
-    mock_cls = MagicMock(return_value=mock_client)
+    mock_client = AsyncMock()
+    mock_client.complete.return_value = LLMResponse("You are a developer who values clarity.", 90)
     sections = {
         "constitution": {"style": [{"text": "Prefer early returns", "confidence": 0.8}]},
         "signature_patterns": {"high_confidence_rules": [], "vibe_matches": []},
@@ -115,22 +105,16 @@ async def test_synthesise_narrative_returns_llm_text():
         "agent_affinity": [],
         "best_work": [],
     }
-    with (
-        patch("jfyi.reports._ANTHROPIC_AVAILABLE", True),
-        patch("jfyi.reports._Anthropic", mock_cls),
-        patch("jfyi.config.settings") as mock_settings,
-    ):
-        mock_settings.anthropic_api_key = "test-key"
+    with patch("jfyi.reports.create_llm_client", return_value=mock_client):
         result = await synthesise_narrative(sections)
     assert result == "You are a developer who values clarity."
-    mock_client.messages.create.assert_called_once()
+    mock_client.complete.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_synthesise_narrative_returns_none_on_llm_error():
-    mock_client = MagicMock()
-    mock_client.messages.create.side_effect = RuntimeError("API down")
-    mock_cls = MagicMock(return_value=mock_client)
+    mock_client = AsyncMock()
+    mock_client.complete.side_effect = RuntimeError("API down")
     sections = {
         "constitution": {},
         "signature_patterns": {"high_confidence_rules": [], "vibe_matches": []},
@@ -138,12 +122,7 @@ async def test_synthesise_narrative_returns_none_on_llm_error():
         "agent_affinity": [],
         "best_work": [],
     }
-    with (
-        patch("jfyi.reports._ANTHROPIC_AVAILABLE", True),
-        patch("jfyi.reports._Anthropic", mock_cls),
-        patch("jfyi.config.settings") as mock_settings,
-    ):
-        mock_settings.anthropic_api_key = "test-key"
+    with patch("jfyi.reports.create_llm_client", return_value=mock_client):
         result = await synthesise_narrative(sections)
     assert result is None
 
@@ -215,7 +194,7 @@ def test_vibe_profile_endpoint_unauthorized(ctx):
 
 
 def test_vibe_profile_endpoint_renders_with_empty_data(client):
-    with patch("jfyi.reports._ANTHROPIC_AVAILABLE", False):
+    with patch("jfyi.reports.create_llm_client", return_value=None):
         resp = client.get("/reports/vibe-profile")
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/html")
@@ -226,7 +205,7 @@ def test_vibe_profile_endpoint_renders_with_empty_data(client):
 def test_vibe_profile_endpoint_includes_real_rules(client, ctx):
     db, _ = ctx
     db.add_rule(1, "Use small functions", category="style")
-    with patch("jfyi.reports._ANTHROPIC_AVAILABLE", False):
+    with patch("jfyi.reports.create_llm_client", return_value=None):
         resp = client.get("/reports/vibe-profile")
     assert resp.status_code == 200
     assert "Use small functions" in resp.text

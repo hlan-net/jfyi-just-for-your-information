@@ -3,7 +3,7 @@
 import secrets
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,7 +49,29 @@ class Settings(BaseSettings):
     summarizer_daily_token_cap: int = 100_000
     summarizer_model: str = "claude-haiku-4-5-20251001"
     summarizer_min_interactions: int = 3
+
+    # Inference endpoint — shared by every server-side LLM feature (see llm.py and
+    # docs/aisa-integration.md). Resolution order:
+    #   1. JFYI_ANTHROPIC_API_KEY                       → Anthropic Messages API
+    #   2. OPENAI_BASE_URL + OPENAI_API_KEY             → any OpenAI-compatible endpoint
+    #      (the standard names, unprefixed, so an AISA-managed Secret works as-is;
+    #      JFYI_OPENAI_BASE_URL / JFYI_OPENAI_API_KEY are accepted too)
+    #   3. llm_local_fallback_url                       → local Ollama, opt-in per caller
     anthropic_api_key: str | None = None
+    openai_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("JFYI_OPENAI_BASE_URL", "OPENAI_BASE_URL"),
+    )
+    openai_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("JFYI_OPENAI_API_KEY", "OPENAI_API_KEY"),
+    )
+    # Model requested from an OpenAI-compatible endpoint. Empty → first id from GET /v1/models.
+    llm_model: str | None = Field(
+        default=None, validation_alias=AliasChoices("JFYI_LLM_MODEL", "LLM_MODEL")
+    )
+    # Tier 3 of the resolution order. Empty string disables the local fallback.
+    llm_local_fallback_url: str = "http://localhost:11434/v1"
 
     # Context compaction (runs inside the summarizer loop when summarizer_enabled=true)
     compaction_trigger_count: int = 10  # compact when session has > N episodic entries

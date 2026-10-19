@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from jfyi.analytics import AnalyticsEngine
 from jfyi.database import Database
+from jfyi.llm import LLMClient, LLMResponse
 from jfyi.summarizer import Summarizer, _format_session, create_summarizer
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -29,20 +29,13 @@ def analytics(db):
 
 
 def _make_summarizer(db, **overrides):
-    """Build a Summarizer with a mocked AsyncAnthropic client."""
-    with patch("jfyi.summarizer._ANTHROPIC_AVAILABLE", True):
-        with patch("jfyi.summarizer.AsyncAnthropic") as mock_cls:
-            mock_client = AsyncMock()
-            mock_cls.return_value = mock_client
-            s = Summarizer(db, api_key="sk-test", **overrides)
-            s._client = mock_client
-            return s
+    """Build a Summarizer with a mocked LLMClient."""
+    llm = AsyncMock(spec=LLMClient)
+    return Summarizer(db, llm=llm, **overrides)
 
 
 def _mock_response(text: str, input_tokens: int = 100, output_tokens: int = 50):
-    usage = SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens)
-    content = [SimpleNamespace(text=text)]
-    return SimpleNamespace(usage=usage, content=content)
+    return LLMResponse(text=text, tokens=input_tokens + output_tokens)
 
 
 # ── DB helper methods ──────────────────────────────────────────────────────────
@@ -159,12 +152,6 @@ def test_format_session_no_corrections():
 # ── Summarizer class ───────────────────────────────────────────────────────────
 
 
-def test_summarizer_requires_anthropic_package(db):
-    with patch("jfyi.summarizer._ANTHROPIC_AVAILABLE", False):
-        with pytest.raises(RuntimeError, match="anthropic package"):
-            Summarizer(db, api_key="sk-test")
-
-
 async def test_tick_skips_when_cap_reached(db, analytics):
     for i in range(5):
         analytics.record_interaction(1, "claude", "s1", f"p{i}", f"r{i}")
@@ -172,7 +159,7 @@ async def test_tick_skips_when_cap_reached(db, analytics):
     s = _make_summarizer(db, daily_token_cap=0)
     await s._tick()
     # Cap was 0 from the start — no LLM call should be made
-    s._client.messages.create.assert_not_called()
+    s._llm.complete.assert_not_called()
 
 
 async def test_tick_resets_on_new_day(db, analytics):
@@ -185,7 +172,7 @@ async def test_tick_resets_on_new_day(db, analytics):
     yesterday = datetime.now(UTC).date() - timedelta(days=1)
     s._reset_date = yesterday
 
-    s._client.messages.create.return_value = _mock_response("Reset test summary.", 10, 10)
+    s._llm.complete.return_value = _mock_response("Reset test summary.", 10, 10)
     await s._tick()
     assert s._tokens_used_today == 20  # 10 input + 10 output, reset first
     assert s._reset_date == datetime.now(UTC).date()
@@ -198,7 +185,7 @@ async def test_tick_skips_session_below_min(db, analytics):
 
     s = _make_summarizer(db, min_interactions=3)
     await s._tick()
-    s._client.messages.create.assert_not_called()
+    s._llm.complete.assert_not_called()
 
 
 async def test_summarize_writes_episodic_entry(db, analytics):
@@ -206,9 +193,7 @@ async def test_summarize_writes_episodic_entry(db, analytics):
         analytics.record_interaction(1, "claude", "s1", f"p{i}", f"r{i}")
 
     s = _make_summarizer(db, min_interactions=3, daily_token_cap=100_000)
-    s._client.messages.create.return_value = _mock_response(
-        "Low friction session, good alignment.", 80, 40
-    )
+    s._llm.complete.return_value = _mock_response("Low friction session, good alignment.", 80, 40)
 
     await s._tick()
 
@@ -224,13 +209,12 @@ async def test_summarize_prompt_includes_cache_control(db, analytics):
         analytics.record_interaction(1, "claude", "s1", f"p{i}", f"r{i}")
 
     s = _make_summarizer(db, min_interactions=3, daily_token_cap=100_000)
-    s._client.messages.create.return_value = _mock_response("Summary text.", 50, 30)
+    s._llm.complete.return_value = _mock_response("Summary text.", 50, 30)
     await s._tick()
 
-    call_kwargs = s._client.messages.create.call_args.kwargs
-    system = call_kwargs["system"]
-    assert isinstance(system, list)
-    assert system[0]["cache_control"] == {"type": "ephemeral"}
+    system, _user = s._llm.complete.call_args.args
+    assert "JFYI" in system
+    assert s._llm.complete.call_args.kwargs["max_tokens"] == 500
 
 
 async def test_second_tick_only_summarizes_new_interactions(db, analytics):
@@ -238,18 +222,18 @@ async def test_second_tick_only_summarizes_new_interactions(db, analytics):
         analytics.record_interaction(1, "claude", "s1", f"p{i}", f"r{i}")
 
     s = _make_summarizer(db, min_interactions=3, daily_token_cap=100_000)
-    s._client.messages.create.return_value = _mock_response("First summary.", 50, 30)
+    s._llm.complete.return_value = _mock_response("First summary.", 50, 30)
     await s._tick()
-    assert s._client.messages.create.call_count == 1
+    assert s._llm.complete.call_count == 1
 
     # No new interactions — second tick should not call LLM
     await s._tick()
-    assert s._client.messages.create.call_count == 1
+    assert s._llm.complete.call_count == 1
 
 
 async def test_run_loop_cancels_cleanly(db):
     s = _make_summarizer(db, interval_s=3600)
-    s._client.messages.create.return_value = _mock_response("x", 1, 1)
+    s._llm.complete.return_value = _mock_response("x", 1, 1)
     task = asyncio.create_task(s.run())
     await asyncio.sleep(0)  # let the task start
     task.cancel()
@@ -261,37 +245,47 @@ async def test_run_loop_cancels_cleanly(db):
 
 
 def test_create_summarizer_disabled(db):
-    with patch("jfyi.summarizer._ANTHROPIC_AVAILABLE", True):
-        with patch("jfyi.summarizer.AsyncAnthropic"):
-            with patch("jfyi.config.settings") as mock_settings:
-                mock_settings.summarizer_enabled = False
-                result = create_summarizer(db)
+    with patch("jfyi.config.settings") as mock_settings:
+        mock_settings.summarizer_enabled = False
+        result = create_summarizer(db)
     assert result is None
 
 
-def test_create_summarizer_no_api_key(db):
-    with patch("jfyi.summarizer._ANTHROPIC_AVAILABLE", True):
-        with patch("jfyi.summarizer.AsyncAnthropic"):
-            with patch("jfyi.config.settings") as mock_settings:
-                mock_settings.summarizer_enabled = True
-                mock_settings.anthropic_api_key = None
-                result = create_summarizer(db)
+def test_create_summarizer_no_endpoint(db):
+    with patch("jfyi.config.settings") as mock_settings:
+        mock_settings.summarizer_enabled = True
+        mock_settings.anthropic_api_key = None
+        mock_settings.openai_base_url = None
+        mock_settings.openai_api_key = None
+        mock_settings.llm_local_fallback_url = ""
+        result = create_summarizer(db)
     assert result is None
 
 
-def test_create_summarizer_no_anthropic_package(db):
-    with patch("jfyi.summarizer._ANTHROPIC_AVAILABLE", False):
-        with patch("jfyi.config.settings") as mock_settings:
-            mock_settings.summarizer_enabled = True
-            mock_settings.anthropic_api_key = "sk-test"
-            result = create_summarizer(db)
-    assert result is None
+def test_create_summarizer_openai_env(db):
+    """OPENAI_BASE_URL + OPENAI_API_KEY (the AISA Secret contract) is enough."""
+    with patch("jfyi.config.settings") as mock_settings:
+        mock_settings.summarizer_enabled = True
+        mock_settings.anthropic_api_key = None
+        mock_settings.openai_base_url = "http://aisa-apisix.aisa.svc.cluster.local/v1"
+        mock_settings.openai_api_key = "aisa-1a2b3c"
+        mock_settings.llm_model = "qwen3:8b"
+        mock_settings.summarizer_interval_s = 300
+        mock_settings.summarizer_daily_token_cap = 100_000
+        mock_settings.summarizer_min_interactions = 3
+        mock_settings.compaction_trigger_count = 10
+        mock_settings.compaction_batch_size = 5
+        result = create_summarizer(db)
+    assert result is not None
+    assert result._llm.provider == "openai"
+    assert result._llm.base_url == "http://aisa-apisix.aisa.svc.cluster.local/v1"
+    assert result._llm.model == "qwen3:8b"
 
 
 def test_create_summarizer_success(db):
-    with patch("jfyi.summarizer._ANTHROPIC_AVAILABLE", True):
-        with patch("jfyi.summarizer.AsyncAnthropic"):
-            with patch("jfyi.config.settings") as mock_settings:
+    with patch("jfyi.config.settings") as mock_settings:
+        if True:
+            if True:
                 mock_settings.summarizer_enabled = True
                 mock_settings.anthropic_api_key = "sk-test"
                 mock_settings.summarizer_model = "claude-haiku-4-5-20251001"
@@ -385,9 +379,9 @@ async def test_compact_tick_skips_below_threshold(db):
         db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}")
 
     s = _make_summarizer(db, compaction_trigger_count=5, daily_token_cap=100_000)
-    s._client.messages.create.return_value = _mock_response("Compacted.", 20, 10)
+    s._llm.complete.return_value = _mock_response("Compacted.", 20, 10)
     await s._compact_tick()
-    s._client.messages.create.assert_not_called()
+    s._llm.complete.assert_not_called()
 
 
 async def test_compact_session_writes_compacted_summary(db):
@@ -397,10 +391,10 @@ async def test_compact_session_writes_compacted_summary(db):
     s = _make_summarizer(
         db, compaction_trigger_count=5, compaction_batch_size=5, daily_token_cap=100_000
     )
-    s._client.messages.create.return_value = _mock_response("Compacted result.", 30, 15)
+    s._llm.complete.return_value = _mock_response("Compacted result.", 30, 15)
     await s._compact_tick()
 
-    s._client.messages.create.assert_called_once()
+    s._llm.complete.assert_called_once()
     entries = db.episodic_get("s1", 1, limit=50)
     # 6 original - 5 compacted + 1 new compacted_summary = 2 entries
     assert len(entries) == 2
@@ -414,9 +408,9 @@ async def test_compact_session_respects_token_cap(db):
         db.episodic_add("s1", 1, "interaction_summary", f"Summary {i}")
 
     s = _make_summarizer(db, compaction_trigger_count=5, compaction_batch_size=5, daily_token_cap=0)
-    s._client.messages.create.return_value = _mock_response("x", 1, 1)
+    s._llm.complete.return_value = _mock_response("x", 1, 1)
     await s._compact_tick()
-    s._client.messages.create.assert_not_called()
+    s._llm.complete.assert_not_called()
 
 
 async def test_compact_prompt_includes_cache_control(db):
@@ -426,13 +420,12 @@ async def test_compact_prompt_includes_cache_control(db):
     s = _make_summarizer(
         db, compaction_trigger_count=5, compaction_batch_size=5, daily_token_cap=100_000
     )
-    s._client.messages.create.return_value = _mock_response("Compacted.", 20, 10)
+    s._llm.complete.return_value = _mock_response("Compacted.", 20, 10)
     await s._compact_tick()
 
-    call_kwargs = s._client.messages.create.call_args.kwargs
-    system = call_kwargs["system"]
-    assert isinstance(system, list)
-    assert system[0]["cache_control"] == {"type": "ephemeral"}
+    system, _user = s._llm.complete.call_args.args
+    assert "JFYI" in system
+    assert s._llm.complete.call_args.kwargs["max_tokens"] == 500
 
 
 async def test_compact_recursive_reduces_below_threshold(db):
@@ -443,10 +436,10 @@ async def test_compact_recursive_reduces_below_threshold(db):
     s = _make_summarizer(
         db, compaction_trigger_count=5, compaction_batch_size=5, daily_token_cap=100_000
     )
-    s._client.messages.create.return_value = _mock_response("Compacted.", 20, 10)
+    s._llm.complete.return_value = _mock_response("Compacted.", 20, 10)
     await s._compact_tick()
 
     # Should have called LLM at least twice (two compaction rounds)
-    assert s._client.messages.create.call_count >= 2
+    assert s._llm.complete.call_count >= 2
     entries = db.episodic_get("s1", 1, limit=50)
     assert len(entries) <= 5

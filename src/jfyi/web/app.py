@@ -36,6 +36,7 @@ from ..auth import (
 from ..config import settings
 from ..database import Database
 from ..dlp import redact
+from ..llm import create_llm_client
 
 STATIC_DIR = Path(__file__).parent / "static"
 LOCAL_USER_EMAIL = "local@jfyi.internal"
@@ -45,9 +46,9 @@ SETTING_REGISTRATION_OPEN = "registration_open"
 
 
 class SynthesisConfigBody(BaseModel):
-    provider: str
-    model: str
-    api_key: str | None = None  # None = keep existing stored key
+    provider: str  # 'anthropic' | 'openai' | 'server' (server-managed endpoint)
+    model: str = ""  # empty + 'server' = discover from /v1/models
+    api_key: str | None = None  # None = keep existing stored key; unused for 'server'
     base_url: str | None = None
 
 
@@ -759,6 +760,26 @@ def _register_profile_api(app: FastAPI) -> None:
 
 
 def _register_synthesis_api(app: FastAPI) -> None:
+    from ..synthesizer import SERVER_PROVIDER, USER_PROVIDERS
+
+    @app.get("/api/llm/models")
+    async def get_server_llm_models(current_user: CurrentUser) -> dict[str, Any]:
+        """Describe the server-managed inference endpoint and the models it advertises.
+
+        Never returns the key. Used by the dashboard's rule-synthesis dialog to
+        offer the 'server' provider and to populate its model picker from
+        ``GET /v1/models`` (OpenAI-compatible endpoints only).
+        """
+        client = create_llm_client(timeout_s=10.0)
+        if client is None:
+            return {"configured": False, "models": []}
+        info: dict[str, Any] = {"configured": True, **client.config.public(), "models": []}
+        try:
+            info["models"] = await client.list_models()
+        except Exception as exc:
+            info["error"] = f"Model discovery failed: {exc}"
+        return info
+
     @app.get("/api/profile/synthesis-config")
     async def get_synthesis_config(current_user: CurrentUser, db: DBDep) -> dict[str, Any]:
         cfg = db.get_synthesis_config(current_user["id"])
@@ -769,7 +790,7 @@ def _register_synthesis_api(app: FastAPI) -> None:
             "provider": cfg["provider"],
             "model": cfg["model"],
             "base_url": cfg["base_url"],
-            "has_key": bool(cfg["api_key"]),
+            "has_key": bool(cfg["api_key"]) or cfg["provider"] == SERVER_PROVIDER,
         }
 
     @app.put(
@@ -779,8 +800,17 @@ def _register_synthesis_api(app: FastAPI) -> None:
     async def save_synthesis_config(
         body: SynthesisConfigBody, current_user: CurrentUser, db: DBDep
     ) -> dict[str, Any]:
-        if body.provider not in ("anthropic", "openai"):
-            raise HTTPException(status_code=400, detail="provider must be 'anthropic' or 'openai'")
+        if body.provider == SERVER_PROVIDER:
+            # The server-managed endpoint carries its own credentials; the user
+            # only (optionally) pins a model. Nothing secret is stored.
+            db.save_synthesis_config(current_user["id"], SERVER_PROVIDER, body.model, "", None)
+            return {"status": "saved"}
+        if body.provider not in USER_PROVIDERS:
+            raise HTTPException(
+                status_code=400, detail="provider must be 'anthropic', 'openai' or 'server'"
+            )
+        if not body.model:
+            raise HTTPException(status_code=400, detail="model is required")
         existing = db.get_synthesis_config(current_user["id"])
         # Switching providers silently reusing the old key is the primary source of
         # confusing 401/auth errors.  Require an explicit new key on provider change.
@@ -825,12 +855,24 @@ def _register_synthesis_api(app: FastAPI) -> None:
             raise HTTPException(status_code=400, detail="Select at least 2 notes to synthesize.")
 
         priorities = {int(k): v for k, v in body.priorities.items()}
-        synthesizer = RuleSynthesizer(
-            provider=cfg["provider"],
-            model=cfg["model"],
-            api_key=cfg["api_key"],
-            base_url=cfg["base_url"],
-        )
+        if cfg["provider"] == SERVER_PROVIDER:
+            synthesizer = RuleSynthesizer.from_server_config(model=cfg["model"] or None)
+            if synthesizer is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Server-managed inference is not configured on this JFYI instance "
+                        "(JFYI_ANTHROPIC_API_KEY or OPENAI_BASE_URL + OPENAI_API_KEY). "
+                        "Choose another provider."
+                    ),
+                )
+        else:
+            synthesizer = RuleSynthesizer.from_user_config(
+                provider=cfg["provider"],
+                model=cfg["model"],
+                api_key=cfg["api_key"],
+                base_url=cfg["base_url"],
+            )
         try:
             synthesized = await synthesizer.synthesize(notes, priorities)
         except Exception as exc:

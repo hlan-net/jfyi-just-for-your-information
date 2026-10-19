@@ -50,6 +50,10 @@ spec:
               value: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
             - name: JFYI_DEPLOY_TIME
               value: {{ now | date "2006-01-02T15:04:05Z" | quote }}
+            {{- if .Values.inference.model }}
+            - name: JFYI_LLM_MODEL
+              value: {{ .Values.inference.model | quote }}
+            {{- end }}
             {{- if .Values.chromadb.enabled }}
             - name: JFYI_ENABLE_VECTOR_DB
               value: "true"
@@ -67,6 +71,17 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Values.jwtSecret.existingSecret | default (printf "%s-jwt" (include "jfyi-mcp-server.fullname" .)) }}
+            {{- if .Values.inference.aisa.enabled }}
+            # AISA-managed inference credentials (OPENAI_BASE_URL + OPENAI_API_KEY).
+            # Optional: the pod must start before aisa's reconciler writes the Secret.
+            - secretRef:
+                name: {{ include "jfyi-mcp-server.aisaSecretName" . }}
+                optional: true
+            {{- end }}
+            {{- if .Values.inference.direct.enabled }}
+            - secretRef:
+                name: {{ include "jfyi-mcp-server.inferenceSecretName" . }}
+            {{- end }}
           {{- with .Values.extraEnvFrom }}
             {{- toYaml . | nindent 12 }}
           {{- end }}

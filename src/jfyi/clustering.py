@@ -4,14 +4,17 @@ Requires scikit-learn (pip install 'jfyi-mcp-server[cluster]').
 If scikit-learn is absent or JFYI_ENABLE_CLUSTERING=false, this module
 loads safely but get_clusters() returns [] immediately.
 
-LLM gap summaries are optional: set JFYI_ANTHROPIC_API_KEY to enable them.
-Without an API key the top representative descriptions are used as the summary.
+LLM gap summaries are optional: they use whichever inference endpoint ``jfyi.llm``
+resolves (JFYI_ANTHROPIC_API_KEY, OPENAI_BASE_URL+OPENAI_API_KEY, or the local
+fallback). Without one the top representative descriptions are used as the summary.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
+
+from .llm import LLMClient, create_llm_client
 
 if TYPE_CHECKING:
     from .database import Database
@@ -25,14 +28,6 @@ except ImportError:
     KMeans = None  # type: ignore[assignment,misc]
     TfidfVectorizer = None  # type: ignore[assignment,misc]
     _SKLEARN_AVAILABLE = False
-
-try:
-    from anthropic import Anthropic
-
-    _ANTHROPIC_AVAILABLE = True
-except ImportError:
-    Anthropic = None  # type: ignore[assignment,misc]
-    _ANTHROPIC_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -55,16 +50,11 @@ class ClusteringEngine:
         self,
         db: Database,
         k: int = 5,
-        api_key: str | None = None,
-        model: str = "claude-haiku-4-5-20251001",
+        llm: LLMClient | None = None,
     ) -> None:
         self._db = db
         self._k = k
-        self._api_key = api_key
-        self._model = model
-        self._llm: Any = None
-        if api_key and _ANTHROPIC_AVAILABLE:
-            self._llm = Anthropic(api_key=api_key)
+        self._llm: LLMClient | None = llm
 
     def get_clusters(self, user_id: int) -> list[dict[str, Any]]:
         """Return clusters for this user, recomputing from scratch when stale."""
@@ -132,13 +122,10 @@ class ClusteringEngine:
         if self._llm is None:
             return "; ".join(samples[:3])
         try:
-            response = self._llm.messages.create(
-                model=self._model,
-                max_tokens=60,
-                system=_SUMMARY_PROMPT,
-                messages=[{"role": "user", "content": "\n".join(f"- {s}" for s in samples)}],
+            response = self._llm.complete_sync(
+                _SUMMARY_PROMPT, "\n".join(f"- {s}" for s in samples), max_tokens=60
             )
-            return response.content[0].text.strip()
+            return response.text.strip()
         except Exception:
             logger.exception("ClusteringEngine: LLM summary failed; using fallback.")
             return "; ".join(samples[:3])
@@ -158,7 +145,7 @@ def create_clustering_engine(db: Database) -> ClusteringEngine | None:
         return None
     return ClusteringEngine(
         db=db,
-        api_key=settings.anthropic_api_key,
+        llm=create_llm_client(allow_local_fallback=True),
     )
 
 

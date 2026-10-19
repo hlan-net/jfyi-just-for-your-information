@@ -58,3 +58,17 @@ ServiceAccount name
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Name of the Secret aisa writes for this consumer (OPENAI_BASE_URL + OPENAI_API_KEY).
+*/}}
+{{- define "jfyi-mcp-server.aisaSecretName" -}}
+{{- .Values.inference.aisa.secretName | default (printf "%s-aisa-key" (include "jfyi-mcp-server.fullname" .)) }}
+{{- end }}
+
+{{/*
+Name of the Secret carrying direct inference credentials (chart-managed unless existingSecret is set).
+*/}}
+{{- define "jfyi-mcp-server.inferenceSecretName" -}}
+{{- .Values.inference.direct.existingSecret | default (printf "%s-inference" (include "jfyi-mcp-server.fullname" .)) }}
+{{- end }}

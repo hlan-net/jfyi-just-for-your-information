@@ -15,7 +15,7 @@ The developer selects a set of rules and sends them to an LLM (the "Synthesizer"
 ## Implementation
 
 1.  **Selection Interface:** The dashboard provides a "Constitution Audit" view where rules can be multi-selected.
-2.  **LLM Integration:** JFYI sends the selected rules to a configurable LLM endpoint (Anthropic, OpenAI, or local via Ollama/Groq).
+2.  **LLM Integration:** JFYI sends the selected rules to a configurable LLM endpoint — the user's own Anthropic or OpenAI-compatible credentials (OpenAI, Groq, local Ollama…), or the **server-managed** endpoint the operator configured for the instance (in-cluster AISA, direct key; see [Inference Endpoints & AISA Integration](aisa-integration.md)), which stores no key for the user and lists its models from `GET /v1/models`.
 3.  **Merge Logic:** The model returns a proposed "Compact Ruleset."
 4.  **Preview & Apply:** The developer reviews the diff. If approved, the old rules are marked as `archived` and the new, synthesized rules are added to the corpus.
 5.  **Provenance Preservation:** New rules maintain metadata indicating they were synthesized from a specific set of original rules.
