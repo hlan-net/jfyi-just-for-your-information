@@ -5,7 +5,7 @@ For planned future work and architectural phases, see [`ROADMAP.md`](ROADMAP.md)
 
 ---
 
-## [Unreleased]
+## [v2.18.0] — Inference endpoints (AISA), Streamable HTTP fix and MCP SDK 2.x
 
 - **MCP SDK 2.x** (`mcp>=2.3.0,<3`, protocol revision 2026-07-28): `build_mcp_server` now registers its handlers through the `Server(on_list_tools=…, on_call_tool=…, on_list_resources=…, on_read_resource=…)` constructor and returns typed results (`ListToolsResult`, `CallToolResult`, …); a crashing tool still comes back as an `isError` result rather than a JSON-RPC error, as the 1.x decorator did. Tool arguments are validated against the catalogue's `inputSchema` before dispatch (`jsonschema`, now an explicit dependency) and rejected as `Input validation error: …` / `isError`, exactly as the 1.x decorator did — the 2.x low-level `Server` leaves that to the handler. The Streamable HTTP handler drops its hand-rolled transport + `Server.run(stateless=True)` for the SDK's `StreamableHTTPSessionManager(stateless=True)` per request, which owns the transport lifecycle. Legacy SSE and stdio keep using `Server.run`. The transport tests added in the previous entry pass unchanged on 2.x. Closes the Dependabot `mcp` major bump; `run_stdio` now reports the real version instead of a hard-coded `2.1.0`.
 - **Streamable HTTP: per-request server task no longer leaks** (`cli.py`): `handle_streamable` now terminates its per-request `StreamableHTTPServerTransport` after the response (shielded `finally`, the same pattern as the SDK's own session manager). Previously the MCP server task kept waiting on a read stream nobody would ever close, so the ASGI handler never returned and every `POST /mcp` left a task behind. Found by the new transport tests.
