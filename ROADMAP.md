@@ -10,7 +10,7 @@ The user-centric mission and the core architectural pattern (write raw / curate 
 
 ## Active & Upcoming Roadmap
 
-### Phase 7 — Journal & Dashboard UX Redesign `v2.17.0`–`v2.18.0`
+### Phase 7 — Journal & Dashboard UX Redesign `v2.17.0`–`v2.19.0`
 
 Adds a temporal journal dimension and restructures the dashboard from 7 history-driven tabs into 4 intuitive areas (Overview, Profile, Insights, Settings).
 
@@ -24,9 +24,19 @@ Adds a temporal journal dimension and restructures the dashboard from 7 history-
 - **Overview Page:** Living default landing with KPIs, 7-day trend, top agents, notes inbox preview, and zero-state onboarding. *No new backend endpoints needed — uses existing APIs.*
 - **Navigation Restructure:** `🏠 Overview` · `👤 Profile` · `💡 Insights ▾` · `⚙️ Settings`. Old routes preserved as redirects.
 - **Profile Merge:** Notes Inbox + Constitution unified as sub-tabs under Profile.
-- **Journal Backend:** `journal_entries` schema, REST CRUD, MCP tools (`recall_journal`, `add_journal_note`). A minimal timeline with quick entry ships under `Insights → Journal`; digest cards and standup export follow in `v2.18.0`.
+- **Journal Backend:** `journal_entries` schema, REST CRUD, MCP tools (`recall_journal`, `add_journal_note`). A minimal timeline with quick entry ships under `Insights → Journal`; digest cards and standup export follow in `v2.19.0`.
 
-#### `v2.18.0` — Journal UI + Memory Explorer (Phases 2–3)
+#### `v2.18.0` — Inference endpoints (AISA) + MCP SDK 2.x ✓ Done
+
+| Item | Status | Spec | Tag |
+|------|--------|------|-----|
+| [Inference endpoints & AISA integration](docs/aisa-integration.md) (`jfyi.llm` resolver: Anthropic key → `OPENAI_BASE_URL` + `OPENAI_API_KEY` → local fallback; Helm Secret binding; server-managed rule synthesis; no vendor SDK) | ✓ Done | [docs/aisa-integration.md](docs/aisa-integration.md) | Infrastructure |
+| Streamable HTTP transport tests + per-request server task leak fix (`tests/test_mcp_http.py`) | ✓ Done | — | Infrastructure |
+| MCP SDK 2.x migration (`mcp>=2.3.0,<3`): `build_mcp_server` on the constructor `on_*` handlers, Streamable HTTP on `StreamableHTTPSessionManager(stateless=True)`, tool-argument schema validation kept in the handler. Transport tests landed first on 1.x and pass unchanged on 2.x | ✓ Done | — | Infrastructure |
+
+- **MCP SDK 2.x migration:** `mcp` 2.x (protocol revision 2026-07-28) removed the low-level `Server` decorators and the `stateless=` argument of `Server.run`. JFYI now registers handlers through `Server(on_list_tools=…, on_call_tool=…, …)` and runs the Streamable HTTP endpoint on the SDK's `StreamableHTTPSessionManager(stateless=True)`. The transport tests (`tests/test_mcp_http.py`) were written against 1.x first and verify the port against the plugin's only transport.
+
+#### `v2.19.0` — Journal UI + Memory Explorer (Phases 2–3)
 
 | Item | Status | Spec | Tag |
 |------|--------|------|-----|
@@ -35,11 +45,9 @@ Adds a temporal journal dimension and restructures the dashboard from 7 history-
 | Daily Digest & Standup Synthesis | Planned | [docs/journal.md](docs/journal.md) | Supplementary |
 | [Dashboard responsive layout](https://github.com/hlan-net/jfyi-just-for-your-information/issues/68) (tables, inline grids, chart labels, nav) | Planned | [#68](https://github.com/hlan-net/jfyi-just-for-your-information/issues/68) | Infrastructure |
 | [Layout constraints in the UX spec](https://github.com/hlan-net/jfyi-just-for-your-information/issues/69) | Planned | [#69](https://github.com/hlan-net/jfyi-just-for-your-information/issues/69) | Infrastructure |
-| MCP SDK 2.x migration (`mcp>=2.3.0,<3`): `build_mcp_server` on the constructor `on_*` handlers, Streamable HTTP on `StreamableHTTPSessionManager(stateless=True)`. Transport tests landed first on 1.x (`tests/test_mcp_http.py`) and pass unchanged on 2.x | Done | v2.18.0 | Infrastructure |
 
 - **Journal UI (`/insights/journal`):** Timeline, daily digest cards, quick-entry bar, standup export. Journal content is agent-usage tracking, not per-project task tracking ([docs/journal.md](docs/journal.md)).
 - **Memory Explorer (`/insights/memory`):** Session browser, friction event explorer. Exposes existing `db.get_best_sessions()` and `db.get_session_telemetry()` as REST endpoints.
-- **MCP SDK 2.x migration (done):** `mcp` 2.x (protocol revision 2026-07-28) removed the low-level `Server` decorators and the `stateless=` argument of `Server.run`. JFYI now registers handlers through `Server(on_list_tools=…, on_call_tool=…, …)` and runs the Streamable HTTP endpoint on the SDK's `StreamableHTTPSessionManager(stateless=True)`. The transport tests (`tests/test_mcp_http.py`) were written against 1.x first and verify the port against the plugin's only transport.
 - **Responsive layout ([#68](https://github.com/hlan-net/jfyi-just-for-your-information/issues/68)):** The dashboard assumes a wide viewport outside the Overview — 13 tables with no `overflow-x` wrapper, three grids written as inline styles that no media query can reach, chart labels at `font-size="8"`, and a nav that overflows below ~500px. Sequenced with Phases 2–3 so the layout work lands with the pages it affects. `v2.17.1` fixed the Overview case ([#67](https://github.com/hlan-net/jfyi-just-for-your-information/pull/67)); this is the remainder.
 - **Spec gap ([#69](https://github.com/hlan-net/jfyi-just-for-your-information/issues/69)):** [`docs/dashboard-ux-redesign.md`](docs/dashboard-ux-redesign.md) states no viewport, breakpoint or minimum width, which is what let the `v2.17.0` Overview ship with a clipped column. Fix the spec **before** implementing Phases 2–3, or they reproduce it.
 
