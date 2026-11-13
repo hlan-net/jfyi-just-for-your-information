@@ -12,7 +12,12 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("aws_access_key", re.compile(r"AKIA[0-9A-Z]{16}")),
     ("github_pat", re.compile(r"ghp_[A-Za-z0-9]{36}")),
     ("anthropic_key", re.compile(r"sk-ant-[A-Za-z0-9\-_]{20,}")),
-    ("openai_key", re.compile(r"sk-[A-Za-z0-9]{20,}")),
+    # Legacy keys (sk-<alnum>) and the prefixed project / service-account / admin
+    # keys, whose body also contains "-" and "_".
+    (
+        "openai_key",
+        re.compile(r"sk-(?:(?:proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}|[A-Za-z0-9]{20,})"),
+    ),
     ("bearer_token", re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE)),
     (
         "jwt",
@@ -47,7 +52,7 @@ def redact(text: str) -> tuple[str, list[str]]:
 # Bearer credentials long enough to be a real token. The redaction rule above is
 # deliberately loose ("Bearer abc"); rejecting on it would refuse ordinary prose
 # such as "the API uses bearer tokens".
-_BEARER_CREDENTIAL = re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]{20,}=*", re.IGNORECASE)
+_BEARER_CREDENTIAL = re.compile(r"(?i:bearer)\s+[A-Za-z0-9\-._~+/]{20,}=*")
 
 # Rules whose match means "this is a credential", as opposed to PII (email) that
 # is redacted and stored.

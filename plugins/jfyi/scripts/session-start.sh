@@ -20,6 +20,7 @@ BASE="${URL%/}"
 case "$BASE" in
   */mcp/sse) BASE="${BASE%/mcp/sse}" ;;
   */mcp)     BASE="${BASE%/mcp}" ;;
+  *)         ;;  # already the instance root
 esac
 BASE="${BASE%/}"
 if [[ "$BASE" != "${URL%/}" ]]; then

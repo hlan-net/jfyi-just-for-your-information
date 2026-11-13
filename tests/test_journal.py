@@ -629,6 +629,7 @@ _SECRET_SAMPLES = [
     ("bearer_token", "curl -H 'Authorization: Bearer 0123456789abcdefghijklmnop'"),
     ("github_pat", "pushed with ghp_" + "a" * 36),
     ("anthropic_key", "key sk-ant-" + "b" * 24),
+    ("openai_key", "key sk-proj-aBcD_eFgH-iJkLmNoPqRsT12"),
     ("aws_access_key", "AKIA" + "A" * 16),
 ]
 
@@ -655,6 +656,19 @@ async def test_add_profile_note_rejects_secrets(ctx, rule, text):
     assert "add_profile_note rejected" in result[0].text
     assert rule in result[0].text
     assert text not in result[0].text
+    assert db.get_notes(1) == []
+
+
+@pytest.mark.parametrize("field", ["category", "agent_name"])
+async def test_add_profile_note_rejects_secret_in_metadata(ctx, field):
+    db, analytics = ctx
+    secret = "ghp_" + "a" * 36
+    result = await dispatch_tool(
+        "add_profile_note", {"text": "prefers small PRs", field: secret}, db, analytics
+    )
+    assert "add_profile_note rejected" in result[0].text
+    assert "github_pat" in result[0].text
+    assert secret not in result[0].text
     assert db.get_notes(1) == []
 
 

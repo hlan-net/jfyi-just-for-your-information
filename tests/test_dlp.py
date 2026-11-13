@@ -12,6 +12,8 @@ from jfyi.dlp import redact
         ("github_pat", "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"),
         ("anthropic_key", "api_key = sk-ant-api03-abc123def456ghi789-longkey"),
         ("openai_key", "OPENAI_API_KEY=sk-aBcDeFgHiJkLmNoPqRsT"),
+        ("openai_key", "OPENAI_API_KEY=sk-proj-aBcD_eFgH-iJkLmNoPqRsT12"),
+        ("openai_key", "key sk-svcacct-aBcD_eFgH-iJkLmNoPqRsT12"),
         ("bearer_token", "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"),
         (
             "private_key_pem",

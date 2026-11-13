@@ -802,7 +802,9 @@ async def dispatch_tool(
             return [TextContent(type="text", text="add_profile_note requires non-empty text.")]
         fired: list[str] = []
         if settings.dlp_enabled:
-            if secrets := find_secrets(note_text):
+            # category and agent_name are stored as given, so they are checked too.
+            metadata = [str(arguments[k]) for k in ("category", "agent_name") if arguments.get(k)]
+            if secrets := find_secrets(note_text, *metadata):
                 return _secret_rejection("add_profile_note", secrets)
             note_text, fired = redact(note_text)
         note_id = db.add_note(
