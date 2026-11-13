@@ -14,7 +14,7 @@ The Journal tracks **how the developer works with AI agents**, not the progress 
 | Where corrections concentrated; which instruction helped or backfired | Product or design decisions of one project → project docs |
 | Tooling and configuration facts about using agents (plugin setup, endpoints) | Repository conventions → `CLAUDE.md` |
 | Decisions about agent use or workflow (e.g. *"step branches for speculative work"*) | General habits and preferences of the developer → `add_profile_note` |
-| — | Secrets or PII → never recorded (DLP redacts what it recognises and tells the agent) |
+| — | Secrets → never recorded: `add_journal_note` and `add_profile_note` reject input that contains a credential and store nothing. PII (e-mail addresses) is redacted and the agent is told |
 
 `project_id` stays as an optional **substance identifier**: it keeps entries about unrelated areas of work apart so they do not collapse into one pool. It scopes the observation; it does not make the entry a project task log. `daily_digest` and `reflection` are the main content; `decision` is kept for decisions about agent use.
 
@@ -188,4 +188,4 @@ A new tab in the JFYI Web Dashboard:
 2. Agents calling `recall_journal` receive high-signal agent-usage context without context bloat (< 1,000 tokens).
 3. Zero cross-user data leakage in multi-tenant environments.
 4. Comprehensive test coverage for API, database scoping, and MCP dispatching in `tests/test_journal.py`.
-5. Agents are told what not to record (scope, exclusions, secrets) by the tool descriptions and skill, and secret-shaped input is redacted with a notice in the tool response.
+5. Agents are told what not to record (scope, exclusions, secrets) by the tool descriptions and skill, and secret-shaped input (JWTs, `Bearer` credentials, provider key prefixes, private keys) is rejected by both write tools with an explanatory error and nothing stored; PII is redacted with a notice in the tool response.

@@ -397,13 +397,13 @@ async def test_add_journal_note_applies_dlp(ctx):
     db, analytics = ctx
     await dispatch_tool(
         "add_journal_note",
-        {"title": "Creds", "content": "ping ops@example.com about ghp_" + "a" * 36},
+        {"title": "Contact", "content": "ping ops@example.com about the rollout"},
         db,
         analytics,
     )
     content = db.journal_list(1)[0]["content_md"]
     assert "ops@example.com" not in content
-    assert "ghp_" not in content
+    assert "[REDACTED:email]" in content
 
 
 async def test_recall_journal_empty(ctx):
@@ -524,7 +524,7 @@ def test_delete_user_purges_vectors(tmp_path):
     assert "rules" in purged_cols
 
 
-async def test_add_journal_note_dlp_redacts_project_id(ctx):
+async def test_add_journal_note_rejects_secret_in_project_id(ctx):
     db, analytics = ctx
     result = await dispatch_tool(
         "add_journal_note",
@@ -536,11 +536,10 @@ async def test_add_journal_note_dlp_redacts_project_id(ctx):
         db,
         analytics,
     )
-    assert "Journal note added" in result[0].text
-    entries = db.journal_list(1)
-    assert len(entries) == 1
-    assert "ghp_" not in entries[0]["project_id"]
-    assert "[REDACTED:github_pat]" in entries[0]["project_id"]
+    assert "add_journal_note rejected" in result[0].text
+    assert "github_pat" in result[0].text
+    assert "ghp_" not in result[0].text
+    assert db.journal_list(1) == []
 
 
 def test_api_journal_dlp_redacts_project_id_and_tags(client):
@@ -624,18 +623,58 @@ def test_journal_project_id_sanitized(db):
     assert updated["project_id"] == "updated-projectinjection>"
 
 
-async def test_add_journal_note_reports_redaction(ctx):
+_JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwiaXNzIjoiamZ5aSJ9.abcdefghijklmnop"
+_SECRET_SAMPLES = [
+    ("jwt", f"probe used {_JWT}"),
+    ("bearer_token", "curl -H 'Authorization: Bearer 0123456789abcdefghijklmnop'"),
+    ("github_pat", "pushed with ghp_" + "a" * 36),
+    ("anthropic_key", "key sk-ant-" + "b" * 24),
+    ("aws_access_key", "AKIA" + "A" * 16),
+]
+
+
+@pytest.mark.parametrize(("rule", "text"), _SECRET_SAMPLES)
+async def test_add_journal_note_rejects_secrets(ctx, rule, text):
     db, analytics = ctx
-    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwiaXNzIjoiamZ5aSJ9.abcdefghijklmnop"
+    for args in (
+        {"title": "Endpoint diagnosis", "content": text},
+        {"title": text, "content": "body"},
+    ):
+        result = await dispatch_tool("add_journal_note", args, db, analytics)
+        assert "add_journal_note rejected" in result[0].text
+        assert rule in result[0].text
+        assert "Nothing was stored" in result[0].text
+        assert text not in result[0].text
+    assert db.journal_list(1) == []
+
+
+@pytest.mark.parametrize(("rule", "text"), _SECRET_SAMPLES)
+async def test_add_profile_note_rejects_secrets(ctx, rule, text):
+    db, analytics = ctx
+    result = await dispatch_tool("add_profile_note", {"text": text}, db, analytics)
+    assert "add_profile_note rejected" in result[0].text
+    assert rule in result[0].text
+    assert text not in result[0].text
+    assert db.get_notes(1) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "the word token alone is fine",
+        "the API uses bearer tokens and an API key header",
+        "prefers Bearer authentication over cookies",
+        "rotate the JWT secret every quarter",
+    ],
+)
+async def test_notes_that_only_mention_secrets_are_accepted(ctx, text):
+    db, analytics = ctx
     result = await dispatch_tool(
-        "add_journal_note",
-        {"title": "Endpoint diagnosis", "content": f"probe used {jwt}"},
-        db,
-        analytics,
+        "add_journal_note", {"title": "Token budget", "content": text}, db, analytics
     )
     assert "Journal note added" in result[0].text
-    assert "Redacted before storage (jwt)" in result[0].text
-    assert jwt not in db.journal_list(1)[0]["content_md"]
+    result = await dispatch_tool("add_profile_note", {"text": text}, db, analytics)
+    assert "Note added" in result[0].text
 
 
 async def test_add_journal_note_clean_input_has_no_redaction_notice(ctx):
@@ -649,13 +688,25 @@ async def test_add_journal_note_clean_input_has_no_redaction_notice(ctx):
     assert "Redacted" not in result[0].text
 
 
-async def test_add_profile_note_reports_redaction(ctx):
+async def test_add_profile_note_reports_pii_redaction(ctx):
     db, analytics = ctx
     result = await dispatch_tool(
-        "add_profile_note", {"text": "uses Authorization: Bearer abc.def.ghi"}, db, analytics
+        "add_profile_note", {"text": "asks ops@example.com before deploys"}, db, analytics
     )
     assert "Note added" in result[0].text
-    assert "bearer_token" in result[0].text
+    assert "Redacted before storage (email)" in result[0].text
+    assert "ops@example.com" not in db.get_notes(1)[0]["text"]
+
+
+async def test_secret_rejection_is_bypassed_when_dlp_disabled(ctx, monkeypatch):
+    from jfyi.config import settings
+
+    monkeypatch.setattr(settings, "dlp_enabled", False)
+    db, analytics = ctx
+    result = await dispatch_tool(
+        "add_journal_note", {"title": "Local dev", "content": f"probe used {_JWT}"}, db, analytics
+    )
+    assert "Journal note added" in result[0].text
 
 
 def test_write_tool_descriptions_state_boundaries():
@@ -665,3 +716,4 @@ def test_write_tool_descriptions_state_boundaries():
         desc = TOOL_CATALOGUE[name]["description"]
         assert "Do not record" in desc
         assert "secrets" in desc
+        assert "rejected" in desc

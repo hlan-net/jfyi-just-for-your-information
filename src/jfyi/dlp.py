@@ -42,3 +42,41 @@ def redact(text: str) -> tuple[str, list[str]]:
             fired.append(rule_name)
             text = new_text
     return text, fired
+
+
+# Bearer credentials long enough to be a real token. The redaction rule above is
+# deliberately loose ("Bearer abc"); rejecting on it would refuse ordinary prose
+# such as "the API uses bearer tokens".
+_BEARER_CREDENTIAL = re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]{20,}=*", re.IGNORECASE)
+
+# Rules whose match means "this is a credential", as opposed to PII (email) that
+# is redacted and stored.
+_SECRET_RULES = frozenset(
+    {
+        "aws_access_key",
+        "github_pat",
+        "anthropic_key",
+        "openai_key",
+        "jwt",
+        "private_key_pem",
+        "slack_token",
+    }
+)
+
+
+def find_secrets(*texts: str | None) -> list[str]:
+    """Return the sorted names of credential rules matching any of ``texts``.
+
+    Used by the agent write tools to refuse secret-shaped input outright instead
+    of storing a redacted copy. Matched values are never returned.
+    """
+    found: set[str] = set()
+    for text in texts:
+        if not text:
+            continue
+        for rule_name, pattern in _PATTERNS:
+            if rule_name in _SECRET_RULES and pattern.search(text):
+                found.add(rule_name)
+        if _BEARER_CREDENTIAL.search(text):
+            found.add("bearer_token")
+    return sorted(found)
