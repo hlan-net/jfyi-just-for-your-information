@@ -1,7 +1,7 @@
 {
   "name": "jfyi",
   "displayName": "JFYI — Just For Your Information",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Serves your JFYI developer constitution at session start and lets agents file notes, journal entries and interaction telemetry.",
   "homepage": "https://github.com/hlan-net/jfyi-just-for-your-information",
   "repository": "https://github.com/hlan-net/jfyi-just-for-your-information",
@@ -11,7 +11,7 @@
     "jfyi_url": {
       "type": "string",
       "title": "JFYI base URL",
-      "description": "Your own JFYI instance, e.g. https://jfyi.example.net (no trailing slash)"
+      "description": "Instance root of your own JFYI, no path and no trailing slash, e.g. https://jfyi.example.net. Do not include /mcp."
     },
     "jfyi_token": {
       "type": "string",
