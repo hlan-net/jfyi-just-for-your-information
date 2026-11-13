@@ -137,7 +137,8 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
             "level of generality as rules — developer patterns, not project specifics. "
             "Do not record: project task status or product decisions (use issues, PRs or "
             "CLAUDE.md), agent-usage observations tied to one area of work "
-            "(use add_journal_note), or secrets such as tokens and keys."
+            "(use add_journal_note), or secrets such as tokens and keys: input that "
+            "contains a credential is rejected and nothing is stored."
         ),
         "token_cost": 60,
         "always_on": False,
@@ -319,8 +320,9 @@ _TOOL_CATALOGUE: dict[str, dict[str, Any]] = {
             "with project_id. Do not record: project task status, project product "
             "decisions or repository conventions (use issues, PRs, CLAUDE.md or project "
             "docs), general habits of the developer (use add_profile_note), or secrets "
-            "such as tokens and keys. Entries land as raw notes the developer reviews "
-            "and curates in the dashboard."
+            "such as tokens and keys: input that contains a credential is rejected and "
+            "nothing is stored. Entries land as raw notes the developer reviews and "
+            "curates in the dashboard."
         ),
         "token_cost": 60,
         "always_on": False,
@@ -501,6 +503,20 @@ def _dlp_notice(fired: list[str]) -> str:
         return ""
     rules = ", ".join(sorted(set(fired)))
     return f" Redacted before storage ({rules}). Never include secrets or PII in notes."
+
+
+def _secret_rejection(tool: str, rules: list[str]) -> list[TextContent]:
+    """Refuse secret-shaped input: nothing is stored, and the agent is told why."""
+    return [
+        TextContent(
+            type="text",
+            text=(
+                f"{tool} rejected: the input looks like it contains a secret "
+                f"({', '.join(rules)}). Nothing was stored. Remove the credential and "
+                "submit again; tokens, keys and credentials are never recorded in JFYI."
+            ),
+        )
+    ]
 
 
 def _format_journal_meta(e: dict[str, Any]) -> str:
@@ -779,13 +795,17 @@ async def dispatch_tool(
 
     if name == "add_profile_note":
         from .config import settings
-        from .dlp import redact
+        from .dlp import find_secrets, redact
 
         note_text = str(arguments.get("text") or arguments.get("note") or "").strip()
         if not note_text:
             return [TextContent(type="text", text="add_profile_note requires non-empty text.")]
         fired: list[str] = []
         if settings.dlp_enabled:
+            # category and agent_name are stored as given, so they are checked too.
+            metadata = [str(arguments[k]) for k in ("category", "agent_name") if arguments.get(k)]
+            if secrets := find_secrets(note_text, *metadata):
+                return _secret_rejection("add_profile_note", secrets)
             note_text, fired = redact(note_text)
         note_id = db.add_note(
             user_id=user_id,
@@ -849,7 +869,7 @@ async def dispatch_tool(
 
     if name == "add_journal_note":
         from .config import settings
-        from .dlp import redact
+        from .dlp import find_secrets, redact
 
         title = str(arguments.get("title") or "").strip()
         content = str(arguments.get("content") or "").strip()
@@ -858,6 +878,8 @@ async def dispatch_tool(
             return [TextContent(type="text", text="add_journal_note requires a non-empty title.")]
         fired: list[str] = []
         if settings.dlp_enabled:
+            if secrets := find_secrets(title, content, str(project_id) if project_id else None):
+                return _secret_rejection("add_journal_note", secrets)
             title, fired_title = redact(title)
             content, fired_content = redact(content)
             fired = fired_title + fired_content

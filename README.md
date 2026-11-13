@@ -116,14 +116,14 @@ kubectl port-forward svc/my-jfyi-service 8080:8080 -n jfyi-system
 
 ### Connect your AI assistant
 
-**SSE (Helm / Docker Compose deployment):**
+**Streamable HTTP (Helm / Docker Compose deployment):**
 
 ```json
 {
   "mcpServers": {
     "jfyi": {
-      "transport": "sse",
-      "url": "http://localhost:8080/mcp/sse",
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
       "headers": { "Authorization": "Bearer <YOUR_TOKEN>" }
     }
   }
@@ -131,6 +131,8 @@ kubectl port-forward svc/my-jfyi-service 8080:8080 -n jfyi-system
 ```
 
 Generate a token from the **Settings** page in the web dashboard.
+
+`POST /mcp` is stateless, so a connected client keeps working across a server restart or redeploy. Clients that only speak the legacy SSE transport can still use `http://localhost:8080/mcp/sse`, but an SSE session is lost when the server restarts.
 
 **stdio single-user mode (no cluster required):**
 

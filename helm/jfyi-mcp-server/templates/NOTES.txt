@@ -30,7 +30,8 @@ App version: {{ .Chart.AppVersion }}
      8080:{{ .Values.service.mcpPort }}
 
    Then open http://localhost:8080/ for the dashboard, or point your MCP
-   client at http://localhost:8080/mcp/sse.
+   client at http://localhost:8080/mcp (Streamable HTTP). Legacy SSE clients
+   can use http://localhost:8080/mcp/sse.
 {{- end }}
 
 2. Verify the deployment is healthy:

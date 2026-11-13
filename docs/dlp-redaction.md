@@ -46,6 +46,15 @@ The pattern pack is defined in a single data structure, making it straightforwar
 1. **Storage boundary** — in `analytics.record_interaction()` and `memory.remember()` before any text is written to the database. Hashes stored for deduplication are computed over redacted text; the original is never used as a hash input.
 2. **Injection boundary** — in the prompt assembly path, as a final pass over any text being assembled into an agent context. This catches anything that may have entered the database before DLP was enabled.
 
+### Rejection at the agent write tools
+
+Redaction is the right answer for text JFYI observes in passing. It is the wrong answer for the two tools where an agent *chooses* what to write: storing `[REDACTED:jwt]` and replying "Note added" teaches the agent nothing and leaves a note with a hole in it. `add_profile_note` and `add_journal_note` therefore call `dlp.find_secrets()` first and refuse the whole call when a credential rule matches (`aws_access_key`, `github_pat`, `anthropic_key`, `openai_key`, `jwt`, `private_key_pem`, `slack_token`, or a `Bearer` value of 20+ characters). For `add_profile_note` the check also covers the `category` and `agent_name` metadata, which are stored as given. The response names the rules that matched, never the value, and nothing is stored ([#79](https://github.com/hlan-net/jfyi-just-for-your-information/issues/79)).
+
+- The `Bearer` threshold is stricter here than in the redaction rule, so prose such as *"the API uses bearer tokens"* is accepted.
+- PII (`email`) is not a credential: it is still redacted and the note is stored, with a notice in the response.
+- The dashboard REST API (`/api/journal`, rule edits) keeps redacting: there a human is typing, and a refused save loses their text.
+- `JFYI_DLP_ENABLED=false` bypasses rejection together with redaction.
+
 ### Feature Flag
 
 `JFYI_DLP_ENABLED` defaults to `true`. Setting it to `false` disables redaction entirely (intended for local development where the risk profile is understood).

@@ -28,7 +28,7 @@ Then set the two `userConfig` values declared by the plugin. Run `/plugin config
 
 | Key | Value | Where it is stored |
 |---|---|---|
-| `jfyi_url` | Your instance, e.g. `https://jfyi.example.net` (no trailing slash) | Claude Code plugin config |
+| `jfyi_url` | The instance root, e.g. `https://jfyi.example.net`: no path and no trailing slash. Do **not** include `/mcp` (the plugin appends it) | Claude Code plugin config |
 | `jfyi_token` | Bearer token from your dashboard, `Settings → Connect` | Secure storage (`sensitive: true`), never a settings file |
 
 ```bash
@@ -133,3 +133,7 @@ Each line carries a timestamp and an event: `Successfully connected (transport: 
 **The MCP log says `URL is unset or invalid — open /plugin manage and configure jfyi options`.** The plugin's `user_config` has no value for `jfyi_url`, so `.mcp.json` cannot resolve its URL. Set the values with `/plugin configure jfyi@jfyi` or `/plugin manage`. This is also the expected state under `claude --plugin-dir`: that mode loads the plugin's hooks and skills but never collects `user_config`, so the MCP server cannot connect there. Verify the MCP transport from a configured install instead.
 
 **The constitution is missing from context.** That is the SessionStart hook, not MCP. `/reload-plugins` should report at least `1 hook`; hooks run at session start, so start a new session after reloading. If the hook runs but prints `JFYI_URL / JFYI_MCP_TOKEN not configured`, set the values with `/plugin configure jfyi@jfyi`.
+
+**`jfyi_url` was set to the MCP endpoint (`…/mcp`) instead of the instance root.** The plugin composes its URLs by appending to `jfyi_url`, so the MCP server is requested at `…/mcp/mcp` and never connects; `.mcp.json` cannot run logic, so it cannot correct this. Since plugin 0.1.3 the SessionStart hook strips a trailing `/mcp`, `/mcp/` or `/mcp/sse` and still injects the constitution, and it prints a warning to stderr naming the fix. Set `jfyi_url` to the root (`https://jfyi.example.net`) with `/plugin configure jfyi@jfyi`.
+
+**Telling an unreachable instance from a wrong URL.** The hook always exits 0 so a failure never blocks the session, but its stderr message now differs: `could not connect to <url>` means the host did not answer (DNS, network, instance down); `HTTP 404 from <url>` means a server answered but the path is wrong, usually a `jfyi_url` with a path in it; `HTTP 401`/`403` means the token was rejected.
