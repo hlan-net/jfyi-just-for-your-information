@@ -239,7 +239,7 @@ Merges the current **Notes** (`/notes`) and **Developer Profile** (`/profile`) p
 ├─────────────────────────────────────────────────────────────┤
 │  🔌 Connect Your Agent                                     │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │ SSE Endpoint: https://jfyi.example.com/mcp/sse     │   │
+│  │ MCP Endpoint: https://jfyi.example.com/mcp         │   │
 │  │ Token: ●●●●●●●● [Generate] [Copy]                  │   │
 │  │ MCP Config JSON snippet [Copy]                      │   │
 │  └─────────────────────────────────────────────────────┘   │

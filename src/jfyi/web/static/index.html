@@ -754,8 +754,8 @@
       
       <div class="guidance-box" style="margin-top: 1.5rem;">
         <h3>1. Server URL</h3>
-        <p style="margin-bottom: 0.5rem; color: var(--muted); font-size: 0.85rem;">This is the SSE endpoint your agent needs to connect to.</p>
-        <code style="font-size: 1rem; padding: 0.5rem 1rem; display: block; border: 1px solid var(--border);">{{ origin }}/mcp/sse</code>
+        <p style="margin-bottom: 0.5rem; color: var(--muted); font-size: 0.85rem;">This is the MCP endpoint your agent connects to (Streamable HTTP). It is stateless, so a server restart does not strand a connected agent.</p>
+        <code style="font-size: 1rem; padding: 0.5rem 1rem; display: block; border: 1px solid var(--border);">{{ origin }}/mcp</code>
       </div>
       
       <div class="guidance-box">
@@ -775,12 +775,12 @@
       
       <div class="guidance-box" style="background: transparent; border-left: none; padding: 0;">
         <h3>3. Configuration Example</h3>
-        <p style="margin-bottom: 0.5rem; color: var(--muted); font-size: 0.85rem;">Example configuration using the standard SSE MCP transport:</p>
+        <p style="margin-bottom: 0.5rem; color: var(--muted); font-size: 0.85rem;">Example configuration using the Streamable HTTP MCP transport (<code>"type": "http"</code>, as read by Claude Code and other current clients):</p>
         <pre style="background: #0d1117; padding: 1rem; border-radius: 6px; border: 1px solid var(--border); overflow-x: auto; color: var(--text); font-family: monospace; font-size: 0.85rem; line-height: 1.4;"><code>{
   "mcpServers": {
     "jfyi-remote": {
-      "transport": "sse",
-      "url": "{{ origin }}/mcp/sse",
+      "type": "http",
+      "url": "{{ origin }}/mcp",
       "headers": {
         "Authorization": "Bearer {{ token || '&lt;YOUR_TOKEN_HERE&gt;' }}"
       }
@@ -792,7 +792,7 @@
             {{ copiedConfig ? 'Copied!' : 'Copy Config' }}
           </button>
         </div>
-        <p style="font-size: 0.8rem; color: var(--muted); margin-top: 0.75rem;"><em>Note: If your agent (like Claude Desktop) only supports <code>stdio</code> transport natively, you may need a proxy script (like a simple node or python script) that translates stdio back to SSE. Most modern clients and libraries (like LangChain or LlamaIndex) support SSE natively.</em></p>
+        <p style="font-size: 0.8rem; color: var(--muted); margin-top: 0.75rem;"><em>Note: clients that only speak the legacy SSE transport can still connect to <code>{{ origin }}/mcp/sse</code>, but an SSE session does not survive a server restart, so prefer <code>/mcp</code> wherever the client supports it. If your agent only supports <code>stdio</code> natively, use a stdio-to-HTTP proxy.</em></p>
       </div>
     </div>
   </div>
@@ -1493,7 +1493,7 @@
         <button class="btn btn-outline" style="font-size:0.75rem;padding:0.2rem 0.6rem;" @click="copy('install', files.install)">{{ copied === 'install' ? 'Copied!' : 'Copy' }}</button>
       </div>
       <pre class="pg-pre"><code>{{ files.install }}</code></pre>
-      <p class="desc">Then, inside a Claude Code session, run <code>/plugin configure jfyi@jfyi</code> and set <strong>JFYI base URL</strong> → <code>{{ origin }}</code> and <strong>JFYI MCP token</strong> → generate it in the Connect section above (or pass both with <code>--config KEY=VALUE</code> at install). Verify with <code>/mcp</code> (the <code>jfyi</code> server is connected) and <code>/context</code> (the injected constitution is visible).</p>
+      <p class="desc">Then, inside a Claude Code session, run <code>/plugin configure jfyi@jfyi</code> and set <strong>JFYI base URL</strong> → <code>{{ origin }}</code> (the instance root: no path, no trailing slash, and not the <code>/mcp</code> endpoint shown above) and <strong>JFYI MCP token</strong> → generate it in the Connect section above (or pass both with <code>--config KEY=VALUE</code> at install). Verify with <code>/mcp</code> (the <code>jfyi</code> server is connected) and <code>/context</code> (the injected constitution is visible).</p>
 
       <h3 style="font-size:0.95rem;margin:1.25rem 0 0.5rem;">2. Enable for a project or team</h3>
       <p class="desc">Commit this to the project's <code>.claude/settings.json</code>. It only references the public marketplace; each team member sets their own URL and token with <code>/plugin configure jfyi@jfyi</code>.</p>
@@ -1764,8 +1764,8 @@ const Connect = {
       const configText = JSON.stringify({
         mcpServers: {
           'jfyi-remote': {
-            transport: 'sse',
-            url: `${origin}/mcp/sse`,
+            type: 'http',
+            url: `${origin}/mcp`,
             headers: {
               Authorization: `Bearer ${token.value || '<YOUR_TOKEN_HERE>'}`,
             },
